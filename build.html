@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BUILD - Samsung One UI 8.5 Design Builder</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --primary: #0381FE;
+  --primary-light: #3E91FF;
+  --primary-10: rgba(3,129,254,0.10);
+  --bg: #0a0a0a;
+  --sidebar-bg: #111111;
+  --surface: #1a1a1a;
+  --surface-2: #222222;
+  --text: #FAFAFA;
+  --text-2: rgba(255,255,255,0.6);
+  --text-3: rgba(255,255,255,0.35);
+  --divider: rgba(255,255,255,0.08);
+  --glass-bg: rgba(255,255,255,0.06);
+  --glass-border: rgba(255,255,255,0.10);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --canvas-bg-light: #FCFCFC;
+  --canvas-bg-dark: #171717;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:13px; overflow:hidden; height:100vh; display:flex; flex-direction:column; -webkit-font-smoothing:antialiased; }
+::selection { background:rgba(3,129,254,0.3); }
+
+/* === TOP BAR === */
+.topbar {
+  height:48px; display:flex; align-items:center; justify-content:space-between;
+  padding:0 16px; background:var(--sidebar-bg); border-bottom:1px solid var(--divider);
+  flex-shrink:0; z-index:100;
+}
+.topbar-left { display:flex; align-items:center; gap:12px; }
+.topbar-brand { font-size:14px; font-weight:800; color:#fff; text-decoration:none; letter-spacing:0.5px; }
+.topbar-brand span { color:var(--primary); }
+.topbar-back { color:var(--text-2); text-decoration:none; font-size:12px; padding:4px 10px; border-radius:8px; background:var(--surface); border:1px solid var(--divider); }
+.topbar-back:hover { background:var(--surface-2); }
+.topbar-right { display:flex; align-items:center; gap:8px; }
+.topbar-btn {
+  padding:6px 14px; border-radius:999px; border:1px solid var(--divider);
+  background:var(--surface); color:var(--text); font-family:var(--font);
+  font-size:12px; font-weight:600; cursor:pointer; transition:all 0.15s;
+}
+.topbar-btn:hover { background:var(--surface-2); }
+.topbar-btn.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
+.topbar-btn.primary:hover { background:var(--primary-light); }
+.device-toggle { display:flex; background:var(--surface); border-radius:8px; border:1px solid var(--divider); overflow:hidden; }
+.device-toggle button {
+  padding:5px 12px; border:none; background:transparent; color:var(--text-3);
+  font-family:var(--font); font-size:11px; cursor:pointer; transition:all 0.15s;
+}
+.device-toggle button.active { background:var(--primary-10); color:var(--primary); }
+
+/* === MAIN LAYOUT === */
+.main { display:flex; flex:1; overflow:hidden; }
+
+/* === SIDEBAR === */
+.sidebar {
+  width:300px; flex-shrink:0; background:var(--sidebar-bg);
+  border-right:1px solid var(--divider); display:flex; flex-direction:column; overflow:hidden;
+}
+.sidebar-tabs {
+  display:flex; border-bottom:1px solid var(--divider); flex-shrink:0;
+}
+.sidebar-tab {
+  flex:1; padding:10px 4px; text-align:center; font-size:10px; font-weight:600;
+  color:var(--text-3); cursor:pointer; border:none; background:none;
+  font-family:var(--font); transition:all 0.15s; text-transform:uppercase; letter-spacing:0.5px;
+  border-bottom:2px solid transparent;
+}
+.sidebar-tab:hover { color:var(--text-2); }
+.sidebar-tab.active { color:var(--primary); border-bottom-color:var(--primary); }
+.sidebar-content { flex:1; overflow-y:auto; padding:16px; }
+.sidebar-content::-webkit-scrollbar { width:4px; }
+.sidebar-content::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.15); border-radius:2px; }
+.panel { display:none; }
+.panel.active { display:block; }
+.panel-section { margin-bottom:20px; }
+.panel-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+
+/* === COMPONENT PALETTE === */
+.comp-palette { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.comp-item {
+  padding:10px 8px; border-radius:10px; border:1px solid var(--divider);
+  background:var(--surface); cursor:grab; text-align:center; font-size:11px;
+  font-weight:500; color:var(--text-2); transition:all 0.15s; user-select:none;
+}
+.comp-item:hover { border-color:var(--primary); color:var(--primary); background:var(--primary-10); }
+.comp-item:active { cursor:grabbing; transform:scale(0.95); }
+.comp-item .comp-icon { font-size:18px; margin-bottom:4px; display:block; }
+
+/* === LAYOUT PRESETS === */
+.layout-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
+.layout-preset {
+  aspect-ratio:1; border-radius:10px; border:1px solid var(--divider);
+  background:var(--surface); cursor:pointer; padding:8px; transition:all 0.15s;
+  display:flex; flex-direction:column; gap:3px;
+}
+.layout-preset:hover { border-color:var(--primary); }
+.layout-preset.active { border-color:var(--primary); background:var(--primary-10); }
+.layout-preset .lp-bar { background:rgba(255,255,255,0.15); border-radius:2px; flex-shrink:0; }
+.layout-preset .lp-row { display:flex; gap:3px; flex:1; }
+.layout-preset .lp-col { background:rgba(255,255,255,0.1); border-radius:2px; flex:1; }
+.layout-label { font-size:10px; color:var(--text-3); text-align:center; margin-top:4px; }
+
+/* === COLOR SWATCHES === */
+.color-palette { display:flex; flex-wrap:wrap; gap:6px; }
+.color-swatch {
+  width:32px; height:32px; border-radius:8px; cursor:pointer;
+  border:2px solid transparent; transition:all 0.15s; position:relative;
+}
+.color-swatch:hover { transform:scale(1.1); }
+.color-swatch.selected { border-color:#fff; box-shadow:0 0 0 2px var(--primary); }
+.color-swatch .cs-label { position:absolute; bottom:-14px; left:50%; transform:translateX(-50%); font-size:8px; color:var(--text-3); white-space:nowrap; display:none; }
+.color-swatch:hover .cs-label { display:block; }
+.color-target { display:flex; gap:6px; margin-bottom:12px; }
+.color-target button {
+  flex:1; padding:6px; border-radius:8px; border:1px solid var(--divider);
+  background:var(--surface); color:var(--text-2); font-family:var(--font);
+  font-size:11px; cursor:pointer; transition:all 0.15s;
+}
+.color-target button.active { border-color:var(--primary); color:var(--primary); background:var(--primary-10); }
+
+/* === GROUPING === */
+.group-actions { display:flex; flex-direction:column; gap:6px; }
+.group-btn {
+  padding:10px; border-radius:10px; border:1px solid var(--divider);
+  background:var(--surface); color:var(--text); font-family:var(--font);
+  font-size:12px; font-weight:500; cursor:pointer; transition:all 0.15s; text-align:left;
+}
+.group-btn:hover { border-color:var(--primary); }
+.group-btn span { font-size:16px; margin-right:8px; }
+
+/* === MOTION PALETTE === */
+.motion-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.motion-item {
+  padding:10px 8px; border-radius:10px; border:1px solid var(--divider);
+  background:var(--surface); cursor:pointer; text-align:center; font-size:11px;
+  color:var(--text-2); transition:all 0.15s;
+}
+.motion-item:hover { border-color:var(--primary); color:var(--primary); }
+.motion-item.selected { border-color:var(--primary); background:var(--primary-10); color:var(--primary); }
+.motion-item .mi-curve { font-size:16px; margin-bottom:2px; display:block; }
+
+.dur-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.dur-chip {
+  padding:4px 10px; border-radius:999px; border:1px solid var(--divider);
+  background:var(--surface); color:var(--text-3); font-family:var(--font);
+  font-size:11px; cursor:pointer; transition:all 0.15s;
+}
+.dur-chip.selected { border-color:var(--primary); color:var(--primary); background:var(--primary-10); }
+
+/* === CANVAS === */
+.canvas-wrap {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:var(--bg); padding:24px; overflow:auto;
+  background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.canvas-frame {
+  width:375px; height:812px; background:var(--canvas-bg-dark);
+  border-radius:40px; border:3px solid #333; position:relative;
+  overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  transition:width 0.4s cubic-bezier(0.2,0,0,1), height 0.4s cubic-bezier(0.2,0,0,1), border-radius 0.4s;
+}
+.canvas-frame.desktop { width:960px; height:600px; border-radius:12px; }
+.canvas-frame.light { background:var(--canvas-bg-light); }
+.canvas-notch {
+  position:absolute; top:0; left:50%; transform:translateX(-50%);
+  width:120px; height:30px; background:#000; border-radius:0 0 20px 20px; z-index:10;
+}
+.canvas-frame.desktop .canvas-notch { display:none; }
+.canvas-inner {
+  position:absolute; top:0; left:0; right:0; bottom:0;
+  padding:40px 16px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;
+}
+.canvas-frame.desktop .canvas-inner { padding:16px; }
+.canvas-inner::-webkit-scrollbar { width:3px; }
+.canvas-inner::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:2px; }
+
+/* === CANVAS ITEMS === */
+.canvas-item {
+  position:relative; cursor:move; transition:outline 0.1s;
+  outline:2px solid transparent; outline-offset:2px; border-radius:4px;
+}
+.canvas-item:hover { outline-color:rgba(3,129,254,0.3); }
+.canvas-item.selected { outline-color:var(--primary); }
+.canvas-item.grouped { outline-color:rgba(100,233,227,0.4); outline-style:dashed; }
+.canvas-item [contenteditable]:focus { outline:none; }
+.canvas-delete {
+  position:absolute; top:-8px; right:-8px; width:20px; height:20px;
+  border-radius:50%; background:#ff4444; color:#fff; border:none;
+  font-size:12px; cursor:pointer; display:none; align-items:center; justify-content:center; z-index:5;
+}
+.canvas-item.selected .canvas-delete { display:flex; }
+
+/* === GROUP WRAPPER === */
+.canvas-group {
+  border:1px dashed rgba(100,233,227,0.3); border-radius:18px;
+  padding:12px; background:rgba(100,233,227,0.03);
+  display:flex; flex-direction:column; gap:8px;
+}
+
+/* === ONE UI COMPONENT STYLES (for canvas rendering) === */
+.oui-btn-contained { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:0 24px; border-radius:18px; background:#0072DE; color:#FAFAFA; font-size:15px; font-weight:500; border:none; font-family:var(--font); }
+.oui-btn-outlined { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:0 24px; border-radius:18px; background:transparent; color:#FAFAFA; font-size:15px; font-weight:500; border:1.5px solid #FAFAFA; font-family:var(--font); }
+.oui-btn-flat { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:0 24px; border-radius:18px; background:transparent; color:var(--primary); font-size:15px; font-weight:500; border:none; font-family:var(--font); }
+.oui-fab { width:56px; height:56px; border-radius:50%; background:var(--primary); color:#fff; border:none; font-size:24px; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 16px rgba(3,129,254,0.3); }
+.oui-switch { width:52px; height:32px; border-radius:16px; background:#3E91FF; position:relative; border:none; cursor:pointer; }
+.oui-switch::after { content:''; position:absolute; top:2px; right:2px; width:28px; height:28px; border-radius:50%; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.2); }
+.oui-checkbox { width:24px; height:24px; border-radius:4px; background:#3E91FF; border:none; display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; }
+.oui-radio { width:24px; height:24px; border-radius:50%; border:2px solid #3E91FF; display:flex; align-items:center; justify-content:center; background:transparent; }
+.oui-radio::after { content:''; width:12px; height:12px; border-radius:50%; background:#3E91FF; }
+.oui-input { width:100%; height:52px; border-radius:18px; border:1.5px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.04); color:var(--text); font-size:15px; padding:18px 16px 6px; font-family:var(--font); }
+.oui-search { width:100%; height:44px; border-radius:999px; background:rgba(255,255,255,0.06); border:none; color:var(--text); font-size:14px; padding:0 16px; font-family:var(--font); }
+.oui-chip { display:inline-flex; align-items:center; padding:8px 16px; border-radius:22px; background:var(--primary-10); color:var(--primary); font-size:13px; font-weight:500; border:none; font-family:var(--font); }
+.oui-card { width:100%; border-radius:26px; background:var(--surface-2); padding:20px; border:1px solid rgba(255,255,255,0.06); }
+.oui-card-title { font-size:17px; font-weight:700; margin-bottom:4px; }
+.oui-card-desc { font-size:13px; color:var(--text-2); }
+.oui-list-item { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:0.5px solid rgba(255,255,255,0.06); }
+.oui-list-icon { width:36px; height:36px; border-radius:50%; background:var(--primary-10); display:flex; align-items:center; justify-content:center; color:var(--primary); font-size:16px; flex-shrink:0; }
+.oui-list-text { flex:1; }
+.oui-list-title { font-size:15px; font-weight:500; }
+.oui-list-sub { font-size:12px; color:var(--text-3); }
+.oui-appbar { width:100%; height:56px; display:flex; align-items:center; padding:0 12px; gap:8px; background:rgba(255,255,255,0.03); border-radius:0; }
+.oui-appbar-title { font-size:18px; font-weight:600; flex:1; }
+.oui-bottomnav { width:100%; height:56px; display:flex; align-items:center; justify-content:space-around; background:rgba(255,255,255,0.03); border-top:0.5px solid rgba(255,255,255,0.06); border-radius:0; }
+.oui-bottomnav-item { display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; color:var(--text-3); }
+.oui-bottomnav-item.active { color:var(--primary); }
+.oui-pill-tab { display:inline-flex; align-items:center; gap:4px; background:rgba(255,255,255,0.08); backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,0.12); border-radius:999px; padding:6px 8px; }
+.oui-pill-dot { width:40px; height:32px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--text-3); }
+.oui-pill-dot.active { background:rgba(255,255,255,0.15); color:var(--primary); }
+.oui-snackbar { width:100%; padding:14px 16px; background:#474747; color:#FAFAFA; border-radius:18px; font-size:14px; display:flex; align-items:center; justify-content:space-between; }
+.oui-snackbar-action { color:#7CB8FF; font-weight:600; border:none; background:none; font-family:var(--font); font-size:14px; }
+.oui-divider { width:100%; height:0.5px; background:rgba(255,255,255,0.08); }
+.oui-badge { display:inline-flex; align-items:center; justify-content:center; min-width:17px; height:17px; border-radius:9px; background:#D32F2F; color:#fff; font-size:10px; font-weight:700; padding:0 4px; }
+.oui-dialog { width:100%; max-width:300px; background:var(--surface-2); border-radius:26px; padding:24px 20px 16px; margin:0 auto; }
+.oui-dialog-title { font-size:18px; font-weight:700; margin-bottom:8px; }
+.oui-dialog-body { font-size:14px; color:var(--text-2); margin-bottom:16px; line-height:1.5; }
+.oui-dialog-actions { display:flex; justify-content:flex-end; gap:8px; }
+
+/* Light mode overrides */
+.canvas-frame.light .oui-btn-outlined { color:#252525; border-color:#252525; }
+.canvas-frame.light .oui-input { border-color:#E4E4E4; background:#fff; color:#252525; }
+.canvas-frame.light .oui-search { background:#F2F2F2; color:#252525; }
+.canvas-frame.light .oui-card { background:#fff; border-color:rgba(0,0,0,0.06); }
+.canvas-frame.light .oui-card-title { color:#252525; }
+.canvas-frame.light .oui-card-desc { color:#666; }
+.canvas-frame.light .oui-list-item { border-color:rgba(0,0,0,0.06); }
+.canvas-frame.light .oui-list-title { color:#252525; }
+.canvas-frame.light .oui-list-sub { color:#888; }
+.canvas-frame.light .oui-appbar { background:rgba(0,0,0,0.02); }
+.canvas-frame.light .oui-appbar-title { color:#252525; }
+.canvas-frame.light .oui-bottomnav { background:rgba(0,0,0,0.02); border-color:rgba(0,0,0,0.06); }
+.canvas-frame.light .oui-bottomnav-item { color:#888; }
+.canvas-frame.light .oui-divider { background:rgba(0,0,0,0.08); }
+.canvas-frame.light .oui-dialog { background:#fff; }
+.canvas-frame.light .oui-dialog-title { color:#252525; }
+.canvas-frame.light .oui-dialog-body { color:#666; }
+
+/* === SPACING SLIDER === */
+.spacing-control { display:flex; align-items:center; gap:8px; }
+.spacing-control input[type=range] { flex:1; accent-color:var(--primary); }
+.spacing-value { font-size:12px; font-family:monospace; color:var(--primary); min-width:32px; }
+
+/* === ALIGNMENT === */
+.align-row { display:flex; gap:4px; }
+.align-btn {
+  flex:1; padding:8px; border-radius:8px; border:1px solid var(--divider);
+  background:var(--surface); color:var(--text-3); cursor:pointer; text-align:center;
+  font-size:14px; transition:all 0.15s; font-family:var(--font);
+}
+.align-btn:hover { border-color:var(--primary); }
+.align-btn.active { background:var(--primary-10); border-color:var(--primary); color:var(--primary); }
+
+/* === EMPTY STATE === */
+.canvas-empty {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  height:100%; color:var(--text-3); gap:8px; pointer-events:none;
+}
+.canvas-empty-icon { font-size:48px; opacity:0.3; }
+
+/* Animations */
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes slideUp { from { opacity:0; transform:translateY(30px); } to { opacity:1; transform:translateY(0); } }
+@keyframes scaleUp { from { opacity:0; transform:scale(0.7); } to { opacity:1; transform:scale(1); } }
+@keyframes bounce { from { opacity:0; transform:scale(0.3); } to { opacity:1; transform:scale(1); } }
+@keyframes springPop { from { transform:scale(0); } to { transform:scale(1); } }
+@keyframes shake { 0%,100% { transform:translateX(0); } 20%,60% { transform:translateX(-6px); } 40%,80% { transform:translateX(6px); } }
+@keyframes glassMat { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
+@keyframes chromeFade { from { opacity:1; } to { opacity:0.2; } }
+@keyframes slideLeft { from { opacity:0; transform:translateX(40px); } to { opacity:1; transform:translateX(0); } }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <a class="topbar-brand" href="index.html">SAMSUNG <span>BUILD</span></a>
+    <a class="topbar-back" href="index.html">&larr; Back to Overview</a>
+  </div>
+  <div class="topbar-right">
+    <div class="device-toggle">
+      <button class="active" onclick="setDevice('mobile',this)">Mobile</button>
+      <button onclick="setDevice('desktop',this)">Desktop</button>
+    </div>
+    <button class="topbar-btn" onclick="toggleTheme()">Light / Dark</button>
+    <button class="topbar-btn" onclick="clearCanvas()">Clear</button>
+    <button class="topbar-btn primary" onclick="exportHTML()">Export HTML</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab" style="color:#0381FE;font-weight:700;" onclick="switchTab(5,this)">Generate</button>
+      <button class="sidebar-tab active" onclick="switchTab(0,this)">Components</button>
+      <button class="sidebar-tab" onclick="switchTab(1,this)">Layout</button>
+      <button class="sidebar-tab" onclick="switchTab(2,this)">Colors</button>
+      <button class="sidebar-tab" onclick="switchTab(3,this)">Group</button>
+      <button class="sidebar-tab" onclick="switchTab(4,this)">Motion</button>
+    </div>
+    <div class="sidebar-content">
+
+      <!-- PANEL 0: COMPONENTS -->
+      <div class="panel active" id="panel-0">
+        <div class="panel-section">
+          <div class="panel-label">Buttons</div>
+          <div class="comp-palette">
+            <div class="comp-item" onclick="addComp('btn-contained')"><span class="comp-icon">&#9632;</span>Contained</div>
+            <div class="comp-item" onclick="addComp('btn-outlined')"><span class="comp-icon">&#9633;</span>Outlined</div>
+            <div class="comp-item" onclick="addComp('btn-flat')"><span class="comp-icon">Aa</span>Flat / Text</div>
+            <div class="comp-item" onclick="addComp('fab')"><span class="comp-icon">+</span>FAB</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Controls</div>
+          <div class="comp-palette">
+            <div class="comp-item" onclick="addComp('switch')"><span class="comp-icon">&#8596;</span>Switch</div>
+            <div class="comp-item" onclick="addComp('checkbox')"><span class="comp-icon">&#9745;</span>Checkbox</div>
+            <div class="comp-item" onclick="addComp('radio')"><span class="comp-icon">&#9673;</span>Radio</div>
+            <div class="comp-item" onclick="addComp('chip')"><span class="comp-icon">&#9679;</span>Chip</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Inputs</div>
+          <div class="comp-palette">
+            <div class="comp-item" onclick="addComp('input')"><span class="comp-icon">&#9998;</span>Text Field</div>
+            <div class="comp-item" onclick="addComp('search')"><span class="comp-icon">&#128269;</span>Search Bar</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Navigation</div>
+          <div class="comp-palette">
+            <div class="comp-item" onclick="addComp('appbar')"><span class="comp-icon">&#9776;</span>App Bar</div>
+            <div class="comp-item" onclick="addComp('bottomnav')"><span class="comp-icon">&#9644;</span>Bottom Nav</div>
+            <div class="comp-item" onclick="addComp('pill-tab')"><span class="comp-icon">&#9673;</span>Pill Tab Bar</div>
+            <div class="comp-item" onclick="addComp('tab-bar')"><span class="comp-icon">&#9135;</span>Tab Bar</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Content</div>
+          <div class="comp-palette">
+            <div class="comp-item" onclick="addComp('card')"><span class="comp-icon">&#9634;</span>Card</div>
+            <div class="comp-item" onclick="addComp('list-item')"><span class="comp-icon">&#9776;</span>List Item</div>
+            <div class="comp-item" onclick="addComp('dialog')"><span class="comp-icon">&#9635;</span>Dialog</div>
+            <div class="comp-item" onclick="addComp('snackbar')"><span class="comp-icon">&#9644;</span>Snackbar</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Utility</div>
+          <div class="comp-palette">
+            <div class="comp-item" onclick="addComp('divider')"><span class="comp-icon">&mdash;</span>Divider</div>
+            <div class="comp-item" onclick="addComp('badge')"><span class="comp-icon">&#9679;</span>Badge</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 1: LAYOUT -->
+      <div class="panel" id="panel-1">
+        <div class="panel-section">
+          <div class="panel-label">Layout Presets</div>
+          <div class="layout-grid">
+            <div>
+              <div class="layout-preset active" onclick="setLayout('column',this)">
+                <div class="lp-bar" style="height:6px;"></div>
+                <div class="lp-col"></div>
+                <div class="lp-col"></div>
+              </div>
+              <div class="layout-label">Column</div>
+            </div>
+            <div>
+              <div class="layout-preset" onclick="setLayout('two-col',this)">
+                <div class="lp-bar" style="height:6px;"></div>
+                <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
+              </div>
+              <div class="layout-label">Two Col</div>
+            </div>
+            <div>
+              <div class="layout-preset" onclick="setLayout('grid',this)">
+                <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
+                <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
+              </div>
+              <div class="layout-label">Grid 2x2</div>
+            </div>
+            <div>
+              <div class="layout-preset" onclick="setLayout('app',this)">
+                <div class="lp-bar" style="height:8px;"></div>
+                <div class="lp-col"></div>
+                <div class="lp-bar" style="height:8px;"></div>
+              </div>
+              <div class="layout-label">App Screen</div>
+            </div>
+            <div>
+              <div class="layout-preset" onclick="setLayout('hero',this)">
+                <div class="lp-col" style="flex:2;"></div>
+                <div class="lp-bar" style="height:4px;"></div>
+                <div class="lp-col"></div>
+              </div>
+              <div class="layout-label">Hero</div>
+            </div>
+            <div>
+              <div class="layout-preset" onclick="setLayout('free',this)">
+                <div class="lp-col" style="opacity:0.3;"></div>
+              </div>
+              <div class="layout-label">Free</div>
+            </div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Gap</div>
+          <div class="spacing-control">
+            <input type="range" min="0" max="48" step="8" value="8" oninput="setGap(this.value)">
+            <div class="spacing-value" id="gapValue">8px</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Padding</div>
+          <div class="spacing-control">
+            <input type="range" min="0" max="48" step="8" value="16" oninput="setPadding(this.value)">
+            <div class="spacing-value" id="padValue">16px</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Alignment</div>
+          <div class="align-row">
+            <button class="align-btn" onclick="setAlign('flex-start',this)">&#8676;</button>
+            <button class="align-btn active" onclick="setAlign('center',this)">&#8596;</button>
+            <button class="align-btn" onclick="setAlign('flex-end',this)">&#8677;</button>
+            <button class="align-btn" onclick="setAlign('stretch',this)">&#8644;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 2: COLORS -->
+      <div class="panel" id="panel-2">
+        <div class="panel-section">
+          <div class="panel-label">Apply to</div>
+          <div class="color-target">
+            <button class="active" onclick="setColorTarget('bg',this)">Background</button>
+            <button onclick="setColorTarget('text',this)">Text</button>
+            <button onclick="setColorTarget('border',this)">Border</button>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Brand</div>
+          <div class="color-palette">
+            <div class="color-swatch" style="background:#1428A0;" onclick="applyColor('#1428A0')"><span class="cs-label">Samsung Blue</span></div>
+            <div class="color-swatch" style="background:#000;border:1px solid rgba(255,255,255,0.2);" onclick="applyColor('#000000')"><span class="cs-label">Black</span></div>
+            <div class="color-swatch" style="background:#FFFFFF;" onclick="applyColor('#FFFFFF')"><span class="cs-label">White</span></div>
+            <div class="color-swatch" style="background:#F7F7F7;" onclick="applyColor('#F7F7F7')"><span class="cs-label">Near White</span></div>
+            <div class="color-swatch" style="background:#FFF01F;" onclick="applyColor('#FFF01F')"><span class="cs-label">Galaxy Yellow</span></div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">System</div>
+          <div class="color-palette">
+            <div class="color-swatch" style="background:#0381FE;" onclick="applyColor('#0381FE')"><span class="cs-label">Primary</span></div>
+            <div class="color-swatch" style="background:#0072DE;" onclick="applyColor('#0072DE')"><span class="cs-label">Primary Dark</span></div>
+            <div class="color-swatch" style="background:#3E91FF;" onclick="applyColor('#3E91FF')"><span class="cs-label">Activated</span></div>
+            <div class="color-swatch" style="background:#FCFCFC;" onclick="applyColor('#FCFCFC')"><span class="cs-label">Surface</span></div>
+            <div class="color-swatch" style="background:#171717;" onclick="applyColor('#171717')"><span class="cs-label">Surface Dark</span></div>
+            <div class="color-swatch" style="background:#D32F2F;" onclick="applyColor('#D32F2F')"><span class="cs-label">Error</span></div>
+            <div class="color-swatch" style="background:#2E7D32;" onclick="applyColor('#2E7D32')"><span class="cs-label">Success</span></div>
+            <div class="color-swatch" style="background:#387AFF;" onclick="applyColor('#387AFF')"><span class="cs-label">Nav Selected</span></div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Text</div>
+          <div class="color-palette">
+            <div class="color-swatch" style="background:#252525;" onclick="applyColor('#252525')"><span class="cs-label">Text Primary</span></div>
+            <div class="color-swatch" style="background:#666666;" onclick="applyColor('#666666')"><span class="cs-label">Text Secondary</span></div>
+            <div class="color-swatch" style="background:#858585;" onclick="applyColor('#858585')"><span class="cs-label">Text Disabled</span></div>
+            <div class="color-swatch" style="background:#FAFAFA;" onclick="applyColor('#FAFAFA')"><span class="cs-label">Text Light</span></div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Glass UI</div>
+          <div class="color-palette">
+            <div class="color-swatch" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);" onclick="applyColor('rgba(255,255,255,0.06)')"><span class="cs-label">Glass BG</span></div>
+            <div class="color-swatch" style="background:rgba(62,145,255,0.2);border:1px solid rgba(62,145,255,0.3);" onclick="applyColor('rgba(62,145,255,0.2)')"><span class="cs-label">Active Tile</span></div>
+            <div class="color-swatch" style="background:#474747;" onclick="applyColor('#474747')"><span class="cs-label">Tooltip</span></div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Illustration</div>
+          <div class="color-palette">
+            <div class="color-swatch" style="background:#87CEEB;" onclick="applyColor('#87CEEB')"><span class="cs-label">Sky Blue</span></div>
+            <div class="color-swatch" style="background:#006994;" onclick="applyColor('#006994')"><span class="cs-label">Ocean Blue</span></div>
+            <div class="color-swatch" style="background:#008080;" onclick="applyColor('#008080')"><span class="cs-label">Teal</span></div>
+            <div class="color-swatch" style="background:#B57EDC;" onclick="applyColor('#B57EDC')"><span class="cs-label">Lavender</span></div>
+            <div class="color-swatch" style="background:#3EA055;" onclick="applyColor('#3EA055')"><span class="cs-label">Clover</span></div>
+            <div class="color-swatch" style="background:#F4C430;" onclick="applyColor('#F4C430')"><span class="cs-label">Saffron</span></div>
+            <div class="color-swatch" style="background:#FF7F50;" onclick="applyColor('#FF7F50')"><span class="cs-label">Coral</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 3: GROUPING -->
+      <div class="panel" id="panel-3">
+        <div class="panel-section">
+          <div class="panel-label">Selection</div>
+          <p style="font-size:12px; color:var(--text-3); margin-bottom:12px; line-height:1.5;">Click components on canvas to select. Hold <strong style="color:var(--text-2);">Shift</strong> to multi-select. Then group them.</p>
+          <div class="group-actions">
+            <button class="group-btn" onclick="groupSelected()"><span>&#128230;</span>Group Selected</button>
+            <button class="group-btn" onclick="ungroupSelected()"><span>&#128194;</span>Ungroup</button>
+            <button class="group-btn" onclick="selectAll()"><span>&#9744;</span>Select All</button>
+            <button class="group-btn" onclick="deselectAll()"><span>&#9746;</span>Deselect All</button>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Group Style</div>
+          <div class="spacing-control">
+            <span style="font-size:11px; color:var(--text-3);">Radius</span>
+            <input type="range" min="0" max="26" step="2" value="18" oninput="setGroupRadius(this.value)">
+            <div class="spacing-value" id="groupRadValue">18px</div>
+          </div>
+          <div class="spacing-control" style="margin-top:8px;">
+            <span style="font-size:11px; color:var(--text-3);">Padding</span>
+            <input type="range" min="0" max="32" step="4" value="12" oninput="setGroupPadding(this.value)">
+            <div class="spacing-value" id="groupPadValue">12px</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL 4: MOTION -->
+      <div class="panel" id="panel-4">
+        <div class="panel-section">
+          <div class="panel-label">Animation Type</div>
+          <div class="motion-grid">
+            <div class="motion-item selected" data-anim="fadeIn" onclick="selectMotion('fadeIn',this)"><span class="mi-curve">&#9676;</span>Fade In</div>
+            <div class="motion-item" data-anim="slideUp" onclick="selectMotion('slideUp',this)"><span class="mi-curve">&#8593;</span>Slide Up</div>
+            <div class="motion-item" data-anim="slideLeft" onclick="selectMotion('slideLeft',this)"><span class="mi-curve">&#8592;</span>Slide Left</div>
+            <div class="motion-item" data-anim="scaleUp" onclick="selectMotion('scaleUp',this)"><span class="mi-curve">&#8599;</span>Scale Up</div>
+            <div class="motion-item" data-anim="bounce" onclick="selectMotion('bounce',this)"><span class="mi-curve">&#9673;</span>Bounce</div>
+            <div class="motion-item" data-anim="springPop" onclick="selectMotion('springPop',this)"><span class="mi-curve">&#10024;</span>Spring Pop</div>
+            <div class="motion-item" data-anim="shake" onclick="selectMotion('shake',this)"><span class="mi-curve">&#8660;</span>Shake</div>
+            <div class="motion-item" data-anim="glassMat" onclick="selectMotion('glassMat',this)"><span class="mi-curve">&#10023;</span>Glass Mat.</div>
+            <div class="motion-item" data-anim="chromeFade" onclick="selectMotion('chromeFade',this)"><span class="mi-curve">&#9681;</span>Chrome Fade</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Easing</div>
+          <div class="motion-grid">
+            <div class="motion-item selected" data-ease="cubic-bezier(0.22,0.25,0,1)" onclick="selectEasing(this)">Basic Path</div>
+            <div class="motion-item" data-ease="cubic-bezier(0.3,0,0,1)" onclick="selectEasing(this)">Standard</div>
+            <div class="motion-item" data-ease="cubic-bezier(0,0,0,1)" onclick="selectEasing(this)">Decelerate</div>
+            <div class="motion-item" data-ease="cubic-bezier(0.3,0,1,1)" onclick="selectEasing(this)">Accelerate</div>
+            <div class="motion-item" data-ease="cubic-bezier(0.2,0,0,1)" onclick="selectEasing(this)">Emphasized</div>
+            <div class="motion-item" data-ease="cubic-bezier(0.2,0.6,0.4,1)" onclick="selectEasing(this)">Spring</div>
+            <div class="motion-item" data-ease="cubic-bezier(0.34,1.56,0.64,1)" onclick="selectEasing(this)">Bounce</div>
+            <div class="motion-item" data-ease="cubic-bezier(0.68,-0.55,0.27,1.55)" onclick="selectEasing(this)">Elastic</div>
+            <div class="motion-item" data-ease="linear" onclick="selectEasing(this)">Linear</div>
+            <div class="motion-item" data-ease="ease-in" onclick="selectEasing(this)">Ease In</div>
+            <div class="motion-item" data-ease="ease-out" onclick="selectEasing(this)">Ease Out</div>
+            <div class="motion-item" data-ease="ease-in-out" onclick="selectEasing(this)">Ease In Out</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">Duration</div>
+          <div class="dur-chips">
+            <button class="dur-chip" data-dur="100" onclick="selectDur(100,this)">100ms</button>
+            <button class="dur-chip" data-dur="200" onclick="selectDur(200,this)">200ms</button>
+            <button class="dur-chip selected" data-dur="300" onclick="selectDur(300,this)">300ms</button>
+            <button class="dur-chip" data-dur="400" onclick="selectDur(400,this)">400ms</button>
+            <button class="dur-chip" data-dur="500" onclick="selectDur(500,this)">500ms</button>
+            <button class="dur-chip" data-dur="600" onclick="selectDur(600,this)">600ms</button>
+            <button class="dur-chip" data-dur="800" onclick="selectDur(800,this)">800ms</button>
+          </div>
+        </div>
+        <div class="panel-section">
+          <button class="topbar-btn primary" style="width:100%; padding:12px;" onclick="previewMotion()">&#9654; Preview Motion</button>
+        </div>
+      </div>
+
+      <!-- PANEL 5: GENERATE -->
+      <div class="panel" id="panel-5">
+        <div class="panel-section">
+          <div class="panel-label">1. Prompt</div>
+          <textarea id="genPrompt" style="width:100%;height:80px;border-radius:12px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:13px;padding:10px;resize:vertical;" placeholder="e.g. '로그인 화면', 'Galaxy S25 제품 상세', '설정 페이지', '채팅 화면'..."></textarea>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">2. Scenario Presets</div>
+          <div class="comp-palette">
+            <div class="comp-item" onclick="generateScenario('login')"><span class="comp-icon">&#128274;</span>Login</div>
+            <div class="comp-item" onclick="generateScenario('product')"><span class="comp-icon">&#128241;</span>Product</div>
+            <div class="comp-item" onclick="generateScenario('settings')"><span class="comp-icon">&#9881;</span>Settings</div>
+            <div class="comp-item" onclick="generateScenario('chat')"><span class="comp-icon">&#128172;</span>Chat</div>
+            <div class="comp-item" onclick="generateScenario('feed')"><span class="comp-icon">&#128240;</span>Feed</div>
+            <div class="comp-item" onclick="generateScenario('profile')"><span class="comp-icon">&#128100;</span>Profile</div>
+            <div class="comp-item" onclick="generateScenario('gallery')"><span class="comp-icon">&#127748;</span>Gallery</div>
+            <div class="comp-item" onclick="generateScenario('dashboard')"><span class="comp-icon">&#128202;</span>Dashboard</div>
+            <div class="comp-item" onclick="generateScenario('onboarding')"><span class="comp-icon">&#128640;</span>Onboarding</div>
+            <div class="comp-item" onclick="generateScenario('music')"><span class="comp-icon">&#127925;</span>Music Player</div>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">3. Reference URL</div>
+          <div style="display:flex;gap:6px;">
+            <input id="genUrl" type="url" style="flex:1;height:36px;border-radius:10px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:12px;padding:0 10px;" placeholder="https://samsung.com/...">
+            <button class="topbar-btn" onclick="generateFromUrl()" style="font-size:11px;padding:6px 10px;">Fetch</button>
+          </div>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">4. Generation Options</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);cursor:pointer;">
+              <input type="checkbox" id="genMotion" checked style="accent-color:var(--primary);"> Auto-assign motion
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);cursor:pointer;">
+              <input type="checkbox" id="genStagger" checked style="accent-color:var(--primary);"> Stagger entrance
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);cursor:pointer;">
+              <input type="checkbox" id="genGenStatic" checked style="accent-color:var(--primary);"> Show Gen/Static labels
+            </label>
+          </div>
+        </div>
+        <div class="panel-section">
+          <button class="topbar-btn primary" style="width:100%;padding:14px;font-size:14px;" onclick="generateFromPrompt()">&#10024; Generate Layout</button>
+        </div>
+        <div class="panel-section">
+          <div class="panel-label">5. Gen/Static Harmony</div>
+          <p style="font-size:11px;color:var(--text-3);line-height:1.5;margin-bottom:8px;">Gen = dynamically appearing (data-loaded, user-triggered). Static = always-present chrome (nav, app bar). Different motion curves assigned automatically.</p>
+          <div style="display:flex;gap:6px;">
+            <button class="topbar-btn" style="flex:1;font-size:11px;" onclick="analyzeHarmony()">&#128269; Analyze Harmony</button>
+            <button class="topbar-btn" style="flex:1;font-size:11px;" onclick="playSequence()">&#9654; Play Sequence</button>
+          </div>
+          <div id="harmonyResult" style="margin-top:10px;font-size:11px;color:var(--text-3);display:none;"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CANVAS -->
+  <div class="canvas-wrap">
+    <div class="canvas-frame" id="canvasFrame">
+      <div class="canvas-notch"></div>
+      <div class="canvas-inner" id="canvas">
+        <div class="canvas-empty" id="emptyState">
+          <div class="canvas-empty-icon">&#128640;</div>
+          <div style="font-size:15px; font-weight:600;">Drop components here</div>
+          <div style="font-size:12px;">Click any component from the sidebar</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// === STATE ===
+let selectedItems = new Set();
+let currentMotion = 'fadeIn';
+let currentEasing = 'cubic-bezier(0.22,0.25,0,1)';
+let currentDuration = 300;
+let colorTarget = 'bg';
+let itemCounter = 0;
+
+// === COMPONENT TEMPLATES ===
+const templates = {
+  'btn-contained': () => `<button class="oui-btn-contained" contenteditable="true">Button</button>`,
+  'btn-outlined': () => `<button class="oui-btn-outlined" contenteditable="true">Outlined</button>`,
+  'btn-flat': () => `<button class="oui-btn-flat" contenteditable="true">Text Button</button>`,
+  'fab': () => `<button class="oui-fab">+</button>`,
+  'switch': () => `<button class="oui-switch"></button>`,
+  'checkbox': () => `<div class="oui-checkbox">&#10003;</div>`,
+  'radio': () => `<div class="oui-radio"></div>`,
+  'chip': () => `<div class="oui-chip" contenteditable="true">Chip Label</div>`,
+  'input': () => `<input class="oui-input" type="text" placeholder="Text field" value="">`,
+  'search': () => `<input class="oui-search" type="text" placeholder="&#128269; Search">`,
+  'appbar': () => `<div class="oui-appbar"><span style="font-size:20px;cursor:pointer;">&#8592;</span><div class="oui-appbar-title" contenteditable="true">Title</div><span style="font-size:18px;">&#8942;</span></div>`,
+  'bottomnav': () => `<div class="oui-bottomnav"><div class="oui-bottomnav-item active"><span style="font-size:18px;">&#8962;</span>Home</div><div class="oui-bottomnav-item"><span style="font-size:18px;">&#128269;</span>Search</div><div class="oui-bottomnav-item"><span style="font-size:18px;">&#9829;</span>Fav</div><div class="oui-bottomnav-item"><span style="font-size:18px;">&#9786;</span>Profile</div></div>`,
+  'pill-tab': () => `<div class="oui-pill-tab"><div class="oui-pill-dot active">&#8962;</div><div class="oui-pill-dot">&#128269;</div><div class="oui-pill-dot">&#9634;</div><div class="oui-pill-dot">&#8942;</div></div>`,
+  'tab-bar': () => `<div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.08);"><div style="padding:12px 16px;font-size:14px;font-weight:600;border-bottom:2px solid var(--primary);color:var(--primary);" contenteditable="true">Tab 1</div><div style="padding:12px 16px;font-size:14px;color:var(--text-3);" contenteditable="true">Tab 2</div><div style="padding:12px 16px;font-size:14px;color:var(--text-3);" contenteditable="true">Tab 3</div></div>`,
+  'card': () => `<div class="oui-card"><div class="oui-card-title" contenteditable="true">Card Title</div><div class="oui-card-desc" contenteditable="true">Description text goes here.</div></div>`,
+  'list-item': () => `<div class="oui-list-item"><div class="oui-list-icon">&#9733;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">List Item</div><div class="oui-list-sub" contenteditable="true">Secondary text</div></div><span style="color:var(--text-3);">&#8250;</span></div>`,
+  'dialog': () => `<div class="oui-dialog"><div class="oui-dialog-title" contenteditable="true">Dialog Title</div><div class="oui-dialog-body" contenteditable="true">Are you sure you want to continue?</div><div class="oui-dialog-actions"><button class="oui-btn-flat" style="min-height:36px;font-size:13px;padding:0 12px;">Cancel</button><button class="oui-btn-contained" style="min-height:36px;font-size:13px;padding:0 16px;border-radius:12px;">Confirm</button></div></div>`,
+  'snackbar': () => `<div class="oui-snackbar"><span contenteditable="true">Message sent</span><button class="oui-snackbar-action">Undo</button></div>`,
+  'divider': () => `<div class="oui-divider"></div>`,
+  'badge': () => `<div class="oui-badge" contenteditable="true">3</div>`,
+};
+
+// === ADD COMPONENT ===
+function addComp(type) {
+  const canvas = document.getElementById('canvas');
+  const empty = document.getElementById('emptyState');
+  if (empty) empty.remove();
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'canvas-item';
+  wrapper.id = 'item-' + (++itemCounter);
+  wrapper.innerHTML = templates[type]() + `<button class="canvas-delete" onclick="removeItem(this.parentElement)">&times;</button>`;
+  wrapper.addEventListener('click', (e) => { if (!e.target.classList.contains('canvas-delete')) toggleSelect(wrapper, e); });
+  canvas.appendChild(wrapper);
+
+  // Entrance animation
+  wrapper.style.animation = `fadeIn 300ms cubic-bezier(0.2,0,0,1) forwards`;
+}
+
+// === SELECT / DESELECT ===
+function toggleSelect(el, e) {
+  if (e && !e.shiftKey) {
+    document.querySelectorAll('.canvas-item.selected').forEach(i => { if (i !== el) { i.classList.remove('selected'); selectedItems.delete(i.id); } });
+  }
+  el.classList.toggle('selected');
+  if (el.classList.contains('selected')) selectedItems.add(el.id);
+  else selectedItems.delete(el.id);
+}
+function selectAll() { document.querySelectorAll('.canvas-item').forEach(i => { i.classList.add('selected'); selectedItems.add(i.id); }); }
+function deselectAll() { document.querySelectorAll('.canvas-item').forEach(i => { i.classList.remove('selected'); selectedItems.delete(i.id); }); }
+function removeItem(el) { el.remove(); selectedItems.delete(el.id); }
+
+// === TABS ===
+function switchTab(idx, btn) {
+  document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-' + idx).classList.add('active');
+}
+
+// === DEVICE ===
+function setDevice(mode, btn) {
+  const frame = document.getElementById('canvasFrame');
+  document.querySelectorAll('.device-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (mode === 'desktop') frame.classList.add('desktop');
+  else frame.classList.remove('desktop');
+}
+
+// === THEME ===
+function toggleTheme() {
+  document.getElementById('canvasFrame').classList.toggle('light');
+}
+
+// === LAYOUT ===
+function setLayout(type, el) {
+  document.querySelectorAll('.layout-preset').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  const canvas = document.getElementById('canvas');
+  canvas.style.display = 'flex';
+  canvas.style.flexWrap = 'nowrap';
+  switch(type) {
+    case 'column': canvas.style.flexDirection = 'column'; canvas.style.display = 'flex'; break;
+    case 'two-col': canvas.style.display = 'grid'; canvas.style.gridTemplateColumns = '1fr 1fr'; break;
+    case 'grid': canvas.style.display = 'grid'; canvas.style.gridTemplateColumns = '1fr 1fr'; break;
+    case 'app': canvas.style.flexDirection = 'column'; canvas.style.display = 'flex'; break;
+    case 'hero': canvas.style.flexDirection = 'column'; canvas.style.display = 'flex'; canvas.style.alignItems = 'center'; canvas.style.justifyContent = 'center'; break;
+    case 'free': canvas.style.display = 'flex'; canvas.style.flexDirection = 'column'; break;
+  }
+}
+function setGap(v) { document.getElementById('canvas').style.gap = v + 'px'; document.getElementById('gapValue').textContent = v + 'px'; }
+function setPadding(v) { document.getElementById('canvas').style.padding = v + 'px'; document.getElementById('padValue').textContent = v + 'px'; }
+function setAlign(a, btn) {
+  document.querySelectorAll('.align-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('canvas').style.alignItems = a;
+}
+
+// === COLORS ===
+function setColorTarget(t, btn) {
+  colorTarget = t;
+  document.querySelectorAll('.color-target button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function applyColor(color) {
+  selectedItems.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const target = el.firstElementChild || el;
+    switch(colorTarget) {
+      case 'bg': target.style.background = color; break;
+      case 'text': target.style.color = color; break;
+      case 'border': target.style.border = '1.5px solid ' + color; break;
+    }
+  });
+}
+
+// === GROUPING ===
+function groupSelected() {
+  if (selectedItems.size < 2) return;
+  const canvas = document.getElementById('canvas');
+  const group = document.createElement('div');
+  group.className = 'canvas-item canvas-group';
+  group.id = 'item-' + (++itemCounter);
+  group.innerHTML = `<button class="canvas-delete" onclick="removeItem(this.parentElement)">&times;</button>`;
+  group.addEventListener('click', (e) => { if (!e.target.classList.contains('canvas-delete')) toggleSelect(group, e); });
+
+  const items = [];
+  selectedItems.forEach(id => { const el = document.getElementById(id); if (el) items.push(el); });
+  items.forEach(el => { el.classList.remove('selected'); selectedItems.delete(el.id); group.appendChild(el); });
+  canvas.appendChild(group);
+}
+function ungroupSelected() {
+  selectedItems.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.classList.contains('canvas-group')) {
+      const canvas = document.getElementById('canvas');
+      while (el.firstElementChild && !el.firstElementChild.classList.contains('canvas-delete')) {
+        canvas.appendChild(el.firstElementChild);
+      }
+      el.remove(); selectedItems.delete(id);
+    }
+  });
+}
+function setGroupRadius(v) {
+  document.getElementById('groupRadValue').textContent = v + 'px';
+  document.querySelectorAll('.canvas-group').forEach(g => g.style.borderRadius = v + 'px');
+}
+function setGroupPadding(v) {
+  document.getElementById('groupPadValue').textContent = v + 'px';
+  document.querySelectorAll('.canvas-group').forEach(g => g.style.padding = v + 'px');
+}
+
+// === MOTION ===
+function selectMotion(anim, el) {
+  currentMotion = anim;
+  document.querySelectorAll('#panel-4 .motion-grid:first-of-type .motion-item').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function selectEasing(el) {
+  currentEasing = el.dataset.ease;
+  el.parentElement.querySelectorAll('.motion-item').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function selectDur(ms, el) {
+  currentDuration = ms;
+  document.querySelectorAll('.dur-chip').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function previewMotion() {
+  selectedItems.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = `${currentMotion} ${currentDuration}ms ${currentEasing} forwards`;
+  });
+  // If nothing selected, animate all
+  if (selectedItems.size === 0) {
+    document.querySelectorAll('.canvas-item').forEach(el => {
+      el.style.animation = 'none';
+      void el.offsetWidth;
+      el.style.animation = `${currentMotion} ${currentDuration}ms ${currentEasing} forwards`;
+    });
+  }
+}
+
+// === CLEAR ===
+function clearCanvas() {
+  const canvas = document.getElementById('canvas');
+  canvas.innerHTML = `<div class="canvas-empty" id="emptyState"><div class="canvas-empty-icon">&#128640;</div><div style="font-size:15px;font-weight:600;">Drop components here</div><div style="font-size:12px;">Click any component from the sidebar</div></div>`;
+  selectedItems.clear();
+}
+
+// === EXPORT ===
+function exportHTML() {
+  const canvas = document.getElementById('canvas');
+  const clone = canvas.cloneNode(true);
+  // Remove UI helpers
+  clone.querySelectorAll('.canvas-delete, .canvas-empty').forEach(e => e.remove());
+  clone.querySelectorAll('.canvas-item').forEach(e => {
+    e.classList.remove('canvas-item', 'selected');
+    e.style.outline = '';
+    e.removeAttribute('id');
+  });
+  const isDark = !document.getElementById('canvasFrame').classList.contains('light');
+  const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>One UI 8.5 Export</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Inter',sans-serif; background:${isDark ? '#171717' : '#FCFCFC'}; color:${isDark ? '#FAFAFA' : '#252525'}; padding:16px; }
+</style>
+</head>
+<body>
+${clone.innerHTML}
+</body>
+</html>`;
+  const blob = new Blob([html], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'oneui-export.html';
+  a.click();
+}
+
+// =============================================
+// === GENERATE ENGINE ===
+// =============================================
+
+// Scenario templates: each defines components, their type (gen/static), layout, and motion
+const scenarios = {
+  login: {
+    name: 'Login Screen',
+    layout: 'column',
+    align: 'center',
+    gap: 16,
+    padding: 32,
+    components: [
+      { type: 'custom', role: 'static', html: '<div style="font-size:40px;text-align:center;margin:40px 0 8px;">&#128274;</div>' },
+      { type: 'custom', role: 'static', html: '<div style="font-size:24px;font-weight:700;text-align:center;margin-bottom:4px;" contenteditable="true">Welcome Back</div>' },
+      { type: 'custom', role: 'static', html: '<div style="font-size:13px;color:var(--text-3);text-align:center;margin-bottom:16px;" contenteditable="true">Sign in to your Samsung account</div>' },
+      { type: 'input', role: 'static', motion: 'fadeIn', delay: 0 },
+      { type: 'input', role: 'static', motion: 'fadeIn', delay: 60, placeholder: 'Password' },
+      { type: 'btn-contained', role: 'gen', motion: 'slideUp', delay: 120, text: 'Sign In' },
+      { type: 'btn-flat', role: 'gen', motion: 'fadeIn', delay: 180, text: 'Forgot password?' },
+      { type: 'divider', role: 'static', motion: 'fadeIn', delay: 200 },
+      { type: 'btn-outlined', role: 'gen', motion: 'slideUp', delay: 240, text: 'Create Account' },
+    ]
+  },
+  product: {
+    name: 'Product Detail',
+    layout: 'column',
+    align: 'stretch',
+    gap: 0,
+    padding: 0,
+    components: [
+      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Galaxy S25 Ultra' },
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 60, html: '<div style="width:100%;height:220px;background:linear-gradient(135deg,#0a0a2e,#192a56);border-radius:0;display:flex;align-items:center;justify-content:center;font-size:64px;">&#128241;</div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div style="padding:20px;"><div style="font-size:22px;font-weight:700;" contenteditable="true">Galaxy S25 Ultra</div><div style="font-size:14px;color:var(--text-2);margin-top:4px;" contenteditable="true">The ultimate Galaxy experience</div><div style="font-size:20px;font-weight:700;color:var(--primary);margin-top:12px;" contenteditable="true">$1,299.99</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 180, html: '<div style="padding:0 20px;display:flex;gap:8px;"><div style="flex:1;height:40px;border-radius:20px;border:1.5px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-2);">256GB</div><div style="flex:1;height:40px;border-radius:20px;border:1.5px solid var(--primary);background:var(--primary-10);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--primary);font-weight:600;">512GB</div><div style="flex:1;height:40px;border-radius:20px;border:1.5px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-2);">1TB</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 240, html: '<div style="padding:16px 20px;display:flex;gap:8px;"><button class="oui-btn-contained" style="flex:1;" contenteditable="true">Buy Now</button><button class="oui-btn-outlined" style="flex:1;" contenteditable="true">Add to Cart</button></div>' },
+      { type: 'divider', role: 'static', motion: 'fadeIn', delay: 260 },
+      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 300 },
+      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 360 },
+    ]
+  },
+  settings: {
+    name: 'Settings',
+    layout: 'column',
+    align: 'stretch',
+    gap: 0,
+    padding: 0,
+    components: [
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:20px 16px 8px;"><div style="font-size:28px;font-weight:700;" contenteditable="true">Settings</div><div style="font-size:12px;color:var(--text-3);margin-top:4px;">Manage your device</div></div>' },
+      { type: 'search', role: 'static', motion: 'fadeIn', delay: 60 },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div class="oui-list-item"><div class="oui-list-icon">&#128100;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Account</div><div class="oui-list-sub">Samsung account, Google</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 160, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(46,125,50,0.15);color:#2E7D32;">&#128274;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Security</div><div class="oui-list-sub">Screen lock, biometrics</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 220, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(3,129,254,0.15);color:#0381FE;">&#128187;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Display</div><div class="oui-list-sub">Brightness, Dark mode</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 280, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(249,168,37,0.15);color:#F9A825;">&#128276;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Notifications</div><div class="oui-list-sub">App alerts, Do not disturb</div></div><button class="oui-switch" style="width:44px;height:26px;flex-shrink:0;"></button></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 340, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(171,71,188,0.15);color:#AB47BC;">&#127925;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Sound</div><div class="oui-list-sub">Volume, Ringtone</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 400, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(100,233,227,0.15);color:#64e9e3;">&#9881;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">General</div><div class="oui-list-sub">Language, Reset</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
+    ]
+  },
+  chat: {
+    name: 'Chat Screen',
+    layout: 'column',
+    align: 'stretch',
+    gap: 0,
+    padding: 0,
+    components: [
+      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Messages' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 60, html: '<div style="display:flex;gap:8px;padding:12px 16px;align-items:flex-end;"><div style="width:28px;height:28px;border-radius:50%;background:#3E91FF;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;">J</div><div style="background:var(--surface-2);padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:70%;font-size:14px;" contenteditable="true">Hey! Are you coming to the meeting?</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div style="display:flex;gap:8px;padding:12px 16px;justify-content:flex-end;"><div style="background:var(--primary);color:#fff;padding:10px 14px;border-radius:18px 18px 4px 18px;max-width:70%;font-size:14px;" contenteditable="true">Yes, I\'ll be there in 10 minutes!</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 180, html: '<div style="display:flex;gap:8px;padding:12px 16px;align-items:flex-end;"><div style="width:28px;height:28px;border-radius:50%;background:#3E91FF;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;">J</div><div style="background:var(--surface-2);padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:70%;font-size:14px;" contenteditable="true">Perfect! See you soon 👍</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 240, html: '<div style="text-align:center;padding:8px;font-size:11px;color:var(--text-3);">Today 2:34 PM</div>' },
+      { type: 'custom', role: 'static', motion: 'slideUp', delay: 300, html: '<div style="display:flex;gap:8px;padding:12px 16px;margin-top:auto;border-top:0.5px solid rgba(255,255,255,0.06);"><input class="oui-search" placeholder="Type a message" style="flex:1;"><button class="oui-fab" style="width:40px;height:40px;font-size:16px;box-shadow:none;">&#8593;</button></div>' },
+    ]
+  },
+  feed: {
+    name: 'Content Feed',
+    layout: 'column',
+    align: 'stretch',
+    gap: 12,
+    padding: 12,
+    components: [
+      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Discover' },
+      { type: 'search', role: 'static', motion: 'fadeIn', delay: 60 },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;"><div class="oui-chip" contenteditable="true">All</div><div class="oui-chip" style="background:transparent;border:1px solid var(--divider);color:var(--text-2);" contenteditable="true">Tech</div><div class="oui-chip" style="background:transparent;border:1px solid var(--divider);color:var(--text-2);" contenteditable="true">Design</div><div class="oui-chip" style="background:transparent;border:1px solid var(--divider);color:var(--text-2);" contenteditable="true">AI</div></div>' },
+      { type: 'card', role: 'gen', motion: 'slideUp', delay: 160 },
+      { type: 'card', role: 'gen', motion: 'slideUp', delay: 220 },
+      { type: 'card', role: 'gen', motion: 'slideUp', delay: 280 },
+    ]
+  },
+  profile: {
+    name: 'User Profile',
+    layout: 'column',
+    align: 'center',
+    gap: 8,
+    padding: 16,
+    components: [
+      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Profile' },
+      { type: 'custom', role: 'static', motion: 'scaleUp', delay: 60, html: '<div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#3E91FF,#64e9e3);margin:16px auto 8px;display:flex;align-items:center;justify-content:center;font-size:32px;color:#fff;">K</div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 120, html: '<div style="text-align:center;margin-bottom:12px;"><div style="font-size:20px;font-weight:700;" contenteditable="true">Kyu Ha Shim</div><div style="font-size:13px;color:var(--text-3);">kyu@samsung.com</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 180, html: '<div style="display:flex;gap:24px;justify-content:center;margin-bottom:12px;"><div style="text-align:center;"><div style="font-size:20px;font-weight:700;">128</div><div style="font-size:11px;color:var(--text-3);">Projects</div></div><div style="text-align:center;"><div style="font-size:20px;font-weight:700;">56</div><div style="font-size:11px;color:var(--text-3);">Reviews</div></div><div style="text-align:center;"><div style="font-size:20px;font-weight:700;">3.2K</div><div style="font-size:11px;color:var(--text-3);">Followers</div></div></div>' },
+      { type: 'btn-contained', role: 'gen', motion: 'slideUp', delay: 220, text: 'Edit Profile' },
+      { type: 'divider', role: 'static', motion: 'fadeIn', delay: 260 },
+      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 300 },
+      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 360 },
+    ]
+  },
+  gallery: {
+    name: 'Photo Gallery',
+    layout: 'column',
+    align: 'stretch',
+    gap: 0,
+    padding: 0,
+    components: [
+      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Gallery' },
+      { type: 'tab-bar', role: 'static', motion: 'fadeIn', delay: 60 },
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 120, html: '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px;padding:2px;"><div style="aspect-ratio:1;background:linear-gradient(135deg,#1a3a5c,#2a5a8c);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#3a1a5c,#5a2a8c);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#5c3a1a,#8c5a2a);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#1a5c3a,#2a8c5a);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#5c1a3a,#8c2a5a);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#3a5c1a,#5a8c2a);border-radius:4px;"></div></div>' },
+      { type: 'pill-tab', role: 'static', motion: 'slideUp', delay: 200 },
+    ]
+  },
+  dashboard: {
+    name: 'Dashboard',
+    layout: 'column',
+    align: 'stretch',
+    gap: 12,
+    padding: 16,
+    components: [
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:8px 0;"><div style="font-size:24px;font-weight:700;" contenteditable="true">Dashboard</div><div style="font-size:12px;color:var(--text-3);">April 11, 2026</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 60, html: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div class="oui-card" style="padding:16px;text-align:center;"><div style="font-size:24px;font-weight:700;color:var(--primary);">2.4K</div><div style="font-size:11px;color:var(--text-3);margin-top:2px;">Active Users</div></div><div class="oui-card" style="padding:16px;text-align:center;"><div style="font-size:24px;font-weight:700;color:#2ecc71;">98%</div><div style="font-size:11px;color:var(--text-3);margin-top:2px;">Uptime</div></div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div class="oui-card"><div style="font-size:14px;font-weight:600;margin-bottom:12px;">Activity</div><div style="display:flex;align-items:flex-end;gap:4px;height:80px;"><div style="flex:1;background:rgba(3,129,254,0.3);border-radius:4px 4px 0 0;height:40%;"></div><div style="flex:1;background:rgba(3,129,254,0.4);border-radius:4px 4px 0 0;height:65%;"></div><div style="flex:1;background:rgba(3,129,254,0.5);border-radius:4px 4px 0 0;height:45%;"></div><div style="flex:1;background:rgba(3,129,254,0.6);border-radius:4px 4px 0 0;height:80%;"></div><div style="flex:1;background:var(--primary);border-radius:4px 4px 0 0;height:100%;"></div><div style="flex:1;background:rgba(3,129,254,0.5);border-radius:4px 4px 0 0;height:70%;"></div><div style="flex:1;background:rgba(3,129,254,0.3);border-radius:4px 4px 0 0;height:35%;"></div></div></div>' },
+      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 180 },
+      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 240 },
+    ]
+  },
+  onboarding: {
+    name: 'Onboarding',
+    layout: 'column',
+    align: 'center',
+    gap: 16,
+    padding: 32,
+    components: [
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 0, html: '<div style="width:120px;height:120px;border-radius:50%;background:linear-gradient(135deg,#64e9e3,#9ffac7);margin:40px auto 0;display:flex;align-items:center;justify-content:center;font-size:48px;">&#10024;</div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div style="text-align:center;margin-top:24px;"><div style="font-size:24px;font-weight:700;" contenteditable="true">Welcome to Galaxy</div><div style="font-size:14px;color:var(--text-2);margin-top:8px;line-height:1.6;max-width:280px;" contenteditable="true">Experience the next level of mobile intelligence with Galaxy AI.</div></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 200, html: '<div style="display:flex;gap:6px;justify-content:center;margin:16px 0;"><div style="width:24px;height:6px;border-radius:3px;background:var(--primary);"></div><div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.2);"></div><div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.2);"></div></div>' },
+      { type: 'btn-contained', role: 'gen', motion: 'slideUp', delay: 260, text: 'Get Started' },
+      { type: 'btn-flat', role: 'gen', motion: 'fadeIn', delay: 320, text: 'Skip' },
+    ]
+  },
+  music: {
+    name: 'Music Player',
+    layout: 'column',
+    align: 'center',
+    gap: 8,
+    padding: 24,
+    components: [
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="font-size:12px;color:var(--text-3);text-align:center;margin-top:16px;">NOW PLAYING</div>' },
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 60, html: '<div style="width:240px;height:240px;border-radius:20px;background:linear-gradient(135deg,#1a0a3e,#3a1a6e);margin:16px auto;display:flex;align-items:center;justify-content:center;font-size:64px;">&#127925;</div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;" contenteditable="true">Dynamite</div><div style="font-size:14px;color:var(--text-3);margin-top:2px;" contenteditable="true">BTS</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 180, html: '<div style="width:100%;margin:16px 0 8px;"><div style="height:4px;background:rgba(255,255,255,0.1);border-radius:2px;"><div style="width:65%;height:100%;background:var(--primary);border-radius:2px;"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);margin-top:4px;"><span>2:08</span><span>3:19</span></div></div>' },
+      { type: 'custom', role: 'static', motion: 'slideUp', delay: 220, html: '<div style="display:flex;align-items:center;justify-content:center;gap:32px;margin:8px 0;"><span style="font-size:24px;color:var(--text-2);cursor:pointer;">&#9198;</span><button class="oui-fab" style="width:64px;height:64px;font-size:28px;">&#9654;</button><span style="font-size:24px;color:var(--text-2);cursor:pointer;">&#9197;</span></div>' },
+    ]
+  },
+};
+
+// Prompt-to-scenario mapping
+const promptMap = {
+  'login': 'login', 'sign in': 'login', 'signin': 'login', '로그인': 'login', '로그 인': 'login', '회원가입': 'login',
+  'product': 'product', 'detail': 'product', '제품': 'product', '상세': 'product', '상품': 'product', 'galaxy': 'product',
+  'settings': 'settings', 'setting': 'settings', '설정': 'settings', '환경설정': 'settings',
+  'chat': 'chat', 'message': 'chat', '채팅': 'chat', '메시지': 'chat', '대화': 'chat',
+  'feed': 'feed', 'news': 'feed', '피드': 'feed', '뉴스': 'feed', '탐색': 'feed', 'discover': 'feed',
+  'profile': 'profile', '프로필': 'profile', '마이페이지': 'profile', 'my page': 'profile',
+  'gallery': 'gallery', 'photo': 'gallery', '갤러리': 'gallery', '사진': 'gallery', '앨범': 'gallery',
+  'dashboard': 'dashboard', '대시보드': 'dashboard', '통계': 'dashboard', 'stats': 'dashboard', 'analytics': 'dashboard',
+  'onboarding': 'onboarding', 'welcome': 'onboarding', '온보딩': 'onboarding', '웰컴': 'onboarding', '시작': 'onboarding',
+  'music': 'music', 'player': 'music', '음악': 'music', '플레이어': 'music',
+};
+
+function generateScenario(scenarioKey) {
+  const scenario = scenarios[scenarioKey];
+  if (!scenario) return;
+  clearCanvas();
+  const canvas = document.getElementById('canvas');
+  canvas.style.display = 'flex';
+  canvas.style.flexDirection = 'column';
+  canvas.style.alignItems = scenario.align || 'stretch';
+  canvas.style.gap = (scenario.gap || 8) + 'px';
+  canvas.style.padding = (scenario.padding || 16) + 'px';
+
+  const useMotion = document.getElementById('genMotion').checked;
+  const useStagger = document.getElementById('genStagger').checked;
+  const showLabels = document.getElementById('genGenStatic').checked;
+
+  scenario.components.forEach((comp, idx) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'canvas-item';
+    wrapper.id = 'item-' + (++itemCounter);
+    wrapper.dataset.role = comp.role;
+
+    // Render content
+    if (comp.type === 'custom') {
+      wrapper.innerHTML = comp.html;
+    } else {
+      let html = templates[comp.type]();
+      wrapper.innerHTML = html;
+      // Override text if specified
+      if (comp.text) {
+        const editable = wrapper.querySelector('[contenteditable], button, .oui-appbar-title');
+        if (editable) editable.textContent = comp.text;
+      }
+      if (comp.placeholder) {
+        const input = wrapper.querySelector('input');
+        if (input) input.placeholder = comp.placeholder;
+      }
+    }
+
+    // Add Gen/Static label
+    if (showLabels) {
+      const label = document.createElement('div');
+      label.style.cssText = `position:absolute;top:-6px;left:8px;font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;z-index:5;pointer-events:none;text-transform:uppercase;letter-spacing:0.5px;`;
+      if (comp.role === 'gen') {
+        label.style.background = 'rgba(100,233,227,0.2)';
+        label.style.color = '#64e9e3';
+        label.textContent = 'GEN';
+      } else {
+        label.style.background = 'rgba(255,255,255,0.1)';
+        label.style.color = 'rgba(255,255,255,0.4)';
+        label.textContent = 'STATIC';
+      }
+      wrapper.style.position = 'relative';
+      wrapper.appendChild(label);
+    }
+
+    // Add delete button
+    const del = document.createElement('button');
+    del.className = 'canvas-delete';
+    del.innerHTML = '&times;';
+    del.onclick = () => removeItem(wrapper);
+    wrapper.appendChild(del);
+
+    // Motion
+    if (useMotion && comp.motion) {
+      const delay = useStagger ? (comp.delay || idx * 60) : 0;
+      const easing = comp.role === 'gen' ? 'cubic-bezier(0.2,0,0,1)' : 'cubic-bezier(0.22,0.25,0,1)';
+      const dur = comp.role === 'gen' ? 400 : 300;
+      wrapper.style.opacity = '0';
+      setTimeout(() => {
+        wrapper.style.animation = `${comp.motion} ${dur}ms ${easing} forwards`;
+      }, delay);
+    }
+
+    wrapper.addEventListener('click', (e) => { if (!e.target.classList.contains('canvas-delete')) toggleSelect(wrapper, e); });
+    canvas.appendChild(wrapper);
+  });
+}
+
+function generateFromPrompt() {
+  const prompt = document.getElementById('genPrompt').value.toLowerCase().trim();
+  if (!prompt) { generateScenario('login'); return; }
+  // Match prompt to scenario
+  let matched = null;
+  for (const [keyword, scenario] of Object.entries(promptMap)) {
+    if (prompt.includes(keyword)) { matched = scenario; break; }
+  }
+  if (matched) {
+    generateScenario(matched);
+  } else {
+    // Default: generate a generic app screen
+    generateScenario('feed');
+  }
+}
+
+function generateFromUrl() {
+  const url = document.getElementById('genUrl').value.trim();
+  if (!url) return;
+  // Detect scenario from URL patterns
+  if (url.includes('login') || url.includes('sign')) generateScenario('login');
+  else if (url.includes('product') || url.includes('galaxy') || url.includes('smartphone')) generateScenario('product');
+  else if (url.includes('setting')) generateScenario('settings');
+  else if (url.includes('message') || url.includes('chat')) generateScenario('chat');
+  else if (url.includes('profile') || url.includes('account')) generateScenario('profile');
+  else if (url.includes('gallery') || url.includes('photo')) generateScenario('gallery');
+  else if (url.includes('music') || url.includes('player')) generateScenario('music');
+  else generateScenario('product'); // Default for samsung.com
+}
+
+// === GEN/STATIC HARMONY ANALYSIS ===
+function analyzeHarmony() {
+  const items = document.querySelectorAll('.canvas-item[data-role]');
+  if (items.length === 0) {
+    showHarmony('No components with Gen/Static roles. Generate a layout first.', 'warn');
+    return;
+  }
+  let genCount = 0, staticCount = 0;
+  items.forEach(i => { if (i.dataset.role === 'gen') genCount++; else staticCount++; });
+  const ratio = genCount / (genCount + staticCount);
+
+  let report = `<div style="padding:10px;background:var(--surface);border-radius:10px;border:1px solid var(--divider);">`;
+  report += `<div style="font-weight:600;margin-bottom:6px;">Harmony Report</div>`;
+  report += `<div style="display:flex;gap:12px;margin-bottom:8px;">`;
+  report += `<span style="color:#64e9e3;">GEN: ${genCount}</span>`;
+  report += `<span style="color:var(--text-3);">STATIC: ${staticCount}</span>`;
+  report += `<span>Ratio: ${Math.round(ratio*100)}% dynamic</span>`;
+  report += `</div>`;
+
+  // Harmony rules
+  const issues = [];
+  if (ratio > 0.8) issues.push('Too many Gen components \u2014 screen may feel unstable. Add more Static anchors (App Bar, Bottom Nav).');
+  if (ratio < 0.2) issues.push('Too few Gen components \u2014 screen feels rigid. Add dynamic content (Cards, Lists, Chips).');
+  if (genCount > 0 && staticCount === 0) issues.push('No Static components \u2014 user has no fixed reference point. Add navigation chrome.');
+
+  // Motion harmony check
+  let hasAppBar = false, hasBottomNav = false;
+  items.forEach(i => {
+    const inner = i.innerHTML;
+    if (inner.includes('oui-appbar')) hasAppBar = true;
+    if (inner.includes('oui-bottomnav') || inner.includes('oui-pill-tab')) hasBottomNav = true;
+  });
+  if (genCount > 3 && !hasAppBar) issues.push('Multiple Gen components without App Bar \u2014 add a Static top anchor for spatial continuity.');
+  if (genCount > 3 && !hasBottomNav) issues.push('Consider adding a Bottom Nav or Pill Tab as a Static anchor below.');
+
+  if (issues.length === 0) {
+    report += `<div style="color:#2ecc71;">&#10003; Good harmony. Static anchors frame the Gen content well.</div>`;
+    report += `<div style="margin-top:6px;font-size:10px;color:var(--text-3);">Motion: Gen components use Emphasized (0.2,0,0,1) with stagger. Static components use Basic Path (0.22,0.25,0,1). This creates visual hierarchy \u2014 static elements settle first, gen content flows in after.</div>`;
+  } else {
+    issues.forEach(issue => {
+      report += `<div style="color:#F9A825;margin-bottom:4px;">&#9888; ${issue}</div>`;
+    });
+  }
+  report += `</div>`;
+  showHarmony(report);
+}
+
+function showHarmony(html) {
+  const el = document.getElementById('harmonyResult');
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+// === PLAY FULL SEQUENCE ===
+function playSequence() {
+  const items = document.querySelectorAll('.canvas-item[data-role]');
+  if (items.length === 0) return;
+
+  // Reset all
+  items.forEach(i => { i.style.animation = 'none'; i.style.opacity = '0'; });
+
+  // Play static first, then gen
+  const statics = Array.from(items).filter(i => i.dataset.role === 'static');
+  const gens = Array.from(items).filter(i => i.dataset.role === 'gen');
+
+  // Phase 1: Static elements (Basic Path, fast)
+  statics.forEach((el, idx) => {
+    setTimeout(() => {
+      el.style.animation = `fadeIn 250ms cubic-bezier(0.22,0.25,0,1) forwards`;
+    }, idx * 40);
+  });
+
+  // Phase 2: Gen elements (Emphasized, staggered, after statics settle)
+  const genStartDelay = statics.length * 40 + 200;
+  gens.forEach((el, idx) => {
+    setTimeout(() => {
+      el.style.animation = `slideUp 400ms cubic-bezier(0.2,0,0,1) forwards`;
+    }, genStartDelay + idx * 60);
+  });
+}
+</script>
+</body>
+</html>
