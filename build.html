@@ -60,7 +60,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 
 /* === SIDEBAR === */
 .sidebar {
-  width:300px; flex-shrink:0; background:var(--sidebar-bg);
+  width:390px; flex-shrink:0; background:var(--sidebar-bg);
   border-right:1px solid var(--divider); display:flex; flex-direction:column; overflow:hidden;
 }
 .sidebar-tabs {
@@ -181,6 +181,28 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .canvas-frame.desktop .canvas-inner { padding:16px; }
 .canvas-inner::-webkit-scrollbar { width:3px; }
 .canvas-inner::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.1); border-radius:2px; }
+
+/* === BRAND BUTTONS === */
+.brand-btn {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 12px; border-radius:999px; border:1px solid var(--divider);
+  background:var(--surface); color:var(--text-2); font-family:var(--font);
+  font-size:11px; font-weight:600; cursor:pointer; transition:all 0.15s;
+  white-space:nowrap;
+}
+.brand-btn:hover { border-color:var(--bc, var(--primary)); color:var(--text); }
+.brand-btn.active { border-color:var(--bc, var(--primary)); background:color-mix(in srgb, var(--bc, var(--primary)) 15%, transparent); color:var(--text); }
+.brand-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+
+/* === COMPACT SCENARIO BUTTONS === */
+.scene-btn {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:2px; padding:10px 4px; border-radius:10px; border:1px solid var(--divider);
+  background:var(--surface); color:var(--text-2); font-family:var(--font);
+  font-size:16px; cursor:pointer; transition:all 0.15s; line-height:1;
+}
+.scene-btn span { font-size:9px; font-weight:500; }
+.scene-btn:hover { border-color:var(--primary); color:var(--primary); background:var(--primary-10); }
 
 /* === CANVAS ITEMS === */
 .canvas-item {
@@ -601,58 +623,85 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
       </div>
 
       <!-- PANEL 5: GENERATE -->
+      <!-- PANEL 5: GENERATE (Redesigned) -->
       <div class="panel" id="panel-5">
-        <div class="panel-section">
-          <div class="panel-label">1. Prompt</div>
-          <textarea id="genPrompt" style="width:100%;height:80px;border-radius:12px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:13px;padding:10px;resize:vertical;" placeholder="e.g. '로그인 화면', 'Galaxy S25 제품 상세', '설정 페이지', '채팅 화면'..."></textarea>
-        </div>
-        <div class="panel-section">
-          <div class="panel-label">2. Scenario Presets</div>
-          <div class="comp-palette">
-            <div class="comp-item" onclick="generateScenario('login')"><span class="comp-icon">&#128274;</span>Login</div>
-            <div class="comp-item" onclick="generateScenario('product')"><span class="comp-icon">&#128241;</span>Product</div>
-            <div class="comp-item" onclick="generateScenario('settings')"><span class="comp-icon">&#9881;</span>Settings</div>
-            <div class="comp-item" onclick="generateScenario('chat')"><span class="comp-icon">&#128172;</span>Chat</div>
-            <div class="comp-item" onclick="generateScenario('feed')"><span class="comp-icon">&#128240;</span>Feed</div>
-            <div class="comp-item" onclick="generateScenario('profile')"><span class="comp-icon">&#128100;</span>Profile</div>
-            <div class="comp-item" onclick="generateScenario('gallery')"><span class="comp-icon">&#127748;</span>Gallery</div>
-            <div class="comp-item" onclick="generateScenario('dashboard')"><span class="comp-icon">&#128202;</span>Dashboard</div>
-            <div class="comp-item" onclick="generateScenario('onboarding')"><span class="comp-icon">&#128640;</span>Onboarding</div>
-            <div class="comp-item" onclick="generateScenario('music')"><span class="comp-icon">&#127925;</span>Music Player</div>
+        <!-- BRAND STYLE SELECTOR — always visible at top -->
+        <div style="margin-bottom:14px;">
+          <div class="panel-label">Design System</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="brand-btn active" onclick="setBrand('samsung',this)" data-brand="samsung" style="--bc:#1428A0;">
+              <span class="brand-dot" style="background:#1428A0;"></span>Samsung
+            </button>
+            <button class="brand-btn" onclick="setBrand('apple',this)" data-brand="apple" style="--bc:#000;">
+              <span class="brand-dot" style="background:#000;border:1px solid rgba(255,255,255,0.3);"></span>Apple
+            </button>
+            <button class="brand-btn" onclick="setBrand('google',this)" data-brand="google" style="--bc:#4285F4;">
+              <span class="brand-dot" style="background:conic-gradient(#4285F4 0deg 90deg, #EA4335 90deg 180deg, #FBBC05 180deg 270deg, #34A853 270deg 360deg);"></span>Google
+            </button>
+            <button class="brand-btn" onclick="setBrand('huawei',this)" data-brand="huawei" style="--bc:#CF0A2C;">
+              <span class="brand-dot" style="background:#CF0A2C;"></span>Huawei
+            </button>
+            <button class="brand-btn" onclick="setBrand('meta',this)" data-brand="meta" style="--bc:#0668E1;">
+              <span class="brand-dot" style="background:linear-gradient(135deg,#0668E1,#17B5F5);"></span>Meta
+            </button>
           </div>
         </div>
-        <div class="panel-section">
-          <div class="panel-label">3. Reference URL</div>
+
+        <!-- PROMPT + GENERATE — compact, always visible -->
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;gap:6px;align-items:flex-end;">
+            <div style="flex:1;">
+              <input id="genPrompt" type="text" style="width:100%;height:40px;border-radius:12px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:13px;padding:0 12px;" placeholder="로그인 화면, 제품 상세, 채팅...">
+            </div>
+            <button class="topbar-btn primary" style="height:40px;padding:0 18px;font-size:13px;white-space:nowrap;" onclick="generateFromPrompt()">&#10024; Generate</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <input id="genUrl" type="url" style="flex:1;height:32px;border-radius:8px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:11px;padding:0 10px;" placeholder="Reference URL (optional)">
+            <button class="topbar-btn" onclick="generateFromUrl()" style="font-size:10px;padding:4px 10px;height:32px;">Fetch</button>
+          </div>
+        </div>
+
+        <!-- SCENARIOS — compact 5-column grid -->
+        <div style="margin-bottom:14px;">
+          <div class="panel-label">Scenarios</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;">
+            <button class="scene-btn" onclick="generateScenario('login')">&#128274;<br><span>Login</span></button>
+            <button class="scene-btn" onclick="generateScenario('product')">&#128241;<br><span>Product</span></button>
+            <button class="scene-btn" onclick="generateScenario('settings')">&#9881;<br><span>Settings</span></button>
+            <button class="scene-btn" onclick="generateScenario('chat')">&#128172;<br><span>Chat</span></button>
+            <button class="scene-btn" onclick="generateScenario('feed')">&#128240;<br><span>Feed</span></button>
+            <button class="scene-btn" onclick="generateScenario('profile')">&#128100;<br><span>Profile</span></button>
+            <button class="scene-btn" onclick="generateScenario('gallery')">&#127748;<br><span>Gallery</span></button>
+            <button class="scene-btn" onclick="generateScenario('dashboard')">&#128202;<br><span>Dash</span></button>
+            <button class="scene-btn" onclick="generateScenario('onboarding')">&#128640;<br><span>Onboard</span></button>
+            <button class="scene-btn" onclick="generateScenario('music')">&#127925;<br><span>Music</span></button>
+          </div>
+        </div>
+
+        <!-- OPTIONS — horizontal compact -->
+        <div style="margin-bottom:14px;">
+          <div class="panel-label">Options</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-2);cursor:pointer;">
+              <input type="checkbox" id="genMotion" checked style="accent-color:var(--primary);width:14px;height:14px;"> Motion
+            </label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-2);cursor:pointer;">
+              <input type="checkbox" id="genStagger" checked style="accent-color:var(--primary);width:14px;height:14px;"> Stagger
+            </label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-2);cursor:pointer;">
+              <input type="checkbox" id="genGenStatic" checked style="accent-color:var(--primary);width:14px;height:14px;"> Gen/Static
+            </label>
+          </div>
+        </div>
+
+        <!-- HARMONY — compact row -->
+        <div style="margin-bottom:14px;">
+          <div class="panel-label">Harmony Analysis</div>
           <div style="display:flex;gap:6px;">
-            <input id="genUrl" type="url" style="flex:1;height:36px;border-radius:10px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:12px;padding:0 10px;" placeholder="https://samsung.com/...">
-            <button class="topbar-btn" onclick="generateFromUrl()" style="font-size:11px;padding:6px 10px;">Fetch</button>
+            <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;" onclick="analyzeHarmony()">&#128269; Analyze</button>
+            <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;" onclick="playSequence()">&#9654; Play Sequence</button>
           </div>
-        </div>
-        <div class="panel-section">
-          <div class="panel-label">4. Generation Options</div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);cursor:pointer;">
-              <input type="checkbox" id="genMotion" checked style="accent-color:var(--primary);"> Auto-assign motion
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);cursor:pointer;">
-              <input type="checkbox" id="genStagger" checked style="accent-color:var(--primary);"> Stagger entrance
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);cursor:pointer;">
-              <input type="checkbox" id="genGenStatic" checked style="accent-color:var(--primary);"> Show Gen/Static labels
-            </label>
-          </div>
-        </div>
-        <div class="panel-section">
-          <button class="topbar-btn primary" style="width:100%;padding:14px;font-size:14px;" onclick="generateFromPrompt()">&#10024; Generate Layout</button>
-        </div>
-        <div class="panel-section">
-          <div class="panel-label">5. Gen/Static Harmony</div>
-          <p style="font-size:11px;color:var(--text-3);line-height:1.5;margin-bottom:8px;">Gen = dynamically appearing (data-loaded, user-triggered). Static = always-present chrome (nav, app bar). Different motion curves assigned automatically.</p>
-          <div style="display:flex;gap:6px;">
-            <button class="topbar-btn" style="flex:1;font-size:11px;" onclick="analyzeHarmony()">&#128269; Analyze Harmony</button>
-            <button class="topbar-btn" style="flex:1;font-size:11px;" onclick="playSequence()">&#9654; Play Sequence</button>
-          </div>
-          <div id="harmonyResult" style="margin-top:10px;font-size:11px;color:var(--text-3);display:none;"></div>
+          <div id="harmonyResult" style="margin-top:8px;font-size:11px;color:var(--text-3);display:none;"></div>
         </div>
       </div>
 
@@ -678,6 +727,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 // === STATE ===
 let selectedItems = new Set();
 let currentMotion = 'fadeIn';
+let currentBrand = 'samsung';
 let currentEasing = 'cubic-bezier(0.22,0.25,0,1)';
 let currentDuration = 300;
 let colorTarget = 'bg';
@@ -1278,6 +1328,137 @@ function playSequence() {
     }, genStartDelay + idx * 60);
   });
 }
+
+// =============================================
+// === BRAND THEMES ===
+// =============================================
+const brandThemes = {
+  samsung: {
+    name: 'Samsung One UI 8.5',
+    primary: '#0381FE', accent: '#3E91FF', bg: '#171717', surface: '#1a1a1a',
+    text: '#FAFAFA', text2: 'rgba(255,255,255,0.6)',
+    radius: { btn: '18px', card: '26px', pill: '999px', input: '18px' },
+    easing: 'cubic-bezier(0.22,0.25,0,1)', font: "'Inter',sans-serif",
+    btnStyle: 'background:#0072DE;color:#FAFAFA;border:none;',
+    cardStyle: 'background:#222;border:1px solid rgba(255,255,255,0.06);',
+    navStyle: 'background:rgba(255,255,255,0.08);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.12);',
+  },
+  apple: {
+    name: 'Apple iOS / Liquid Glass',
+    primary: '#007AFF', accent: '#5856D6', bg: '#000000', surface: '#1C1C1E',
+    text: '#FFFFFF', text2: 'rgba(255,255,255,0.6)',
+    radius: { btn: '12px', card: '16px', pill: '999px', input: '10px' },
+    easing: 'cubic-bezier(0.25,0.1,0.25,1)', font: "-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",
+    btnStyle: 'background:#007AFF;color:#fff;border:none;',
+    cardStyle: 'background:rgba(255,255,255,0.08);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.15);',
+    navStyle: 'background:rgba(255,255,255,0.12);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.2);',
+  },
+  google: {
+    name: 'Google Material You',
+    primary: '#4285F4', accent: '#8AB4F8', bg: '#1F1F1F', surface: '#2D2D2D',
+    text: '#E3E3E3', text2: 'rgba(255,255,255,0.6)',
+    radius: { btn: '20px', card: '16px', pill: '999px', input: '16px' },
+    easing: 'cubic-bezier(0.2,0,0,1)', font: "'Google Sans','Roboto',sans-serif",
+    btnStyle: 'background:#D3E3FD;color:#001D35;border:none;',
+    cardStyle: 'background:#2D2D2D;border:1px solid rgba(255,255,255,0.08);',
+    navStyle: 'background:#2D2D2D;border:none;',
+  },
+  huawei: {
+    name: 'Huawei HarmonyOS',
+    primary: '#CF0A2C', accent: '#E53935', bg: '#121212', surface: '#1E1E1E',
+    text: '#FFFFFF', text2: 'rgba(255,255,255,0.55)',
+    radius: { btn: '24px', card: '20px', pill: '999px', input: '12px' },
+    easing: 'cubic-bezier(0.4,0,0.2,1)', font: "'HarmonyOS Sans','Noto Sans SC',sans-serif",
+    btnStyle: 'background:#CF0A2C;color:#fff;border:none;',
+    cardStyle: 'background:#1E1E1E;border:1px solid rgba(255,255,255,0.06);',
+    navStyle: 'background:#1E1E1E;border-top:0.5px solid rgba(255,255,255,0.08);',
+  },
+  meta: {
+    name: 'Meta Design System',
+    primary: '#0668E1', accent: '#17B5F5', bg: '#18191A', surface: '#242526',
+    text: '#E4E6EB', text2: 'rgba(255,255,255,0.55)',
+    radius: { btn: '8px', card: '8px', pill: '999px', input: '8px' },
+    easing: 'cubic-bezier(0.1,0.9,0.2,1)', font: "'Segoe UI','Helvetica Neue',sans-serif",
+    btnStyle: 'background:#0668E1;color:#fff;border:none;',
+    cardStyle: 'background:#242526;border:1px solid rgba(255,255,255,0.05);',
+    navStyle: 'background:#242526;border-top:1px solid rgba(255,255,255,0.05);',
+  },
+};
+
+function setBrand(brand, btn) {
+  currentBrand = brand;
+  document.querySelectorAll('.brand-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  // Apply brand theme to canvas
+  const theme = brandThemes[brand];
+  const frame = document.getElementById('canvasFrame');
+  frame.style.background = theme.bg;
+  frame.style.fontFamily = theme.font;
+
+  // Update CSS custom properties on canvas
+  const canvas = document.getElementById('canvas');
+  canvas.style.setProperty('--brand-primary', theme.primary);
+  canvas.style.setProperty('--brand-accent', theme.accent);
+  canvas.style.setProperty('--brand-surface', theme.surface);
+  canvas.style.setProperty('--brand-text', theme.text);
+  canvas.style.setProperty('--brand-radius-btn', theme.radius.btn);
+  canvas.style.setProperty('--brand-radius-card', theme.radius.card);
+
+  // Re-style existing components on canvas
+  canvas.querySelectorAll('.oui-btn-contained').forEach(el => {
+    el.style.cssText += theme.btnStyle + 'border-radius:' + theme.radius.btn + ';font-family:' + theme.font + ';';
+  });
+  canvas.querySelectorAll('.oui-btn-outlined').forEach(el => {
+    el.style.borderRadius = theme.radius.btn;
+    el.style.fontFamily = theme.font;
+    el.style.borderColor = theme.primary;
+    el.style.color = theme.text;
+  });
+  canvas.querySelectorAll('.oui-card').forEach(el => {
+    el.style.cssText += theme.cardStyle + 'border-radius:' + theme.radius.card + ';font-family:' + theme.font + ';';
+  });
+  canvas.querySelectorAll('.oui-input').forEach(el => {
+    el.style.borderRadius = theme.radius.input;
+    el.style.fontFamily = theme.font;
+  });
+  canvas.querySelectorAll('.oui-search').forEach(el => {
+    el.style.fontFamily = theme.font;
+  });
+  canvas.querySelectorAll('.oui-chip').forEach(el => {
+    el.style.color = theme.primary;
+    el.style.background = theme.primary + '1a';
+  });
+  canvas.querySelectorAll('.oui-fab').forEach(el => {
+    el.style.background = theme.primary;
+  });
+  canvas.querySelectorAll('.oui-switch').forEach(el => {
+    el.style.background = theme.accent;
+  });
+  canvas.querySelectorAll('.oui-pill-tab').forEach(el => {
+    el.style.cssText += theme.navStyle + 'border-radius:999px;';
+  });
+  canvas.querySelectorAll('.oui-bottomnav').forEach(el => {
+    el.style.cssText += theme.navStyle;
+  });
+  canvas.querySelectorAll('.oui-dialog').forEach(el => {
+    el.style.cssText += theme.cardStyle + 'border-radius:' + theme.radius.card + ';';
+  });
+  canvas.querySelectorAll('.oui-snackbar').forEach(el => {
+    el.style.borderRadius = theme.radius.btn;
+  });
+}
+
+// Override generateScenario to apply brand theme
+const _origGenerateScenario = generateScenario;
+generateScenario = function(key) {
+  _origGenerateScenario(key);
+  // After generating, apply current brand theme
+  if (currentBrand !== 'samsung') {
+    const btn = document.querySelector(`.brand-btn[data-brand="${currentBrand}"]`);
+    if (btn) setBrand(currentBrand, btn);
+  }
+};
 </script>
 </body>
 </html>
