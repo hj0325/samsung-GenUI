@@ -163,11 +163,11 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
   background-size: 20px 20px;
 }
 .canvas-frame {
-  width:320px; height:min(693px, 65vh); background:var(--canvas-bg-dark);
+  height:min(693px, 65vh); aspect-ratio:1080/2340; /* Galaxy S26 */
+  width:auto; background:var(--canvas-bg-dark);
   border-radius:36px; border:3px solid #333; position:relative;
   overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.5);
   transition:all 0.4s cubic-bezier(0.2,0,0,1);
-  aspect-ratio: 1080 / 2340; /* Galaxy S26 exact ratio */
 }
 .canvas-frame.tv { width:min(800px, 60vw); height:auto; aspect-ratio:16/9; border-radius:12px; }
 .canvas-frame.watch { width:260px; height:260px; border-radius:50%; aspect-ratio:unset; }
@@ -308,11 +308,15 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .align-btn.active { background:var(--primary-10); border-color:var(--primary); color:var(--primary); }
 
 /* === EMPTY STATE === */
-.canvas-empty {
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  height:100%; color:var(--text-3); gap:8px; pointer-events:none;
+.canvas-empty { display:none; }
+.canvas-hint {
+  position:absolute; top:-44px; left:50%; transform:translateX(-50%);
+  padding:8px 20px; border-radius:999px; background:rgba(255,255,255,0.1);
+  backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,0.1);
+  color:var(--text-3); font-size:12px; font-weight:500; white-space:nowrap;
+  pointer-events:none; animation:hintFade 3s ease forwards;
 }
-.canvas-empty-icon { font-size:48px; opacity:0.3; }
+@keyframes hintFade { 0%{opacity:0;transform:translateX(-50%) translateY(8px);} 15%{opacity:1;transform:translateX(-50%) translateY(0);} 75%{opacity:1;} 100%{opacity:0;} }
 
 /* Animations */
 @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
@@ -733,13 +737,11 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 
   <!-- CANVAS -->
   <div class="canvas-wrap">
-    <div class="canvas-frame" id="canvasFrame">
-      <div class="canvas-notch"></div>
-      <div class="canvas-inner" id="canvas">
-        <div class="canvas-empty" id="emptyState">
-          <div class="canvas-empty-icon">&#128640;</div>
-          <div style="font-size:15px; font-weight:600;">Drop components here</div>
-          <div style="font-size:12px;">Click any component from the sidebar</div>
+    <div style="position:relative;">
+      <div class="canvas-hint" id="canvasHint">Click a component or scenario to start</div>
+      <div class="canvas-frame" id="canvasFrame">
+        <div class="canvas-notch"></div>
+        <div class="canvas-inner" id="canvas">
         </div>
       </div>
     </div>
@@ -783,8 +785,8 @@ const templates = {
 // === ADD COMPONENT ===
 function addComp(type) {
   const canvas = document.getElementById('canvas');
-  const empty = document.getElementById('emptyState');
-  if (empty) empty.remove();
+  const hint = document.getElementById('canvasHint');
+  if (hint) hint.remove();
 
   const wrapper = document.createElement('div');
   wrapper.className = 'canvas-item';
@@ -948,7 +950,14 @@ function previewMotion() {
 // === CLEAR ===
 function clearCanvas() {
   const canvas = document.getElementById('canvas');
-  canvas.innerHTML = `<div class="canvas-empty" id="emptyState"><div class="canvas-empty-icon">&#128640;</div><div style="font-size:15px;font-weight:600;">Drop components here</div><div style="font-size:12px;">Click any component from the sidebar</div></div>`;
+  canvas.innerHTML = '';
+  // Show hint outside canvas
+  const oldHint = document.getElementById('canvasHint');
+  if (oldHint) oldHint.remove();
+  const hint = document.createElement('div');
+  hint.className = 'canvas-hint'; hint.id = 'canvasHint';
+  hint.textContent = 'Click a component or scenario to start';
+  document.getElementById('canvasFrame').parentElement.prepend(hint);
   selectedItems.clear();
 }
 
