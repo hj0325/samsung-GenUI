@@ -83,7 +83,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .panel-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
 
 /* === COMPONENT PALETTE === */
-.comp-palette { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+.comp-palette { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px; }
 .comp-palette.col-2 { grid-template-columns:1fr 1fr; }
 .comp-item {
   padding:8px 4px; border-radius:10px; border:1px solid var(--divider);
@@ -705,7 +705,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
               <input type="checkbox" id="genStagger" checked style="accent-color:var(--primary);width:14px;height:14px;"> Stagger
             </label>
             <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-2);cursor:pointer;">
-              <input type="checkbox" id="genGenStatic" checked style="accent-color:var(--primary);width:14px;height:14px;"> Gen/Static
+              <input type="checkbox" id="genGenStatic" style="accent-color:var(--primary);width:14px;height:14px;"> Gen/Static
             </label>
           </div>
         </div>
@@ -1003,38 +1003,34 @@ ${clone.innerHTML}
 // Scenario templates: each defines components, their type (gen/static), layout, and motion
 const scenarios = {
   login: {
-    name: 'Login Screen',
-    layout: 'column',
-    align: 'center',
-    gap: 16,
-    padding: 32,
+    name: 'Samsung Account Login',
+    layout: 'column', align: 'stretch', gap: 0, padding: 0,
     components: [
-      { type: 'custom', role: 'static', html: '<div style="font-size:40px;text-align:center;margin:40px 0 8px;">&#128274;</div>' },
-      { type: 'custom', role: 'static', html: '<div style="font-size:24px;font-weight:700;text-align:center;margin-bottom:4px;" contenteditable="true">Welcome Back</div>' },
-      { type: 'custom', role: 'static', html: '<div style="font-size:13px;color:var(--text-3);text-align:center;margin-bottom:16px;" contenteditable="true">Sign in to your Samsung account</div>' },
-      { type: 'input', role: 'static', motion: 'fadeIn', delay: 0 },
-      { type: 'input', role: 'static', motion: 'fadeIn', delay: 60, placeholder: 'Password' },
-      { type: 'btn-contained', role: 'gen', motion: 'slideUp', delay: 120, text: 'Sign In' },
-      { type: 'btn-flat', role: 'gen', motion: 'fadeIn', delay: 180, text: 'Forgot password?' },
-      { type: 'divider', role: 'static', motion: 'fadeIn', delay: 200 },
-      { type: 'btn-outlined', role: 'gen', motion: 'slideUp', delay: 240, text: 'Create Account' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:16px;"><span style="font-size:18px;cursor:pointer;">&#8592;</span></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="text-align:center;padding:24px 0 8px;"><img src="app-icons/Pass.png" style="width:56px;height:56px;border-radius:14px;"></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 40, html: '<div style="text-align:center;padding:0 24px;"><div style="font-size:22px;font-weight:700;" contenteditable="true">Samsung Account</div><div style="font-size:13px;color:var(--text-3);margin-top:6px;">Sign in to access all Samsung services</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 80, html: '<div style="padding:20px 20px 0;"><div style="position:relative;"><input class="oui-input" type="email" placeholder="Email or phone number" style="width:100%;"><span style="position:absolute;top:8px;left:16px;font-size:11px;color:var(--text-3);">Email or phone</span></div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div style="padding:12px 20px 0;"><div style="position:relative;"><input class="oui-input" type="password" placeholder="Password" style="width:100%;"><span style="position:absolute;top:8px;left:16px;font-size:11px;color:var(--text-3);">Password</span></div></div>' },
+      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 160, html: '<div style="padding:8px 20px;text-align:right;"><span style="font-size:13px;color:var(--primary);cursor:pointer;">Forgot password?</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 200, html: '<div style="padding:16px 20px;"><button class="oui-btn-contained" style="width:100%;" contenteditable="true">Sign in</button></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 240, html: '<div style="display:flex;align-items:center;gap:12px;padding:12px 20px;"><div style="flex:1;height:0.5px;background:rgba(255,255,255,0.08);"></div><span style="font-size:11px;color:var(--text-3);">or</span><div style="flex:1;height:0.5px;background:rgba(255,255,255,0.08);"></div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 280, html: '<div style="padding:0 20px;"><button class="oui-btn-outlined" style="width:100%;" contenteditable="true">Create account</button></div>' },
+      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 320, html: '<div style="padding:8px 20px;"><button class="oui-btn-outlined" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;"><span style="font-size:16px;">G</span> Continue with Google</button></div>' },
     ]
   },
   product: {
-    name: 'Product Detail',
-    layout: 'column',
-    align: 'stretch',
-    gap: 0,
-    padding: 0,
+    name: 'Galaxy S26 Product',
+    layout: 'column', align: 'stretch', gap: 0, padding: 0,
     components: [
-      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Galaxy S25 Ultra' },
-      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 60, html: '<div style="width:100%;height:220px;background:linear-gradient(135deg,#0a0a2e,#192a56);border-radius:0;display:flex;align-items:center;justify-content:center;font-size:64px;">&#128241;</div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div style="padding:20px;"><div style="font-size:22px;font-weight:700;" contenteditable="true">Galaxy S25 Ultra</div><div style="font-size:14px;color:var(--text-2);margin-top:4px;" contenteditable="true">The ultimate Galaxy experience</div><div style="font-size:20px;font-weight:700;color:var(--primary);margin-top:12px;" contenteditable="true">$1,299.99</div></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 180, html: '<div style="padding:0 20px;display:flex;gap:8px;"><div style="flex:1;height:40px;border-radius:20px;border:1.5px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-2);">256GB</div><div style="flex:1;height:40px;border-radius:20px;border:1.5px solid var(--primary);background:var(--primary-10);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--primary);font-weight:600;">512GB</div><div style="flex:1;height:40px;border-radius:20px;border:1.5px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-2);">1TB</div></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 240, html: '<div style="padding:16px 20px;display:flex;gap:8px;"><button class="oui-btn-contained" style="flex:1;" contenteditable="true">Buy Now</button><button class="oui-btn-outlined" style="flex:1;" contenteditable="true">Add to Cart</button></div>' },
-      { type: 'divider', role: 'static', motion: 'fadeIn', delay: 260 },
-      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 300 },
-      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 360 },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;"><span style="font-size:18px;cursor:pointer;">&#8592;</span><span style="font-size:15px;font-weight:600;">Galaxy S26 Ultra</span><span style="font-size:18px;">&#128722;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 50, html: '<div style="width:100%;height:200px;background:linear-gradient(180deg,#0a0a2e 0%,#192a56 100%);display:flex;align-items:center;justify-content:center;"><span style="font-size:80px;filter:drop-shadow(0 8px 20px rgba(0,0,0,0.5));">&#128241;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div style="padding:16px 16px 0;"><div style="font-size:11px;color:var(--primary);font-weight:600;">NEW</div><div style="font-size:20px;font-weight:700;margin-top:2px;" contenteditable="true">Galaxy S26 Ultra</div><div style="font-size:13px;color:var(--text-3);margin-top:4px;line-height:1.5;" contenteditable="true">Titanium design. Galaxy AI. Pro-grade camera.</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 140, html: '<div style="padding:12px 16px 0;display:flex;gap:6px;"><div style="padding:6px 14px;border-radius:999px;border:1.5px solid rgba(255,255,255,0.12);font-size:12px;color:var(--text-3);">256GB</div><div style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--primary);background:rgba(3,129,254,0.1);font-size:12px;color:var(--primary);font-weight:600;">512GB</div><div style="padding:6px 14px;border-radius:999px;border:1.5px solid rgba(255,255,255,0.12);font-size:12px;color:var(--text-3);">1TB</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 170, html: '<div style="padding:12px 16px 0;display:flex;gap:8px;align-items:center;"><div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#1a1a2e,#2a2a4e);border:2px solid var(--primary);"></div><div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#c0c0c0,#e0e0e0);border:2px solid transparent;"></div><div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#f5e6d3,#e8d5c0);border:2px solid transparent;"></div><span style="font-size:12px;color:var(--text-3);margin-left:4px;">Titanium Black</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 200, html: '<div style="padding:12px 16px;"><div style="font-size:22px;font-weight:700;color:var(--primary);" contenteditable="true">$1,299.99</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 230, html: '<div style="padding:0 16px 12px;display:flex;gap:8px;"><button class="oui-btn-contained" style="flex:1;" contenteditable="true">Buy now</button><button class="oui-btn-outlined" style="flex:1;" contenteditable="true">Add to cart</button></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 260, html: '<div style="height:0.5px;background:rgba(255,255,255,0.06);margin:0 16px;"></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 290, html: '<div class="oui-card" style="margin:12px;width:auto;padding:0;overflow:hidden;"><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/Wearable.png" style="width:24px;height:24px;border-radius:6px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:14px;">Specifications</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/갤러리.png" style="width:24px;height:24px;border-radius:6px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:14px;">Reviews</div><div class="oui-list-sub">4.8 &#9733; (2,340 reviews)</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div></div>' },
     ]
   },
   settings: {
@@ -1058,63 +1054,58 @@ const scenarios = {
     ]
   },
   chat: {
-    name: 'Chat Screen',
-    layout: 'column',
-    align: 'stretch',
-    gap: 0,
-    padding: 0,
+    name: 'Samsung Messages',
+    layout: 'column', align: 'stretch', gap: 0, padding: 0,
     components: [
-      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Messages' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 60, html: '<div style="display:flex;gap:8px;padding:12px 16px;align-items:flex-end;"><div style="width:28px;height:28px;border-radius:50%;background:#3E91FF;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;">J</div><div style="background:var(--surface-2);padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:70%;font-size:14px;" contenteditable="true">Hey! Are you coming to the meeting?</div></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div style="display:flex;gap:8px;padding:12px 16px;justify-content:flex-end;"><div style="background:var(--primary);color:#fff;padding:10px 14px;border-radius:18px 18px 4px 18px;max-width:70%;font-size:14px;" contenteditable="true">Yes, I\'ll be there in 10 minutes!</div></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 180, html: '<div style="display:flex;gap:8px;padding:12px 16px;align-items:flex-end;"><div style="width:28px;height:28px;border-radius:50%;background:#3E91FF;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;">J</div><div style="background:var(--surface-2);padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:70%;font-size:14px;" contenteditable="true">Perfect! See you soon 👍</div></div>' },
-      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 240, html: '<div style="text-align:center;padding:8px;font-size:11px;color:var(--text-3);">Today 2:34 PM</div>' },
-      { type: 'custom', role: 'static', motion: 'slideUp', delay: 300, html: '<div style="display:flex;gap:8px;padding:12px 16px;margin-top:auto;border-top:0.5px solid rgba(255,255,255,0.06);"><input class="oui-search" placeholder="Type a message" style="flex:1;"><button class="oui-fab" style="width:40px;height:40px;font-size:16px;box-shadow:none;">&#8593;</button></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="display:flex;align-items:center;padding:12px 16px;gap:10px;"><span style="font-size:18px;cursor:pointer;">&#8592;</span><img src="app-icons/연락처.png" style="width:32px;height:32px;border-radius:50%;"><div style="flex:1;"><div style="font-size:15px;font-weight:600;" contenteditable="true">Jimin</div><div style="font-size:11px;color:var(--text-3);">Online</div></div><span style="font-size:18px;color:var(--text-3);">&#128222;</span><span style="font-size:18px;color:var(--text-3);">&#8942;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 40, html: '<div style="text-align:center;padding:6px;font-size:11px;color:var(--text-3);">Today 2:30 PM</div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 70, html: '<div style="display:flex;gap:8px;padding:4px 16px;align-items:flex-end;"><div style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;"><img src="app-icons/연락처.png" style="width:100%;height:100%;"></div><div style="background:var(--surface-2);padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:70%;font-size:14px;line-height:1.5;" contenteditable="true">Hey! Are you coming to the team dinner tonight?</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 110, html: '<div style="display:flex;gap:8px;padding:4px 16px;justify-content:flex-end;"><div style="background:var(--primary);color:#fff;padding:10px 14px;border-radius:18px 18px 4px 18px;max-width:70%;font-size:14px;line-height:1.5;" contenteditable="true">Yes! I\'ll be there around 7 &#128522;</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 150, html: '<div style="display:flex;gap:8px;padding:4px 16px;align-items:flex-end;"><div style="width:28px;height:28px;flex-shrink:0;"></div><div style="background:var(--surface-2);padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:70%;font-size:14px;line-height:1.5;" contenteditable="true">Great! I booked a table at the Korean BBQ place</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 190, html: '<div style="display:flex;gap:8px;padding:4px 16px;justify-content:flex-end;"><div style="background:var(--primary);color:#fff;padding:10px 14px;border-radius:18px 18px 4px 18px;max-width:70%;font-size:14px;" contenteditable="true">Perfect! &#128293;&#128293;</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 220, html: '<div style="display:flex;gap:8px;padding:4px 16px;align-items:flex-end;"><div style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;"><img src="app-icons/연락처.png" style="width:100%;height:100%;"></div><div style="background:var(--surface-2);padding:10px 14px;border-radius:18px 18px 18px 4px;max-width:70%;font-size:14px;" contenteditable="true">See you there! &#128075;</div></div>' },
+      // Input bar (Simple Lower Bar pattern from Design Kit)
+      { type: 'custom', role: 'static', motion: 'slideUp', delay: 260, html: '<div style="display:flex;gap:8px;padding:10px 12px;margin-top:auto;border-top:0.5px solid rgba(255,255,255,0.06);align-items:center;"><span style="font-size:20px;color:var(--text-3);">&#128247;</span><input class="oui-search" placeholder="Message" style="flex:1;height:38px;font-size:14px;"><button class="oui-fab" style="width:36px;height:36px;font-size:14px;box-shadow:none;">&#8593;</button></div>' },
     ]
   },
   feed: {
-    name: 'Content Feed',
-    layout: 'column',
-    align: 'stretch',
-    gap: 12,
-    padding: 12,
+    name: 'Samsung Internet',
+    layout: 'column', align: 'stretch', gap: 0, padding: 0,
     components: [
-      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Discover' },
-      { type: 'search', role: 'static', motion: 'fadeIn', delay: 60 },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;"><div class="oui-chip" contenteditable="true">All</div><div class="oui-chip" style="background:transparent;border:1px solid var(--divider);color:var(--text-2);" contenteditable="true">Tech</div><div class="oui-chip" style="background:transparent;border:1px solid var(--divider);color:var(--text-2);" contenteditable="true">Design</div><div class="oui-chip" style="background:transparent;border:1px solid var(--divider);color:var(--text-2);" contenteditable="true">AI</div></div>' },
-      { type: 'card', role: 'gen', motion: 'slideUp', delay: 160 },
-      { type: 'card', role: 'gen', motion: 'slideUp', delay: 220 },
-      { type: 'card', role: 'gen', motion: 'slideUp', delay: 280 },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:8px 12px;display:flex;align-items:center;gap:8px;"><img src="app-icons/인터넷.png" style="width:24px;height:24px;border-radius:6px;"><div style="flex:1;height:36px;border-radius:999px;background:rgba(255,255,255,0.06);display:flex;align-items:center;padding:0 14px;font-size:13px;color:var(--text-3);">&#128269; Search or enter URL</div><span style="font-size:16px;color:var(--text-3);">&#8942;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 50, html: '<div style="display:flex;gap:6px;padding:4px 12px;overflow-x:auto;"><div class="oui-chip" style="font-size:11px;" contenteditable="true">All</div><div class="oui-chip" style="background:transparent;border:1px solid rgba(255,255,255,0.08);color:var(--text-3);font-size:11px;" contenteditable="true">Tech</div><div class="oui-chip" style="background:transparent;border:1px solid rgba(255,255,255,0.08);color:var(--text-3);font-size:11px;" contenteditable="true">Galaxy AI</div><div class="oui-chip" style="background:transparent;border:1px solid rgba(255,255,255,0.08);color:var(--text-3);font-size:11px;" contenteditable="true">Design</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 90, html: '<div class="oui-card" style="margin:8px 12px;width:auto;padding:0;overflow:hidden;"><div style="height:120px;background:linear-gradient(135deg,#0a0a2e,#1a2a56);display:flex;align-items:center;justify-content:center;font-size:14px;color:rgba(255,255,255,0.4);">Featured Article</div><div style="padding:12px 14px;"><div style="font-size:14px;font-weight:600;" contenteditable="true">Galaxy S26 Ultra: The AI Revolution</div><div style="font-size:12px;color:var(--text-3);margin-top:4px;">Samsung Newsroom &middot; 2h ago</div></div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 130, html: '<div class="oui-card" style="margin:0 12px;width:auto;padding:0;overflow:hidden;"><div style="height:80px;background:linear-gradient(135deg,#1a3a1a,#2a5a2a);display:flex;align-items:center;justify-content:center;font-size:14px;color:rgba(255,255,255,0.4);">Article Image</div><div style="padding:12px 14px;"><div style="font-size:14px;font-weight:600;" contenteditable="true">One UI 8.5 Ambient Design Deep Dive</div><div style="font-size:12px;color:var(--text-3);margin-top:4px;">design.samsung.com &middot; 5h ago</div></div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 170, html: '<div class="oui-card" style="margin:8px 12px;width:auto;padding:0;overflow:hidden;"><div style="padding:12px 14px;"><div style="font-size:14px;font-weight:600;" contenteditable="true">Material 3 Expressive: What It Means for Samsung</div><div style="font-size:12px;color:var(--text-3);margin-top:4px;">design.google &middot; 1d ago</div></div></div>' },
+      // Floating Pill Tab Bar (Bottom bar pattern from Design Kit)
+      { type: 'custom', role: 'static', motion: 'slideUp', delay: 210, html: '<div style="display:flex;justify-content:center;padding:8px;margin-top:auto;"><div class="oui-pill-tab"><div class="oui-pill-dot active">&#8962;</div><div class="oui-pill-dot">&#9634;</div><div class="oui-pill-dot">&#128278;</div><div class="oui-pill-dot">&#8942;</div></div></div>' },
     ]
   },
   profile: {
-    name: 'User Profile',
-    layout: 'column',
-    align: 'center',
-    gap: 8,
-    padding: 16,
+    name: 'Samsung Account Profile',
+    layout: 'column', align: 'stretch', gap: 0, padding: 0,
     components: [
-      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Profile' },
-      { type: 'custom', role: 'static', motion: 'scaleUp', delay: 60, html: '<div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#3E91FF,#64e9e3);margin:16px auto 8px;display:flex;align-items:center;justify-content:center;font-size:32px;color:#fff;">K</div>' },
-      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 120, html: '<div style="text-align:center;margin-bottom:12px;"><div style="font-size:20px;font-weight:700;" contenteditable="true">Kyu Ha Shim</div><div style="font-size:13px;color:var(--text-3);">kyu@samsung.com</div></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 180, html: '<div style="display:flex;gap:24px;justify-content:center;margin-bottom:12px;"><div style="text-align:center;"><div style="font-size:20px;font-weight:700;">128</div><div style="font-size:11px;color:var(--text-3);">Projects</div></div><div style="text-align:center;"><div style="font-size:20px;font-weight:700;">56</div><div style="font-size:11px;color:var(--text-3);">Reviews</div></div><div style="text-align:center;"><div style="font-size:20px;font-weight:700;">3.2K</div><div style="font-size:11px;color:var(--text-3);">Followers</div></div></div>' },
-      { type: 'btn-contained', role: 'gen', motion: 'slideUp', delay: 220, text: 'Edit Profile' },
-      { type: 'divider', role: 'static', motion: 'fadeIn', delay: 260 },
-      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 300 },
-      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 360 },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;"><span style="font-size:18px;cursor:pointer;">&#8592;</span><span style="font-size:15px;font-weight:600;">Samsung Account</span><span style="font-size:16px;">&#9881;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 50, html: '<div style="text-align:center;padding:16px 0 8px;"><div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#3E91FF,#64e9e3);margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff;font-weight:700;">KS</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 90, html: '<div style="text-align:center;padding:0 16px 12px;"><div style="font-size:18px;font-weight:700;" contenteditable="true">Kyu Ha Shim</div><div style="font-size:13px;color:var(--text-3);margin-top:2px;">kyuha.shim@samsung.com</div><div style="font-size:12px;color:var(--primary);margin-top:6px;cursor:pointer;">Edit profile</div></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 120, html: '<div style="height:0.5px;background:rgba(255,255,255,0.06);margin:0 16px;"></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 140, html: '<div style="padding:14px 16px 4px;font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;">Services</div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 170, html: '<div class="oui-card" style="padding:0;overflow:hidden;margin:0 12px;width:auto;"><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/클라우드.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:14px;">Samsung Cloud</div><div class="oui-list-sub">15.2 GB / 50 GB used</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/Find.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:14px;">Find My Mobile</div><div class="oui-list-sub">3 devices registered</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/Pass.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:14px;">Samsung Pass</div><div class="oui-list-sub">12 saved passwords</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/Wallet.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:14px;">Samsung Wallet</div><div class="oui-list-sub">2 cards added</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div></div>' },
     ]
   },
   gallery: {
-    name: 'Photo Gallery',
-    layout: 'column',
-    align: 'stretch',
-    gap: 0,
-    padding: 0,
+    name: 'Samsung Gallery',
+    layout: 'column', align: 'stretch', gap: 0, padding: 0,
     components: [
-      { type: 'appbar', role: 'static', motion: 'fadeIn', delay: 0, text: 'Gallery' },
-      { type: 'tab-bar', role: 'static', motion: 'fadeIn', delay: 60 },
-      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 120, html: '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px;padding:2px;"><div style="aspect-ratio:1;background:linear-gradient(135deg,#1a3a5c,#2a5a8c);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#3a1a5c,#5a2a8c);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#5c3a1a,#8c5a2a);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#1a5c3a,#2a8c5a);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#5c1a3a,#8c2a5a);border-radius:4px;"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#3a5c1a,#5a8c2a);border-radius:4px;"></div></div>' },
-      { type: 'pill-tab', role: 'static', motion: 'slideUp', delay: 200 },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:16px 16px 8px;"><div style="font-size:22px;font-weight:700;display:flex;align-items:center;gap:10px;"><img src="app-icons/갤러리.png" style="width:28px;height:28px;border-radius:8px;">Gallery</div></div>' },
+      // Top Slide Nav (from Design Kit)
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 40, html: '<div style="display:flex;padding:0 16px;gap:16px;border-bottom:1px solid rgba(255,255,255,0.06);"><div style="padding:10px 0;font-size:14px;font-weight:600;border-bottom:2px solid #fff;">Photos</div><div style="padding:10px 0;font-size:14px;color:var(--text-3);">Albums</div><div style="padding:10px 0;font-size:14px;color:var(--text-3);">Stories</div></div>' },
+      // Date header
+      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 70, html: '<div style="padding:12px 16px 6px;font-size:13px;font-weight:600;color:var(--text-2);">April 14, 2026</div>' },
+      // Photo grid (3-column, tight gap like real Gallery)
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 100, html: '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px;padding:0 2px;"><div style="aspect-ratio:1;background:linear-gradient(135deg,#1a3a5c,#3a6a9c);"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#2a1a4c,#5a3a8c);"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#4c3a1a,#8c6a2a);"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#1a4c3a,#3a8c5a);"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#4c1a2a,#8c3a4a);"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#3a4c1a,#6a8c3a);"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#1a2a4c,#3a5a7c);"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#4c2a1a,#7c4a3a);"></div><div style="aspect-ratio:1;background:linear-gradient(135deg,#2a4c3a,#4a8c6a);"></div></div>' },
+      // Floating Pill Tab (8.5)
+      { type: 'custom', role: 'static', motion: 'slideUp', delay: 160, html: '<div style="display:flex;justify-content:center;padding:10px;margin-top:auto;"><div class="oui-pill-tab"><div class="oui-pill-dot active">&#127748;</div><div class="oui-pill-dot">&#128247;</div><div class="oui-pill-dot">&#9734;</div><div class="oui-pill-dot">&#8942;</div></div></div>' },
     ]
   },
   dashboard: {
@@ -1137,31 +1128,29 @@ const scenarios = {
     ]
   },
   onboarding: {
-    name: 'Onboarding',
-    layout: 'column',
-    align: 'center',
-    gap: 16,
-    padding: 32,
+    name: 'Galaxy AI Welcome',
+    layout: 'column', align: 'center', gap: 0, padding: 0,
     components: [
-      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 0, html: '<div style="width:120px;height:120px;border-radius:50%;background:linear-gradient(135deg,#64e9e3,#9ffac7);margin:40px auto 0;display:flex;align-items:center;justify-content:center;font-size:48px;">&#10024;</div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div style="text-align:center;margin-top:24px;"><div style="font-size:24px;font-weight:700;" contenteditable="true">Welcome to Galaxy</div><div style="font-size:14px;color:var(--text-2);margin-top:8px;line-height:1.6;max-width:280px;" contenteditable="true">Experience the next level of mobile intelligence with Galaxy AI.</div></div>' },
-      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 200, html: '<div style="display:flex;gap:6px;justify-content:center;margin:16px 0;"><div style="width:24px;height:6px;border-radius:3px;background:var(--primary);"></div><div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.2);"></div><div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.2);"></div></div>' },
-      { type: 'btn-contained', role: 'gen', motion: 'slideUp', delay: 260, text: 'Get Started' },
-      { type: 'btn-flat', role: 'gen', motion: 'fadeIn', delay: 320, text: 'Skip' },
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 0, html: '<div style="width:100%;height:240px;background:linear-gradient(135deg,#0a1628,#162a4e,#1a3a6e);display:flex;align-items:center;justify-content:center;"><div style="width:100px;height:100px;border-radius:50%;background:linear-gradient(135deg,#64e9e3,#9ffac7);display:flex;align-items:center;justify-content:center;font-size:48px;box-shadow:0 0 60px rgba(100,233,227,0.3);">&#10024;</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 80, html: '<div style="text-align:center;padding:24px 24px 0;"><div style="font-size:22px;font-weight:700;line-height:1.3;" contenteditable="true">Welcome to<br>Galaxy AI</div><div style="font-size:14px;color:var(--text-3);margin-top:10px;line-height:1.6;max-width:280px;margin-left:auto;margin-right:auto;" contenteditable="true">Your Galaxy understands context, anticipates needs, and helps you create.</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 130, html: '<div style="display:flex;gap:12px;padding:20px 24px;"><div class="oui-card" style="flex:1;padding:14px;text-align:center;"><span style="font-size:24px;">&#128247;</span><div style="font-size:11px;color:var(--text-2);margin-top:6px;">Photo Assist</div></div><div class="oui-card" style="flex:1;padding:14px;text-align:center;"><span style="font-size:24px;">&#128172;</span><div style="font-size:11px;color:var(--text-2);margin-top:6px;">Now Nudge</div></div><div class="oui-card" style="flex:1;padding:14px;text-align:center;"><span style="font-size:24px;">&#128221;</span><div style="font-size:11px;color:var(--text-2);margin-top:6px;">Now Brief</div></div></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 180, html: '<div style="display:flex;gap:6px;justify-content:center;margin:8px 0;"><div style="width:24px;height:6px;border-radius:3px;background:var(--primary);"></div><div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.15);"></div><div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.15);"></div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 220, html: '<div style="padding:16px 24px;margin-top:auto;"><button class="oui-btn-contained" style="width:100%;" contenteditable="true">Get started</button><div style="text-align:center;margin-top:10px;"><span style="font-size:13px;color:var(--text-3);cursor:pointer;">Skip for now</span></div></div>' },
     ]
   },
   music: {
-    name: 'Music Player',
-    layout: 'column',
-    align: 'center',
-    gap: 8,
-    padding: 24,
+    name: 'Samsung Music',
+    layout: 'column', align: 'stretch', gap: 0, padding: 0,
     components: [
-      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="font-size:12px;color:var(--text-3);text-align:center;margin-top:16px;">NOW PLAYING</div>' },
-      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 60, html: '<div style="width:240px;height:240px;border-radius:20px;background:linear-gradient(135deg,#1a0a3e,#3a1a6e);margin:16px auto;display:flex;align-items:center;justify-content:center;font-size:64px;">&#127925;</div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div style="text-align:center;"><div style="font-size:20px;font-weight:700;" contenteditable="true">Dynamite</div><div style="font-size:14px;color:var(--text-3);margin-top:2px;" contenteditable="true">BTS</div></div>' },
-      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 180, html: '<div style="width:100%;margin:16px 0 8px;"><div style="height:4px;background:rgba(255,255,255,0.1);border-radius:2px;"><div style="width:65%;height:100%;background:var(--primary);border-radius:2px;"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);margin-top:4px;"><span>2:08</span><span>3:19</span></div></div>' },
-      { type: 'custom', role: 'static', motion: 'slideUp', delay: 220, html: '<div style="display:flex;align-items:center;justify-content:center;gap:32px;margin:8px 0;"><span style="font-size:24px;color:var(--text-2);cursor:pointer;">&#9198;</span><button class="oui-fab" style="width:64px;height:64px;font-size:28px;">&#9654;</button><span style="font-size:24px;color:var(--text-2);cursor:pointer;">&#9197;</span></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;"><span style="font-size:18px;cursor:pointer;">&#8964;</span><span style="font-size:13px;color:var(--text-3);">Now Playing</span><span style="font-size:18px;color:var(--text-3);">&#8942;</span></div>' },
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 50, html: '<div style="padding:0 32px;"><div style="width:100%;aspect-ratio:1;border-radius:20px;background:linear-gradient(135deg,#1a0a3e,#3a1a6e,#5a2a8e);display:flex;align-items:center;justify-content:center;font-size:72px;box-shadow:0 12px 40px rgba(58,26,110,0.5);">&#127925;</div></div>' },
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div style="text-align:center;padding:16px 24px 0;"><div style="font-size:20px;font-weight:700;" contenteditable="true">Dynamite</div><div style="font-size:14px;color:var(--text-3);margin-top:2px;" contenteditable="true">BTS &middot; BE</div></div>' },
+      // Slider (from Design Kit)
+      { type: 'custom', role: 'gen', motion: 'fadeIn', delay: 140, html: '<div style="padding:16px 24px 0;"><div style="height:4px;background:rgba(255,255,255,0.08);border-radius:2px;position:relative;"><div style="width:65%;height:100%;background:var(--primary);border-radius:2px;"></div><div style="position:absolute;top:-4px;left:65%;width:12px;height:12px;border-radius:50%;background:var(--primary);transform:translateX(-50%);box-shadow:0 0 8px rgba(3,129,254,0.4);"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-3);margin-top:6px;"><span>2:08</span><span>3:19</span></div></div>' },
+      // Controls
+      { type: 'custom', role: 'static', motion: 'slideUp', delay: 180, html: '<div style="display:flex;align-items:center;justify-content:center;gap:28px;padding:16px 0;"><span style="font-size:18px;color:var(--text-3);">&#128256;</span><span style="font-size:22px;color:var(--text-2);cursor:pointer;">&#9198;</span><button class="oui-fab" style="width:56px;height:56px;font-size:24px;">&#9654;</button><span style="font-size:22px;color:var(--text-2);cursor:pointer;">&#9197;</span><span style="font-size:18px;color:var(--text-3);">&#128257;</span></div>' },
+      // Bottom bar (like/playlist/share)
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 220, html: '<div style="display:flex;justify-content:space-around;padding:8px 40px;margin-top:auto;"><span style="font-size:18px;color:var(--text-3);">&#9829;</span><span style="font-size:18px;color:var(--text-3);">&#128257;</span><span style="font-size:18px;color:var(--text-3);">&#128279;</span></div>' },
     ]
   },
   home: {
