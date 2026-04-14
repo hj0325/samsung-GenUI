@@ -163,18 +163,25 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
   background-size: 20px 20px;
 }
 .canvas-frame {
-  width:340px; height:min(680px, 65vh); background:var(--canvas-bg-dark);
+  width:320px; height:min(693px, 65vh); background:var(--canvas-bg-dark);
   border-radius:36px; border:3px solid #333; position:relative;
   overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.5);
-  transition:width 0.4s cubic-bezier(0.2,0,0,1), height 0.4s cubic-bezier(0.2,0,0,1), border-radius 0.4s;
+  transition:all 0.4s cubic-bezier(0.2,0,0,1);
+  aspect-ratio: 1080 / 2340; /* Galaxy S26 exact ratio */
 }
-.canvas-frame.desktop { width:960px; height:min(600px, 65vh); border-radius:12px; }
+.canvas-frame.tv { width:min(800px, 60vw); height:auto; aspect-ratio:16/9; border-radius:12px; }
+.canvas-frame.watch { width:260px; height:260px; border-radius:50%; aspect-ratio:unset; }
+.canvas-frame.desktop { width:min(900px, 55vw); height:auto; aspect-ratio:16/10; border-radius:12px; }
 .canvas-frame.light { background:var(--canvas-bg-light); }
 .canvas-notch {
   position:absolute; top:0; left:50%; transform:translateX(-50%);
   width:120px; height:30px; background:#000; border-radius:0 0 20px 20px; z-index:10;
 }
 .canvas-frame.desktop .canvas-notch { display:none; }
+.canvas-frame.tv .canvas-notch { display:none; }
+.canvas-frame.watch .canvas-notch { display:none; }
+.canvas-frame.watch .canvas-inner { padding:20px 12px; border-radius:50%; }
+.canvas-frame.tv .canvas-inner { padding:24px 32px; }
 .canvas-inner {
   position:absolute; top:0; left:0; right:0; bottom:0;
   padding:40px 16px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;
@@ -330,6 +337,8 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
   <div class="topbar-right">
     <div class="device-toggle">
       <button class="active" onclick="setDevice('mobile',this)">Mobile</button>
+      <button onclick="setDevice('tv',this)">TV</button>
+      <button onclick="setDevice('watch',this)">Watch</button>
       <button onclick="setDevice('desktop',this)">Desktop</button>
     </div>
     <button class="topbar-btn" onclick="toggleTheme()">Light / Dark</button>
@@ -347,7 +356,6 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
       <button class="sidebar-tab active" onclick="switchTab(0,this)">Components</button>
       <button class="sidebar-tab" onclick="switchTab(1,this)">Layout</button>
       <button class="sidebar-tab" onclick="switchTab(2,this)">Colors</button>
-      <button class="sidebar-tab" onclick="switchTab(3,this)">Group</button>
       <button class="sidebar-tab" onclick="switchTab(4,this)">Motion</button>
     </div>
     <div class="sidebar-content">
@@ -639,9 +647,6 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
             <button class="brand-btn" onclick="setBrand('google',this)" data-brand="google" style="--bc:#4285F4;">
               <span class="brand-dot" style="background:conic-gradient(#4285F4 0deg 90deg, #EA4335 90deg 180deg, #FBBC05 180deg 270deg, #34A853 270deg 360deg);"></span>Google
             </button>
-            <button class="brand-btn" onclick="setBrand('huawei',this)" data-brand="huawei" style="--bc:#CF0A2C;">
-              <span class="brand-dot" style="background:#CF0A2C;"></span>Huawei
-            </button>
             <button class="brand-btn" onclick="setBrand('meta',this)" data-brand="meta" style="--bc:#0668E1;">
               <span class="brand-dot" style="background:linear-gradient(135deg,#0668E1,#17B5F5);"></span>Meta
             </button>
@@ -657,8 +662,13 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
             <button class="topbar-btn primary" style="height:40px;padding:0 18px;font-size:13px;white-space:nowrap;" onclick="generateFromPrompt()">&#10024; Generate</button>
           </div>
           <div style="display:flex;gap:6px;margin-top:6px;">
-            <input id="genUrl" type="url" style="flex:1;height:32px;border-radius:8px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:11px;padding:0 10px;" placeholder="Reference URL (optional)">
+            <input id="genUrl" type="text" style="flex:1;height:32px;border-radius:8px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:11px;padding:0 10px;" placeholder="URL or drop image...">
+            <label class="topbar-btn" style="font-size:10px;padding:4px 8px;height:32px;cursor:pointer;display:flex;align-items:center;">&#128247;<input type="file" id="genImage" accept="image/*" style="display:none;" onchange="handleRefImage(this)"></label>
             <button class="topbar-btn" onclick="generateFromUrl()" style="font-size:10px;padding:4px 10px;height:32px;">Fetch</button>
+          </div>
+          <div id="refPreview" style="display:none;margin-top:6px;position:relative;">
+            <img id="refPreviewImg" style="width:100%;border-radius:8px;border:1px solid var(--divider);max-height:120px;object-fit:cover;">
+            <button onclick="clearRefImage()" style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.6);color:#fff;border:none;font-size:12px;cursor:pointer;">&times;</button>
           </div>
         </div>
 
@@ -666,6 +676,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
         <div style="margin-bottom:14px;">
           <div class="panel-label">Scenarios</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;">
+            <button class="scene-btn" onclick="generateScenario('home')">&#127968;<br><span>Home</span></button>
             <button class="scene-btn" onclick="generateScenario('login')">&#128274;<br><span>Login</span></button>
             <button class="scene-btn" onclick="generateScenario('product')">&#128241;<br><span>Product</span></button>
             <button class="scene-btn" onclick="generateScenario('settings')">&#9881;<br><span>Settings</span></button>
@@ -703,6 +714,17 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
             <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;" onclick="playSequence()">&#9654; Play Sequence</button>
           </div>
           <div id="harmonyResult" style="margin-top:8px;font-size:11px;color:var(--text-3);display:none;"></div>
+        </div>
+
+        <!-- MEMORY — learns from user's designs -->
+        <div style="margin-bottom:14px;">
+          <div class="panel-label">Memory <span style="font-size:9px;color:var(--primary);font-weight:400;">learns from you</span></div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;">
+            <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;" onclick="saveToMemory()">&#128190; Save Current</button>
+            <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;" onclick="clearMemory()">&#128465; Clear All</button>
+          </div>
+          <div id="memoryList" style="font-size:11px;color:var(--text-3);"></div>
+          <div id="memoryStats" style="margin-top:6px;font-size:10px;color:var(--text-3);"></div>
         </div>
       </div>
 
@@ -801,8 +823,8 @@ function setDevice(mode, btn) {
   const frame = document.getElementById('canvasFrame');
   document.querySelectorAll('.device-toggle button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  if (mode === 'desktop') frame.classList.add('desktop');
-  else frame.classList.remove('desktop');
+  frame.classList.remove('desktop', 'tv', 'watch');
+  if (mode !== 'mobile') frame.classList.add(mode);
 }
 
 // === THEME ===
@@ -1133,10 +1155,30 @@ const scenarios = {
       { type: 'custom', role: 'static', motion: 'slideUp', delay: 220, html: '<div style="display:flex;align-items:center;justify-content:center;gap:32px;margin:8px 0;"><span style="font-size:24px;color:var(--text-2);cursor:pointer;">&#9198;</span><button class="oui-fab" style="width:64px;height:64px;font-size:28px;">&#9654;</button><span style="font-size:24px;color:var(--text-2);cursor:pointer;">&#9197;</span></div>' },
     ]
   },
+  home: {
+    name: 'Home Screen',
+    layout: 'column',
+    align: 'stretch',
+    gap: 0,
+    padding: 0,
+    components: [
+      // Status bar
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="display:flex;justify-content:space-between;padding:8px 16px;font-size:11px;color:var(--text-3);"><span>9:41</span><span>&#128268; 85%</span></div>' },
+      // Clock widget
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 40, html: '<div style="text-align:center;padding:24px 0 12px;"><div style="font-size:56px;font-weight:200;letter-spacing:-2px;color:#fff;">9:41</div><div style="font-size:13px;color:var(--text-3);">Monday, April 14</div></div>' },
+      // Weather card
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 80, html: '<div class="oui-card" style="margin:0 16px;width:auto;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;"><div><div style="font-size:11px;color:var(--text-3);">Seoul</div><div style="font-size:22px;font-weight:700;">18&deg;</div><div style="font-size:11px;color:var(--text-3);">Partly Cloudy</div></div><div style="font-size:36px;">&#9925;</div></div>' },
+      // App icon grid (3x2 using real icons)
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 140, html: '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:20px 24px;text-align:center;"><div><img src="app-icons/전화.png" style="width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"><div style="font-size:10px;color:var(--text-2);margin-top:4px;">Phone</div></div><div><img src="app-icons/메시지.png" style="width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"><div style="font-size:10px;color:var(--text-2);margin-top:4px;">Messages</div></div><div><img src="app-icons/카메라.png" style="width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"><div style="font-size:10px;color:var(--text-2);margin-top:4px;">Camera</div></div><div><img src="app-icons/갤러리.png" style="width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"><div style="font-size:10px;color:var(--text-2);margin-top:4px;">Gallery</div></div><div><img src="app-icons/설정.png" style="width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"><div style="font-size:10px;color:var(--text-2);margin-top:4px;">Settings</div></div><div><img src="app-icons/인터넷.png" style="width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"><div style="font-size:10px;color:var(--text-2);margin-top:4px;">Internet</div></div><div><img src="app-icons/Store.png" style="width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"><div style="font-size:10px;color:var(--text-2);margin-top:4px;">Store</div></div><div><img src="app-icons/Notes.png" style="width:44px;height:44px;border-radius:12px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3));"><div style="font-size:10px;color:var(--text-2);margin-top:4px;">Notes</div></div></div>' },
+      // Dock (bottom pinned apps)
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 200, html: '<div style="display:flex;justify-content:center;gap:20px;padding:12px 0;margin-top:auto;border-top:0.5px solid rgba(255,255,255,0.06);"><img src="app-icons/전화.png" style="width:40px;height:40px;border-radius:10px;"><img src="app-icons/메시지.png" style="width:40px;height:40px;border-radius:10px;"><img src="app-icons/인터넷.png" style="width:40px;height:40px;border-radius:10px;"><img src="app-icons/카메라.png" style="width:40px;height:40px;border-radius:10px;"></div>' },
+    ]
+  },
 };
 
 // Prompt-to-scenario mapping
 const promptMap = {
+  'home': 'home', '홈': 'home', '홈화면': 'home', '홈 화면': 'home', 'homescreen': 'home', 'launcher': 'home',
   'login': 'login', 'sign in': 'login', 'signin': 'login', '로그인': 'login', '로그 인': 'login', '회원가입': 'login',
   'product': 'product', 'detail': 'product', '제품': 'product', '상세': 'product', '상품': 'product', 'galaxy': 'product',
   'settings': 'settings', 'setting': 'settings', '설정': 'settings', '환경설정': 'settings',
@@ -1367,13 +1409,6 @@ const brandThemes = {
     dialogStyle: 'background:#2D2D2D;border:none;',
     desc: 'Solid opaque surfaces, no borders, elevation via shadow',
   },
-  huawei: {
-    name: 'Huawei HarmonyOS',
-    cardStyle: 'background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.08);',
-    navStyle: 'background:rgba(255,255,255,0.04);border-top:0.5px solid rgba(255,255,255,0.08);',
-    dialogStyle: 'background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:0.5px solid rgba(255,255,255,0.1);',
-    desc: 'Subtle translucency + thin hairline borders',
-  },
   meta: {
     name: 'Meta Design System',
     cardStyle: 'background:#242526;border:1px solid rgba(255,255,255,0.05);',
@@ -1425,6 +1460,132 @@ generateScenario = function(key) {
     if (btn) setBrand(currentBrand, btn);
   }
 };
+
+// =============================================
+// === REFERENCE IMAGE HANDLER ===
+// =============================================
+function handleRefImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    document.getElementById('refPreviewImg').src = e.target.result;
+    document.getElementById('refPreview').style.display = 'block';
+    // Store reference for memory
+    window._refImageData = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function clearRefImage() {
+  document.getElementById('refPreview').style.display = 'none';
+  document.getElementById('refPreviewImg').src = '';
+  document.getElementById('genImage').value = '';
+  window._refImageData = null;
+}
+
+// =============================================
+// === DESIGN MEMORY SYSTEM (localStorage) ===
+// === Learns from user's designs over time ===
+// =============================================
+const MEMORY_KEY = 'oneui_build_memory';
+
+function getMemory() {
+  try { return JSON.parse(localStorage.getItem(MEMORY_KEY)) || { designs: [], stats: { totalSaved: 0, favScenario: {}, favBrand: {}, favComponents: {} } }; }
+  catch(e) { return { designs: [], stats: { totalSaved: 0, favScenario: {}, favBrand: {}, favComponents: {} } }; }
+}
+
+function saveToMemory() {
+  const canvas = document.getElementById('canvas');
+  const items = canvas.querySelectorAll('.canvas-item');
+  if (items.length === 0) return;
+
+  const memory = getMemory();
+  const prompt = document.getElementById('genPrompt').value || '(manual)';
+
+  // Capture current design state
+  const design = {
+    id: Date.now(),
+    timestamp: new Date().toLocaleString('ko-KR'),
+    prompt: prompt,
+    brand: currentBrand,
+    componentCount: items.length,
+    componentTypes: [],
+    genCount: 0,
+    staticCount: 0,
+    refImage: window._refImageData ? '(image attached)' : null,
+  };
+
+  items.forEach(item => {
+    if (item.dataset.role === 'gen') design.genCount++;
+    else design.staticCount++;
+    // Track component types
+    const inner = item.innerHTML;
+    if (inner.includes('oui-btn-contained')) design.componentTypes.push('btn-contained');
+    else if (inner.includes('oui-card')) design.componentTypes.push('card');
+    else if (inner.includes('oui-list-item')) design.componentTypes.push('list-item');
+    else if (inner.includes('oui-appbar')) design.componentTypes.push('appbar');
+    else if (inner.includes('oui-search')) design.componentTypes.push('search');
+    else if (inner.includes('oui-chip')) design.componentTypes.push('chip');
+    else if (inner.includes('oui-input')) design.componentTypes.push('input');
+    else if (inner.includes('oui-fab')) design.componentTypes.push('fab');
+    else if (inner.includes('oui-dialog')) design.componentTypes.push('dialog');
+    else if (inner.includes('oui-pill-tab')) design.componentTypes.push('pill-tab');
+    else design.componentTypes.push('custom');
+  });
+
+  // Update stats
+  memory.stats.totalSaved++;
+  memory.stats.favBrand[currentBrand] = (memory.stats.favBrand[currentBrand] || 0) + 1;
+  design.componentTypes.forEach(t => {
+    memory.stats.favComponents[t] = (memory.stats.favComponents[t] || 0) + 1;
+  });
+
+  // Keep last 20 designs
+  memory.designs.unshift(design);
+  if (memory.designs.length > 20) memory.designs = memory.designs.slice(0, 20);
+
+  localStorage.setItem(MEMORY_KEY, JSON.stringify(memory));
+  renderMemory();
+}
+
+function clearMemory() {
+  localStorage.removeItem(MEMORY_KEY);
+  renderMemory();
+}
+
+function renderMemory() {
+  const memory = getMemory();
+  const listEl = document.getElementById('memoryList');
+  const statsEl = document.getElementById('memoryStats');
+
+  if (memory.designs.length === 0) {
+    listEl.innerHTML = '<div style="color:var(--text-3);font-size:11px;padding:8px;text-align:center;background:var(--surface);border-radius:8px;">No saved designs yet. Create and save to build memory.</div>';
+    statsEl.innerHTML = '';
+    return;
+  }
+
+  // Show recent designs
+  let html = '';
+  memory.designs.slice(0, 5).forEach(d => {
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--surface);border-radius:6px;margin-bottom:3px;cursor:pointer;" title="${d.prompt}">
+      <div><span style="color:var(--primary);">${d.prompt.substring(0, 20)}</span> <span style="color:var(--text-3);font-size:9px;">${d.componentCount} comp</span></div>
+      <span style="font-size:9px;color:var(--text-3);">${d.timestamp.split(' ')[0]}</span>
+    </div>`;
+  });
+  listEl.innerHTML = html;
+
+  // Stats
+  const topComp = Object.entries(memory.stats.favComponents).sort((a,b) => b[1]-a[1]).slice(0,3).map(e => e[0]).join(', ');
+  const topBrand = Object.entries(memory.stats.favBrand).sort((a,b) => b[1]-a[1])[0];
+  statsEl.innerHTML = `<div style="padding:6px 8px;background:var(--surface);border-radius:6px;">
+    &#128200; <strong>${memory.stats.totalSaved}</strong> designs saved &middot;
+    Fav: <span style="color:var(--primary);">${topBrand ? topBrand[0] : '-'}</span> &middot;
+    Top: ${topComp || '-'}
+  </div>`;
+}
+
+// Load memory on page init
+document.addEventListener('DOMContentLoaded', renderMemory);
 </script>
 </body>
 </html>
