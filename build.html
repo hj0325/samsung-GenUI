@@ -1012,14 +1012,19 @@ const scenarios = {
     gap: 0,
     padding: 0,
     components: [
+      // Container pattern: Header (Enlarged) → Search → Grouped Card → Grouped Card
       { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:20px 16px 8px;"><div style="font-size:28px;font-weight:700;" contenteditable="true">Settings</div><div style="font-size:12px;color:var(--text-3);margin-top:4px;">Manage your device</div></div>' },
       { type: 'search', role: 'static', motion: 'fadeIn', delay: 60 },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div class="oui-list-item"><div class="oui-list-icon">&#128100;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Account</div><div class="oui-list-sub">Samsung account, Google</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 160, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(46,125,50,0.15);color:#2E7D32;">&#128274;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Security</div><div class="oui-list-sub">Screen lock, biometrics</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 220, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(3,129,254,0.15);color:#0381FE;">&#128187;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Display</div><div class="oui-list-sub">Brightness, Dark mode</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 280, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(249,168,37,0.15);color:#F9A825;">&#128276;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Notifications</div><div class="oui-list-sub">App alerts, Do not disturb</div></div><button class="oui-switch" style="width:44px;height:26px;flex-shrink:0;"></button></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 340, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(171,71,188,0.15);color:#AB47BC;">&#127925;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Sound</div><div class="oui-list-sub">Volume, Ringtone</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 400, html: '<div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(100,233,227,0.15);color:#64e9e3;">&#9881;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">General</div><div class="oui-list-sub">Language, Reset</div></div><span style="color:var(--text-3);">&#8250;</span></div>' },
+      // Grouped card 1: Account & Security (Container with Sides=true, spacing=0)
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div class="oui-card" style="padding:0;overflow:hidden;"><div class="oui-list-item"><div class="oui-list-icon">&#128100;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Account</div><div class="oui-list-sub">Samsung account, Google</div></div><span style="color:var(--text-3);">&#8250;</span></div><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(46,125,50,0.15);color:#2E7D32;">&#128274;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Security</div><div class="oui-list-sub">Screen lock, biometrics</div></div><span style="color:var(--text-3);">&#8250;</span></div></div>' },
+      // Subheading
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 160, html: '<div style="padding:16px 16px 4px;font-size:13px;font-weight:600;color:var(--text-3);">Device</div>' },
+      // Grouped card 2: Display, Notifications, Sound (Container with toggle)
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 200, html: '<div class="oui-card" style="padding:0;overflow:hidden;"><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(3,129,254,0.15);color:#0381FE;">&#128187;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Display</div><div class="oui-list-sub">Brightness, Dark mode</div></div><span style="color:var(--text-3);">&#8250;</span></div><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(249,168,37,0.15);color:#F9A825;">&#128276;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Notifications</div><div class="oui-list-sub">App alerts, Do not disturb</div></div><button class="oui-switch" style="width:44px;height:26px;flex-shrink:0;border-radius:13px;"></button></div><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(171,71,188,0.15);color:#AB47BC;">&#127925;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Sound</div><div class="oui-list-sub">Volume, Ringtone</div></div><span style="color:var(--text-3);">&#8250;</span></div></div>' },
+      // Subheading
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 280, html: '<div style="padding:16px 16px 4px;font-size:13px;font-weight:600;color:var(--text-3);">General</div>' },
+      // Grouped card 3: General
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 320, html: '<div class="oui-card" style="padding:0;overflow:hidden;"><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(100,233,227,0.15);color:#64e9e3;">&#9881;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">General</div><div class="oui-list-sub">Language, Reset</div></div><span style="color:var(--text-3);">&#8250;</span></div><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(255,127,80,0.15);color:#FF7F50;">&#128640;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">About phone</div><div class="oui-list-sub">One UI 8.5, Android 16</div></div><span style="color:var(--text-3);">&#8250;</span></div></div>' },
     ]
   },
   chat: {
@@ -1332,56 +1337,45 @@ function playSequence() {
 // =============================================
 // === BRAND THEMES ===
 // =============================================
+// =============================================
+// === BRAND THEMES (card style + nav style ONLY) ===
+// === All other tokens remain One UI 8.5      ===
+// =============================================
 const brandThemes = {
   samsung: {
     name: 'Samsung One UI 8.5',
-    primary: '#0381FE', accent: '#3E91FF', bg: '#171717', surface: '#1a1a1a',
-    text: '#FAFAFA', text2: 'rgba(255,255,255,0.6)',
-    radius: { btn: '18px', card: '26px', pill: '999px', input: '18px' },
-    easing: 'cubic-bezier(0.22,0.25,0,1)', font: "'Inter',sans-serif",
-    btnStyle: 'background:#0072DE;color:#FAFAFA;border:none;',
     cardStyle: 'background:#222;border:1px solid rgba(255,255,255,0.06);',
-    navStyle: 'background:rgba(255,255,255,0.08);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.12);',
+    navStyle: 'background:rgba(255,255,255,0.08);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.12);',
+    dialogStyle: 'background:#222;border:1px solid rgba(255,255,255,0.06);',
+    desc: 'Solid surface + Glass UI floating nav (Ambient Design)',
   },
   apple: {
-    name: 'Apple iOS / Liquid Glass',
-    primary: '#007AFF', accent: '#5856D6', bg: '#000000', surface: '#1C1C1E',
-    text: '#FFFFFF', text2: 'rgba(255,255,255,0.6)',
-    radius: { btn: '12px', card: '16px', pill: '999px', input: '10px' },
-    easing: 'cubic-bezier(0.25,0.1,0.25,1)', font: "-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",
-    btnStyle: 'background:#007AFF;color:#fff;border:none;',
-    cardStyle: 'background:rgba(255,255,255,0.08);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.15);',
-    navStyle: 'background:rgba(255,255,255,0.12);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.2);',
+    name: 'Apple Liquid Glass',
+    cardStyle: 'background:rgba(255,255,255,0.06);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.18);',
+    navStyle: 'background:rgba(255,255,255,0.10);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.22);',
+    dialogStyle: 'background:rgba(255,255,255,0.08);backdrop-filter:blur(50px);-webkit-backdrop-filter:blur(50px);border:1px solid rgba(255,255,255,0.2);',
+    desc: 'Heavy frosted glass on all surfaces (Liquid Glass)',
   },
   google: {
     name: 'Google Material You',
-    primary: '#4285F4', accent: '#8AB4F8', bg: '#1F1F1F', surface: '#2D2D2D',
-    text: '#E3E3E3', text2: 'rgba(255,255,255,0.6)',
-    radius: { btn: '20px', card: '16px', pill: '999px', input: '16px' },
-    easing: 'cubic-bezier(0.2,0,0,1)', font: "'Google Sans','Roboto',sans-serif",
-    btnStyle: 'background:#D3E3FD;color:#001D35;border:none;',
-    cardStyle: 'background:#2D2D2D;border:1px solid rgba(255,255,255,0.08);',
-    navStyle: 'background:#2D2D2D;border:none;',
+    cardStyle: 'background:#2D2D2D;border:none;',
+    navStyle: 'background:#2D2D2D;border:none;border-top:none;',
+    dialogStyle: 'background:#2D2D2D;border:none;',
+    desc: 'Solid opaque surfaces, no borders, elevation via shadow',
   },
   huawei: {
     name: 'Huawei HarmonyOS',
-    primary: '#CF0A2C', accent: '#E53935', bg: '#121212', surface: '#1E1E1E',
-    text: '#FFFFFF', text2: 'rgba(255,255,255,0.55)',
-    radius: { btn: '24px', card: '20px', pill: '999px', input: '12px' },
-    easing: 'cubic-bezier(0.4,0,0.2,1)', font: "'HarmonyOS Sans','Noto Sans SC',sans-serif",
-    btnStyle: 'background:#CF0A2C;color:#fff;border:none;',
-    cardStyle: 'background:#1E1E1E;border:1px solid rgba(255,255,255,0.06);',
-    navStyle: 'background:#1E1E1E;border-top:0.5px solid rgba(255,255,255,0.08);',
+    cardStyle: 'background:rgba(255,255,255,0.04);border:0.5px solid rgba(255,255,255,0.08);',
+    navStyle: 'background:rgba(255,255,255,0.04);border-top:0.5px solid rgba(255,255,255,0.08);',
+    dialogStyle: 'background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:0.5px solid rgba(255,255,255,0.1);',
+    desc: 'Subtle translucency + thin hairline borders',
   },
   meta: {
     name: 'Meta Design System',
-    primary: '#0668E1', accent: '#17B5F5', bg: '#18191A', surface: '#242526',
-    text: '#E4E6EB', text2: 'rgba(255,255,255,0.55)',
-    radius: { btn: '8px', card: '8px', pill: '999px', input: '8px' },
-    easing: 'cubic-bezier(0.1,0.9,0.2,1)', font: "'Segoe UI','Helvetica Neue',sans-serif",
-    btnStyle: 'background:#0668E1;color:#fff;border:none;',
     cardStyle: 'background:#242526;border:1px solid rgba(255,255,255,0.05);',
     navStyle: 'background:#242526;border-top:1px solid rgba(255,255,255,0.05);',
+    dialogStyle: 'background:#242526;border:1px solid rgba(255,255,255,0.05);',
+    desc: 'Dense opaque surfaces, low-contrast borders',
   },
 };
 
@@ -1390,62 +1384,30 @@ function setBrand(brand, btn) {
   document.querySelectorAll('.brand-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 
-  // Apply brand theme to canvas
+  // Only change card style + nav style (all One UI tokens preserved)
   const theme = brandThemes[brand];
-  const frame = document.getElementById('canvasFrame');
-  frame.style.background = theme.bg;
-  frame.style.fontFamily = theme.font;
-
-  // Update CSS custom properties on canvas
   const canvas = document.getElementById('canvas');
-  canvas.style.setProperty('--brand-primary', theme.primary);
-  canvas.style.setProperty('--brand-accent', theme.accent);
-  canvas.style.setProperty('--brand-surface', theme.surface);
-  canvas.style.setProperty('--brand-text', theme.text);
-  canvas.style.setProperty('--brand-radius-btn', theme.radius.btn);
-  canvas.style.setProperty('--brand-radius-card', theme.radius.card);
 
-  // Re-style existing components on canvas
-  canvas.querySelectorAll('.oui-btn-contained').forEach(el => {
-    el.style.cssText += theme.btnStyle + 'border-radius:' + theme.radius.btn + ';font-family:' + theme.font + ';';
-  });
-  canvas.querySelectorAll('.oui-btn-outlined').forEach(el => {
-    el.style.borderRadius = theme.radius.btn;
-    el.style.fontFamily = theme.font;
-    el.style.borderColor = theme.primary;
-    el.style.color = theme.text;
-  });
+  // Cards & containers
   canvas.querySelectorAll('.oui-card').forEach(el => {
-    el.style.cssText += theme.cardStyle + 'border-radius:' + theme.radius.card + ';font-family:' + theme.font + ';';
-  });
-  canvas.querySelectorAll('.oui-input').forEach(el => {
-    el.style.borderRadius = theme.radius.input;
-    el.style.fontFamily = theme.font;
-  });
-  canvas.querySelectorAll('.oui-search').forEach(el => {
-    el.style.fontFamily = theme.font;
-  });
-  canvas.querySelectorAll('.oui-chip').forEach(el => {
-    el.style.color = theme.primary;
-    el.style.background = theme.primary + '1a';
-  });
-  canvas.querySelectorAll('.oui-fab').forEach(el => {
-    el.style.background = theme.primary;
-  });
-  canvas.querySelectorAll('.oui-switch').forEach(el => {
-    el.style.background = theme.accent;
-  });
-  canvas.querySelectorAll('.oui-pill-tab').forEach(el => {
-    el.style.cssText += theme.navStyle + 'border-radius:999px;';
-  });
-  canvas.querySelectorAll('.oui-bottomnav').forEach(el => {
-    el.style.cssText += theme.navStyle;
+    el.style.cssText = theme.cardStyle + 'border-radius:26px;padding:20px;width:100%;';
   });
   canvas.querySelectorAll('.oui-dialog').forEach(el => {
-    el.style.cssText += theme.cardStyle + 'border-radius:' + theme.radius.card + ';';
+    el.style.cssText = theme.dialogStyle + 'border-radius:26px;padding:24px 20px 16px;width:100%;max-width:300px;margin:0 auto;';
   });
-  canvas.querySelectorAll('.oui-snackbar').forEach(el => {
-    el.style.borderRadius = theme.radius.btn;
+  // Navigation
+  canvas.querySelectorAll('.oui-pill-tab').forEach(el => {
+    el.style.cssText = theme.navStyle + 'border-radius:999px;display:inline-flex;align-items:center;gap:4px;padding:6px 8px;';
+  });
+  canvas.querySelectorAll('.oui-bottomnav').forEach(el => {
+    el.style.cssText = theme.navStyle + 'width:100%;height:56px;display:flex;align-items:center;justify-content:space-around;border-radius:0;';
+  });
+  canvas.querySelectorAll('.oui-appbar').forEach(el => {
+    el.style.cssText = theme.navStyle.replace('border-top','border-bottom') + 'width:100%;height:56px;display:flex;align-items:center;padding:0 12px;gap:8px;border-radius:0;';
+  });
+  // Grouped cards (container rule)
+  canvas.querySelectorAll('.canvas-group').forEach(el => {
+    el.style.cssText = theme.cardStyle + 'border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:8px;border-style:dashed;';
   });
 }
 
