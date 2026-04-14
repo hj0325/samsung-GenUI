@@ -83,15 +83,16 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .panel-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
 
 /* === COMPONENT PALETTE === */
-.comp-palette { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.comp-palette { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+.comp-palette.col-2 { grid-template-columns:1fr 1fr; }
 .comp-item {
-  padding:10px 8px; border-radius:10px; border:1px solid var(--divider);
-  background:var(--surface); cursor:grab; text-align:center; font-size:11px;
+  padding:8px 4px; border-radius:10px; border:1px solid var(--divider);
+  background:var(--surface); cursor:grab; text-align:center; font-size:10px;
   font-weight:500; color:var(--text-2); transition:all 0.15s; user-select:none;
 }
 .comp-item:hover { border-color:var(--primary); color:var(--primary); background:var(--primary-10); }
 .comp-item:active { cursor:grabbing; transform:scale(0.95); }
-.comp-item .comp-icon { font-size:18px; margin-bottom:4px; display:block; }
+.comp-item .comp-icon { font-size:16px; margin-bottom:2px; display:block; }
 
 /* === LAYOUT PRESETS === */
 .layout-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
@@ -162,12 +163,12 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
   background-size: 20px 20px;
 }
 .canvas-frame {
-  width:375px; height:812px; background:var(--canvas-bg-dark);
-  border-radius:40px; border:3px solid #333; position:relative;
+  width:340px; height:min(680px, 65vh); background:var(--canvas-bg-dark);
+  border-radius:36px; border:3px solid #333; position:relative;
   overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.5);
   transition:width 0.4s cubic-bezier(0.2,0,0,1), height 0.4s cubic-bezier(0.2,0,0,1), border-radius 0.4s;
 }
-.canvas-frame.desktop { width:960px; height:600px; border-radius:12px; }
+.canvas-frame.desktop { width:960px; height:min(600px, 65vh); border-radius:12px; }
 .canvas-frame.light { background:var(--canvas-bg-light); }
 .canvas-notch {
   position:absolute; top:0; left:50%; transform:translateX(-50%);
@@ -373,7 +374,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
         </div>
         <div class="panel-section">
           <div class="panel-label">Inputs</div>
-          <div class="comp-palette">
+          <div class="comp-palette col-2">
             <div class="comp-item" onclick="addComp('input')"><span class="comp-icon">&#9998;</span>Text Field</div>
             <div class="comp-item" onclick="addComp('search')"><span class="comp-icon">&#128269;</span>Search Bar</div>
           </div>
@@ -398,7 +399,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
         </div>
         <div class="panel-section">
           <div class="panel-label">Utility</div>
-          <div class="comp-palette">
+          <div class="comp-palette col-2">
             <div class="comp-item" onclick="addComp('divider')"><span class="comp-icon">&mdash;</span>Divider</div>
             <div class="comp-item" onclick="addComp('badge')"><span class="comp-icon">&#9679;</span>Badge</div>
           </div>
@@ -1012,19 +1013,17 @@ const scenarios = {
     gap: 0,
     padding: 0,
     components: [
-      // Container pattern: Header (Enlarged) → Search → Grouped Card → Grouped Card
-      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:20px 16px 8px;"><div style="font-size:28px;font-weight:700;" contenteditable="true">Settings</div><div style="font-size:12px;color:var(--text-3);margin-top:4px;">Manage your device</div></div>' },
-      { type: 'search', role: 'static', motion: 'fadeIn', delay: 60 },
-      // Grouped card 1: Account & Security (Container with Sides=true, spacing=0)
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 100, html: '<div class="oui-card" style="padding:0;overflow:hidden;"><div class="oui-list-item"><div class="oui-list-icon">&#128100;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Account</div><div class="oui-list-sub">Samsung account, Google</div></div><span style="color:var(--text-3);">&#8250;</span></div><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(46,125,50,0.15);color:#2E7D32;">&#128274;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Security</div><div class="oui-list-sub">Screen lock, biometrics</div></div><span style="color:var(--text-3);">&#8250;</span></div></div>' },
-      // Subheading
-      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 160, html: '<div style="padding:16px 16px 4px;font-size:13px;font-weight:600;color:var(--text-3);">Device</div>' },
-      // Grouped card 2: Display, Notifications, Sound (Container with toggle)
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 200, html: '<div class="oui-card" style="padding:0;overflow:hidden;"><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(3,129,254,0.15);color:#0381FE;">&#128187;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Display</div><div class="oui-list-sub">Brightness, Dark mode</div></div><span style="color:var(--text-3);">&#8250;</span></div><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(249,168,37,0.15);color:#F9A825;">&#128276;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Notifications</div><div class="oui-list-sub">App alerts, Do not disturb</div></div><button class="oui-switch" style="width:44px;height:26px;flex-shrink:0;border-radius:13px;"></button></div><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(171,71,188,0.15);color:#AB47BC;">&#127925;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">Sound</div><div class="oui-list-sub">Volume, Ringtone</div></div><span style="color:var(--text-3);">&#8250;</span></div></div>' },
-      // Subheading
-      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 280, html: '<div style="padding:16px 16px 4px;font-size:13px;font-weight:600;color:var(--text-3);">General</div>' },
-      // Grouped card 3: General
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 320, html: '<div class="oui-card" style="padding:0;overflow:hidden;"><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(100,233,227,0.15);color:#64e9e3;">&#9881;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">General</div><div class="oui-list-sub">Language, Reset</div></div><span style="color:var(--text-3);">&#8250;</span></div><div class="oui-list-item"><div class="oui-list-icon" style="background:rgba(255,127,80,0.15);color:#FF7F50;">&#128640;</div><div class="oui-list-text"><div class="oui-list-title" contenteditable="true">About phone</div><div class="oui-list-sub">One UI 8.5, Android 16</div></div><span style="color:var(--text-3);">&#8250;</span></div></div>' },
+      // Real One UI Settings: Enlarged Header → Search → Grouped Cards with real icons
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:16px 16px 8px;display:flex;align-items:center;gap:12px;"><img src="app-icons/설정.png" style="width:36px;height:36px;border-radius:10px;"><div><div style="font-size:24px;font-weight:700;" contenteditable="true">Settings</div></div></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 40, html: '<div style="padding:0 12px;"><div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.06);border-radius:999px;padding:0 14px;height:40px;"><span style="font-size:14px;color:var(--text-3);">&#128269;</span><span style="font-size:14px;color:var(--text-3);">Search settings</span></div></div>' },
+      // Card group 1: Connections
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 80, html: '<div class="oui-card" style="padding:0;overflow:hidden;margin:8px 12px 0;width:auto;"><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/보안 Wi-fi.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:15px;" contenteditable="true">Connections</div><div class="oui-list-sub">Wi-Fi, Bluetooth, NFC</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/SmartThings.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:15px;" contenteditable="true">Connected devices</div><div class="oui-list-sub">SmartThings, Quick Share</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 140, html: '<div style="padding:14px 16px 4px;font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;">Device</div>' },
+      // Card group 2: Device
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 170, html: '<div class="oui-card" style="padding:0;overflow:hidden;margin:0 12px;width:auto;"><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/디바이스 케어_.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:15px;" contenteditable="true">Device care</div><div class="oui-list-sub">Battery, Storage, Memory</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/디지털 웰빙.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:15px;" contenteditable="true">Digital Wellbeing</div><div class="oui-list-sub">Screen time, App timers</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/보안 폴더.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:15px;" contenteditable="true">Security & privacy</div><div class="oui-list-sub">Lock screen, biometrics</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div></div>' },
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 240, html: '<div style="padding:14px 16px 4px;font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;">General</div>' },
+      // Card group 3: General
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 270, html: '<div class="oui-card" style="padding:0;overflow:hidden;margin:0 12px;width:auto;"><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/클라우드.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:15px;" contenteditable="true">Accounts & backup</div><div class="oui-list-sub">Samsung Cloud, Google</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div><div class="oui-list-item" style="padding:14px 16px;"><img src="app-icons/빅스비.png" style="width:28px;height:28px;border-radius:8px;flex-shrink:0;"><div class="oui-list-text"><div class="oui-list-title" style="font-size:15px;" contenteditable="true">About phone</div><div class="oui-list-sub">One UI 8.5, Android 16</div></div><span style="color:var(--text-3);font-size:14px;">&#8250;</span></div></div>' },
     ]
   },
   chat: {
@@ -1088,17 +1087,22 @@ const scenarios = {
     ]
   },
   dashboard: {
-    name: 'Dashboard',
+    name: 'Device Care Dashboard',
     layout: 'column',
     align: 'stretch',
-    gap: 12,
-    padding: 16,
+    gap: 0,
+    padding: 0,
     components: [
-      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:8px 0;"><div style="font-size:24px;font-weight:700;" contenteditable="true">Dashboard</div><div style="font-size:12px;color:var(--text-3);">April 11, 2026</div></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 60, html: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div class="oui-card" style="padding:16px;text-align:center;"><div style="font-size:24px;font-weight:700;color:var(--primary);">2.4K</div><div style="font-size:11px;color:var(--text-3);margin-top:2px;">Active Users</div></div><div class="oui-card" style="padding:16px;text-align:center;"><div style="font-size:24px;font-weight:700;color:#2ecc71;">98%</div><div style="font-size:11px;color:var(--text-3);margin-top:2px;">Uptime</div></div></div>' },
-      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div class="oui-card"><div style="font-size:14px;font-weight:600;margin-bottom:12px;">Activity</div><div style="display:flex;align-items:flex-end;gap:4px;height:80px;"><div style="flex:1;background:rgba(3,129,254,0.3);border-radius:4px 4px 0 0;height:40%;"></div><div style="flex:1;background:rgba(3,129,254,0.4);border-radius:4px 4px 0 0;height:65%;"></div><div style="flex:1;background:rgba(3,129,254,0.5);border-radius:4px 4px 0 0;height:45%;"></div><div style="flex:1;background:rgba(3,129,254,0.6);border-radius:4px 4px 0 0;height:80%;"></div><div style="flex:1;background:var(--primary);border-radius:4px 4px 0 0;height:100%;"></div><div style="flex:1;background:rgba(3,129,254,0.5);border-radius:4px 4px 0 0;height:70%;"></div><div style="flex:1;background:rgba(3,129,254,0.3);border-radius:4px 4px 0 0;height:35%;"></div></div></div>' },
-      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 180 },
-      { type: 'list-item', role: 'gen', motion: 'slideUp', delay: 240 },
+      // Real Device Care screen with app icon
+      { type: 'custom', role: 'static', motion: 'fadeIn', delay: 0, html: '<div style="padding:16px 16px 8px;display:flex;align-items:center;gap:12px;"><img src="app-icons/디바이스 케어_.png" style="width:32px;height:32px;border-radius:8px;"><div style="font-size:22px;font-weight:700;" contenteditable="true">Device care</div></div>' },
+      // Status ring
+      { type: 'custom', role: 'gen', motion: 'scaleUp', delay: 60, html: '<div style="text-align:center;padding:20px 0;"><div style="width:120px;height:120px;border-radius:50%;border:6px solid var(--primary);margin:0 auto;display:flex;align-items:center;justify-content:center;position:relative;"><div style="font-size:32px;font-weight:700;">92</div></div><div style="font-size:13px;color:var(--text-3);margin-top:8px;">Your phone is in good shape</div></div>' },
+      // Optimize button
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 120, html: '<div style="padding:0 16px;"><button class="oui-btn-contained" style="width:100%;" contenteditable="true">Optimize now</button></div>' },
+      // Stats grid (Dual unit pattern from Design Kit)
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 180, html: '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:16px 12px;"><div class="oui-card" style="padding:14px;text-align:center;"><div style="font-size:11px;color:var(--text-3);margin-bottom:4px;">Battery</div><div style="font-size:22px;font-weight:700;color:#2ecc71;">85%</div><div style="font-size:10px;color:var(--text-3);margin-top:2px;">Good</div></div><div class="oui-card" style="padding:14px;text-align:center;"><div style="font-size:11px;color:var(--text-3);margin-bottom:4px;">Storage</div><div style="font-size:22px;font-weight:700;color:var(--primary);">68%</div><div style="font-size:10px;color:var(--text-3);margin-top:2px;">128GB used</div></div></div>' },
+      // Activity card (chart)
+      { type: 'custom', role: 'gen', motion: 'slideUp', delay: 240, html: '<div class="oui-card" style="margin:0 12px;width:auto;"><div style="font-size:13px;font-weight:600;margin-bottom:10px;">This week</div><div style="display:flex;align-items:flex-end;gap:3px;height:60px;"><div style="flex:1;background:rgba(3,129,254,0.2);border-radius:3px 3px 0 0;height:35%;"></div><div style="flex:1;background:rgba(3,129,254,0.3);border-radius:3px 3px 0 0;height:55%;"></div><div style="flex:1;background:rgba(3,129,254,0.4);border-radius:3px 3px 0 0;height:40%;"></div><div style="flex:1;background:rgba(3,129,254,0.5);border-radius:3px 3px 0 0;height:70%;"></div><div style="flex:1;background:rgba(3,129,254,0.6);border-radius:3px 3px 0 0;height:85%;"></div><div style="flex:1;background:var(--primary);border-radius:3px 3px 0 0;height:100%;"></div><div style="flex:1;background:rgba(3,129,254,0.3);border-radius:3px 3px 0 0;height:45%;"></div></div><div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-3);margin-top:4px;"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div></div>' },
     ]
   },
   onboarding: {
