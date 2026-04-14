@@ -85,6 +85,8 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 /* === COMPONENT PALETTE === */
 .comp-palette { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:4px; }
 .comp-palette.col-2 { grid-template-columns:1fr 1fr; }
+.comp-palette.col-row { display:flex; gap:4px; }
+.comp-palette.col-row .comp-item { flex:1; }
 .comp-item {
   padding:8px 4px; border-radius:10px; border:1px solid var(--divider);
   background:var(--surface); cursor:grab; text-align:center; font-size:10px;
@@ -386,7 +388,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
         </div>
         <div class="panel-section">
           <div class="panel-label">Inputs</div>
-          <div class="comp-palette col-2">
+          <div class="comp-palette col-row">
             <div class="comp-item" onclick="addComp('input')"><span class="comp-icon">&#9998;</span>Text Field</div>
             <div class="comp-item" onclick="addComp('search')"><span class="comp-icon">&#128269;</span>Search Bar</div>
           </div>
@@ -411,7 +413,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
         </div>
         <div class="panel-section">
           <div class="panel-label">Utility</div>
-          <div class="comp-palette col-2">
+          <div class="comp-palette col-row">
             <div class="comp-item" onclick="addComp('divider')"><span class="comp-icon">&mdash;</span>Divider</div>
             <div class="comp-item" onclick="addComp('badge')"><span class="comp-icon">&#9679;</span>Badge</div>
           </div>
