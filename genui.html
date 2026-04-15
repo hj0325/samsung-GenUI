@@ -258,21 +258,23 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 
 /* === COMPARE MODE === */
 .canvas-wrap.compare-mode {
-  gap:12px;
+  gap:8px; align-items:flex-start !important; padding-top:4px;
 }
 .canvas-wrap.compare-mode .compare-frame {
-  display:block;
+  display:flex; flex-direction:column; align-items:center;
+}
+.canvas-wrap.compare-mode > div:first-child {
+  display:flex; flex-direction:column; align-items:center;
 }
 .compare-frame {
-  display:none; position:relative;
+  display:none; flex-direction:column; align-items:center;
 }
 .compare-frame .canvas-frame {
-  height:min(680px, calc(100vh - 120px));
+  /* Inherit same sizing as primary canvas-frame — no separate height override */
 }
 .compare-label {
-  position:absolute; top:-22px; left:50%; transform:translateX(-50%);
-  font-size:10px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;
-  padding:2px 10px; border-radius:6px; z-index:10;
+  font-size:11px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;
+  padding:3px 14px; border-radius:6px; margin-bottom:6px; flex-shrink:0;
 }
 .compare-label.a { background:var(--primary-10); color:var(--primary); }
 .compare-label.b { background:rgba(155,89,182,0.12); color:#9b59b6; }
@@ -460,13 +462,13 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 /* === EMPTY STATE === */
 .canvas-empty { display:none; }
 .canvas-hint {
-  position:absolute; top:-44px; left:50%; transform:translateX(-50%);
-  padding:8px 20px; border-radius:999px; background:rgba(255,255,255,0.1);
-  backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,0.1);
-  color:var(--text-3); font-size:12px; font-weight:500; white-space:nowrap;
-  pointer-events:none; animation:hintFade 3s ease forwards;
+  position:fixed; bottom:20px; left:24px;
+  padding:8px 16px; border-radius:999px; background:rgba(255,255,255,0.08);
+  backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,0.08);
+  color:var(--text-3); font-size:11px; font-weight:500; white-space:nowrap;
+  pointer-events:none; animation:hintFade 3s ease forwards; z-index:50;
 }
-@keyframes hintFade { 0%{opacity:0;transform:translateX(-50%) translateY(8px);} 15%{opacity:1;transform:translateX(-50%) translateY(0);} 75%{opacity:1;} 100%{opacity:0;} }
+@keyframes hintFade { 0%{opacity:0;transform:translateY(8px);} 15%{opacity:1;transform:translateY(0);} 75%{opacity:1;} 100%{opacity:0;} }
 
 /* Animations */
 @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
@@ -1463,9 +1465,10 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
         <!-- Critic Panel (populated by agent) -->
         <div id="criticPanel"></div>
 
-        <!-- Reset -->
-        <div style="margin-top:12px;border-top:1px solid var(--divider);padding-top:10px;">
-          <button class="topbar-btn" style="width:100%;font-size:11px;padding:8px;" onclick="resetRefinement()">Reset Refinement</button>
+        <!-- Save to Evolve / Reset -->
+        <div style="margin-top:12px;border-top:1px solid var(--divider);padding-top:10px;display:flex;gap:6px;">
+          <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;background:rgba(102,187,106,0.12);color:#66BB6A;border-color:rgba(102,187,106,0.2);" onclick="saveToEvolve()" id="btnSaveEvolve">Save to Evolve</button>
+          <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;" onclick="resetRefinement()">Reset</button>
         </div>
       </div>
 
@@ -1581,21 +1584,22 @@ function toggleVariantView(v) {
 function _enterCompareView() {
   const wrap = document.getElementById('canvasWrap');
   const compareFrame = document.getElementById('compareFrame');
+  const primaryWrap = document.getElementById('canvasFrame').parentElement;
 
   wrap.classList.add('compare-mode');
   wrap.style.flexDirection = 'row';
   wrap.style.alignItems = 'flex-start';
-  wrap.style.gap = '16px';
-  compareFrame.style.display = 'block';
+  wrap.style.gap = '8px';
+  compareFrame.style.display = 'flex';
 
-  // Label A
+  // Label A — placed as first child in primary wrapper (static flow, above frame)
   let labelA = document.getElementById('compareLabelA');
   if (!labelA) {
     labelA = document.createElement('div');
     labelA.id = 'compareLabelA';
     labelA.className = 'compare-label a';
     labelA.textContent = 'A';
-    document.getElementById('canvasFrame').parentElement.insertBefore(labelA, document.getElementById('canvasFrame'));
+    primaryWrap.insertBefore(labelA, primaryWrap.firstChild);
   }
   labelA.style.display = '';
 
@@ -1610,15 +1614,24 @@ function _enterCompareView() {
     if (variants[otherV].canvasStyle.display) canvasB.style.display = variants[otherV].canvasStyle.display;
     if (variants[otherV].canvasStyle.flexDirection) canvasB.style.flexDirection = variants[otherV].canvasStyle.flexDirection;
     if (variants[otherV].canvasStyle.alignItems) canvasB.style.alignItems = variants[otherV].canvasStyle.alignItems;
+    // Remove stale delete buttons from canvasB
+    canvasB.querySelectorAll('.canvas-item-delete, .canvas-delete').forEach(btn => btn.remove());
   } else {
     canvasB.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-3);font-size:12px;">Not generated</div>';
   }
-  frameB.className = document.getElementById('canvasFrame').className;
+  const frameA = document.getElementById('canvasFrame');
+  frameB.className = frameA.className;
 
-  // Scale down for side-by-side
-  document.getElementById('canvasFrame').style.transform = 'scale(0.85)';
-  document.getElementById('canvasFrame').style.transformOrigin = 'top center';
-  frameB.style.transform = 'scale(0.85)';
+  // Sync exact pixel dimensions: use offsetWidth/Height for precise match
+  frameB.style.width = frameA.offsetWidth + 'px';
+  frameB.style.height = frameA.offsetHeight + 'px';
+  frameB.style.aspectRatio = 'unset'; // override aspect-ratio so explicit w/h wins
+
+  // Scale both frames identically — smaller to fit side-by-side with labels visible
+  const scale = 0.72;
+  frameA.style.transform = `scale(${scale})`;
+  frameA.style.transformOrigin = 'top center';
+  frameB.style.transform = `scale(${scale})`;
   frameB.style.transformOrigin = 'top center';
 
   // Label B
@@ -1638,8 +1651,21 @@ function _exitCompareView() {
   wrap.style.alignItems = '';
   wrap.style.gap = '';
   compareFrame.style.display = 'none';
+
+  // Reset frame A
   document.getElementById('canvasFrame').style.transform = '';
   document.getElementById('canvasFrame').style.transformOrigin = '';
+
+  // Reset frame B inline styles to prevent stale sizing
+  const frameB = document.getElementById('canvasFrameB');
+  if (frameB) {
+    frameB.style.transform = '';
+    frameB.style.transformOrigin = '';
+    frameB.style.height = '';
+    frameB.style.width = '';
+    frameB.style.aspectRatio = '';
+  }
+
   const labelA = document.getElementById('compareLabelA');
   if (labelA) labelA.style.display = 'none';
 }
@@ -1688,11 +1714,12 @@ function _restoreVariant(v) {
   if (data.canvasStyle.flexDirection) canvas.style.flexDirection = data.canvasStyle.flexDirection;
   if (data.canvasStyle.alignItems) canvas.style.alignItems = data.canvasStyle.alignItems;
   if (data.frameBackground) frame.style.background = data.frameBackground;
-  // Re-init drag/select on restored items
+  // Re-init drag/select on restored items + remove stale delete buttons
   canvas.querySelectorAll('.canvas-item').forEach(el => {
-    // Fix opacity — animation forwards state is lost when saving/restoring innerHTML
     el.style.opacity = '1';
     el.style.animation = 'none';
+    // Remove any inline delete buttons from saved HTML
+    el.querySelectorAll('.canvas-item-delete, .canvas-delete').forEach(btn => btn.remove());
     initDrag(el);
     el.addEventListener('click', (e) => toggleSelect(el, e));
   });
@@ -2016,12 +2043,8 @@ const RenderEngine = {
         }, delay);
       }
 
-      // Delete button
-      const delBtn = document.createElement('button');
-      delBtn.className = 'canvas-item-delete';
-      delBtn.innerHTML = '&times;';
-      delBtn.onclick = (e) => { e.stopPropagation(); removeItem(wrapper); };
-      wrapper.appendChild(delBtn);
+      // Delete button — only added on hover via CSS pseudo-element
+      // No inline delete button to avoid visual clutter
 
       initDrag(wrapper);
       wrapper.addEventListener('click', (e) => toggleSelect(wrapper, e));
@@ -2188,8 +2211,8 @@ function addComp(type) {
   if (fullWidthTypes.has(type)) wrapper.classList.add('full-width');
   wrapper.id = 'item-' + (++itemCounter);
   wrapper.dataset.compType = type;
-  wrapper.innerHTML = templates[type]() + `<button class="canvas-delete" onclick="removeItem(this.parentElement)">&times;</button>`;
-  wrapper.addEventListener('click', (e) => { if (!e.target.classList.contains('canvas-delete')) toggleSelect(wrapper, e); });
+  wrapper.innerHTML = templates[type]();
+  wrapper.addEventListener('click', (e) => toggleSelect(wrapper, e));
   wrapper.setAttribute('draggable', 'true');
   initDrag(wrapper);
   canvas.appendChild(wrapper);
@@ -2492,8 +2515,8 @@ function groupSelected() {
   const group = document.createElement('div');
   group.className = 'canvas-item canvas-group';
   group.id = 'item-' + (++itemCounter);
-  group.innerHTML = `<button class="canvas-delete" onclick="removeItem(this.parentElement)">&times;</button>`;
-  group.addEventListener('click', (e) => { if (!e.target.classList.contains('canvas-delete')) toggleSelect(group, e); });
+  group.innerHTML = '';
+  group.addEventListener('click', (e) => toggleSelect(group, e));
 
   const items = [];
   selectedItems.forEach(id => { const el = document.getElementById(id); if (el) items.push(el); });
@@ -3928,6 +3951,60 @@ function rejectRefinement() {
 
 function revertRefinement() {
   rejectRefinement();
+}
+
+async function saveToEvolve() {
+  const btn = document.getElementById('btnSaveEvolve');
+  if (!refineActiveIssues || refineActiveIssues.length === 0) {
+    btn.textContent = 'No issues to save';
+    setTimeout(() => { btn.textContent = 'Save to Evolve'; }, 2000);
+    return;
+  }
+
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  let savedCount = 0;
+  for (const issue of refineActiveIssues) {
+    // Build constraint from issue
+    const constraint = issue.suggestion || issue.description || '';
+    const entry = {
+      title: issue.description ? issue.description.substring(0, 60) : 'Design issue',
+      type: issue.type || 'consistency',
+      severity: issue.severity || 'medium',
+      scenario: _detectCurrentScenario(),
+      issue: issue.description || '',
+      fix: issue.suggestion || '',
+      constraint: constraint
+    };
+
+    try {
+      const base = AgentAPI._getBase();
+      const res = await fetch(base + '/api/agent/evolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry)
+      });
+      if (res.ok) savedCount++;
+    } catch (e) {
+      console.warn('[Evolve] Save failed:', e.message);
+    }
+  }
+
+  btn.textContent = `Saved ${savedCount} to evolve.md`;
+  btn.disabled = false;
+  setTimeout(() => { btn.textContent = 'Save to Evolve'; }, 3000);
+}
+
+function _detectCurrentScenario() {
+  // Try to detect from active scene button
+  const activeBtn = document.querySelector('.scene-btn[style*="border-color"],.scene-btn.active');
+  if (activeBtn) {
+    const onclick = activeBtn.getAttribute('onclick') || '';
+    const m = onclick.match(/generateVariants\('([^']+)'\)/);
+    if (m) return m[1];
+  }
+  return 'general';
 }
 
 function resetRefinement() {
