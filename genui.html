@@ -1537,8 +1537,8 @@ let itemCounter = 0;
 // === VARIANT SYSTEM ===
 // =============================================
 let variants = {
-  A: { html: '', canvasStyle: {}, frameBackground: '', active: true, generated: false },
-  B: { html: '', canvasStyle: {}, frameBackground: '', active: false, generated: false }
+  A: { html: '', canvasStyle: {}, frameBackground: '', active: true, generated: false, prompt: '', scenario: '', layoutTree: null, renderModel: null, critic: null },
+  B: { html: '', canvasStyle: {}, frameBackground: '', active: false, generated: false, prompt: '', scenario: '', layoutTree: null, renderModel: null, critic: null }
 };
 let activeVariant = 'A';
 let compareMode = false;
@@ -1729,39 +1729,53 @@ function _restoreVariant(v) {
 // toggleVariantCompare replaced by toggleVariantView (A/B toggle)
 
 // Generate both variants from a scenario
-function generateVariants(scenarioKey) {
+function generateVariants(scenarioKey, promptText) {
+  const prompt = promptText || scenarioKey;
+
   // Route to agent API when connected
   if (agentSession.mode === 'agent') {
-    generateVariantsFromAgent(scenarioKey, scenarioKey);
+    generateVariantsFromAgent(prompt, scenarioKey);
     return;
   }
 
   // Local fallback: use preset scenarios
-  _generateVariantsLocal(scenarioKey);
+  _generateVariantsLocal(scenarioKey, prompt);
 }
 
-function _generateVariantsLocal(scenarioKey) {
+function _generateVariantsLocal(scenarioKey, promptText) {
   showVariantBar();
+  const prompt = promptText || scenarioKey;
+  const v = activeVariant; // generate only for currently active variant
 
-  // Variant A: standard generation
-  activeVariant = 'A';
   generateScenario(scenarioKey);
   _saveCurrentVariant();
-  variants.A.generated = true;
+  variants[v].generated = true;
+  variants[v].prompt = prompt;
+  variants[v].scenario = scenarioKey;
 
-  // Variant B: same scenario with controlled differences
-  activeVariant = 'B';
-  generateScenario(scenarioKey);
-  _applyVariantBDifferences();
-  _saveCurrentVariant();
-  variants.B.generated = true;
+  // Save to backend
+  _syncVariantsToBackend();
+}
 
-  // Switch back to A
-  activeVariant = 'A';
-  _restoreVariant('A');
-  document.getElementById('varTabA').classList.add('active');
-  document.getElementById('varTabB').classList.remove('active');
-
+// Sync variant prompt+result metadata to backend for Refine context
+async function _syncVariantsToBackend() {
+  if (agentSession.mode !== 'agent') return;
+  try {
+    const base = AgentAPI._getBase();
+    await fetch(base + '/api/agent/variants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: agentSession.id,
+        variants: {
+          A: variants.A.generated ? { prompt: variants.A.prompt, scenario: variants.A.scenario, html: variants.A.html.substring(0, 2000), critic: variants.A.critic } : null,
+          B: variants.B.generated ? { prompt: variants.B.prompt, scenario: variants.B.scenario, html: variants.B.html.substring(0, 2000), critic: variants.B.critic } : null
+        }
+      })
+    });
+  } catch (e) {
+    console.warn('[Variants] Sync to backend failed:', e.message);
+  }
 }
 
 function _applyVariantBDifferences() {
@@ -1813,46 +1827,38 @@ function _applyVariantBDifferences() {
   });
 }
 
-// Agent-powered variant generation (both variants via API)
+// Agent-powered generation — only generates for currently active variant
 async function generateVariantsFromAgent(prompt, scenarioHint) {
   showVariantBar();
+  const v = activeVariant; // only generate for the active variant
   const payload = StateManager.getGeneratePayload(scenarioHint, prompt);
 
-  showAgentLoading('Generating Variant A...');
+  showAgentLoading(`Generating Variant ${v}...`);
 
   try {
-    // Variant A
-    const resA = await AgentAPI.generateUI(payload);
+    const res = await AgentAPI.generateUI(payload);
     hideAgentLoading();
-    StateManager.updateFromAgentGenerate(resA);
-    activeVariant = 'A';
-    RenderEngine.renderFromModel(resA.renderModel);
-    _saveCurrentVariant();
-    variants.A.generated = true;
 
-    // Variant B — same prompt with variation instruction
-    showAgentLoading('Generating Variant B...');
-    const payloadB = { ...payload, prompt: prompt + '\n\n[VARIANT B]: Generate the same screen but with these controlled differences: adjust spacing density (tighter or looser by 8dp), vary border-radius (rounded vs more rounded), shift typography hierarchy emphasis (larger headings or more uniform sizing), and optionally vary grouping of elements. Keep the same components and content — only adjust spatial and typographic treatment.' };
-    const resB = await AgentAPI.generateUI(payloadB);
-    hideAgentLoading();
-    activeVariant = 'B';
-    RenderEngine.renderFromModel(resB.renderModel);
+    RenderEngine.renderFromModel(res.renderModel);
     _saveCurrentVariant();
-    variants.B.generated = true;
+    variants[v].generated = true;
+    variants[v].prompt = prompt;
+    variants[v].scenario = scenarioHint;
+    variants[v].layoutTree = res.layoutTree;
+    variants[v].renderModel = res.renderModel;
+    variants[v].critic = res.critic;
 
-    // Show A
-    activeVariant = 'A';
-    _restoreVariant('A');
-    document.getElementById('varTabA').classList.add('active');
-    document.getElementById('varTabB').classList.remove('active');
-  
-    RenderEngine.renderCritic(resA.critic);
+    StateManager.updateFromAgentGenerate(res);
+
+    // Save to backend
+    _syncVariantsToBackend();
+
+    if (res.critic) RenderEngine.renderCritic(res.critic);
   } catch (err) {
-    console.warn('Agent variant generation failed, falling back to local:', err.message);
+    console.warn('Agent generation failed, falling back to local:', err.message);
     hideAgentLoading();
-    // Fallback: use local generation for both
     const matched = scenarioHint || 'feed';
-    _generateVariantsLocal(matched);
+    _generateVariantsLocal(matched, prompt);
   }
 }
 
@@ -1978,6 +1984,11 @@ const StateManager = {
       sessionId: agentSession.id,
       currentLayout: agentSession.lastLayoutTree,
       currentRenderModel: agentSession.lastRenderModel,
+      activeVariant: activeVariant,
+      variantContext: {
+        A: variants.A.generated ? { prompt: variants.A.prompt, scenario: variants.A.scenario, critic: variants.A.critic } : null,
+        B: variants.B.generated ? { prompt: variants.B.prompt, scenario: variants.B.scenario, critic: variants.B.critic } : null
+      },
       feedback: feedback,
       issueTags: Array.from(tags),
       selectedNodes: selectedNodeIds,
@@ -3135,12 +3146,12 @@ function generateFromPrompt() {
   }
 
   if (agentSession.mode === 'agent') {
-    // --- Agent Mode: generate both variants via API ---
+    // Agent Mode: generate for selected variants via API
     generateVariantsFromAgent(prompt, scenarioHint);
   } else {
-    // --- Local Mode: generate both variants locally ---
+    // Local Mode: generate for selected variants locally
     const matched = scenarioHint || (promptLower ? 'feed' : 'login');
-    generateVariants(matched);
+    generateVariants(matched, prompt);
   }
 }
 

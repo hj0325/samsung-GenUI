@@ -830,11 +830,22 @@ async function handleRefine(body, res) {
     `${it.id}: styles={fontSize:${it.styles?.fontSize}, fontWeight:${it.styles?.fontWeight}, padding:${it.styles?.padding}, marginTop:${it.styles?.marginTop}, borderRadius:${it.styles?.borderRadius}} rect={w:${it.rect?.width?.toFixed?.(0) || '?'}, h:${it.rect?.height?.toFixed?.(0) || '?'}} text="${(it.textContent || '').substring(0, 40)}"`
   ).join('\n');
 
+  // Inject variant context — Refine knows both prompts and results
+  const varCtx = body.variantContext || getVariantContext(body.sessionId);
+  const activeV = body.activeVariant || 'A';
+  let variantSection = '';
+  if (varCtx.A || varCtx.B) {
+    variantSection = `\nVariant context (currently editing: ${activeV}):`;
+    if (varCtx.A) variantSection += `\n- Variant A prompt: "${varCtx.A.prompt || 'scenario button'}" | scenario: ${varCtx.A.scenario || '?'}${varCtx.A.critic ? ' | score: ' + (varCtx.A.critic.score || '?') : ''}`;
+    if (varCtx.B) variantSection += `\n- Variant B prompt: "${varCtx.B.prompt || 'scenario button'}" | scenario: ${varCtx.B.scenario || '?'}${varCtx.B.critic ? ' | score: ' + (varCtx.B.critic.score || '?') : ''}`;
+    variantSection += '\n';
+  }
+
   const userMsg = `User feedback: "${body.feedback}"
 Selected issue tags: [${(body.issueTags || []).join(', ')}]
 ${(body.selectedNodes || []).length > 0 ? 'Selected nodes: [' + body.selectedNodes.join(', ') + ']' : ''}
-
-Current layout snapshot (${(body.snapshot?.items || []).length} items):
+${variantSection}
+Current layout snapshot (${(body.snapshot?.items || []).length} items, Variant ${activeV}):
 ${snapshotSummary}
 
 Canvas style: gap=${body.snapshot?.canvasStyle?.gap}, padding=${body.snapshot?.canvasStyle?.padding}
@@ -842,7 +853,7 @@ Canvas style: gap=${body.snapshot?.canvasStyle?.gap}, padding=${body.snapshot?.c
 Analyze the issues and create a precise patch plan. Only patch affected nodes — preserve everything else.`;
 
   const promptSize = (systemPrompt.length / 1024).toFixed(1);
-  console.log(`  [constraints] ${promptSize}KB refine prompt`);
+  console.log(`  [constraints] ${promptSize}KB refine prompt (variant: ${activeV})`);
 
   const result = await callOpenAI(systemPrompt, userMsg, 0.4);
   sendJSON(res, 200, result);
@@ -860,6 +871,25 @@ function handleConstraintExtract(body, res) {
     compressionRatio: `${((1 - size / (DESIGN_MD_RAW.length + GENUI_MD_RAW.length + ORCH_MD_RAW.length)) * 100).toFixed(0)}%`,
     constraints
   });
+}
+
+// ============================================================================
+// Variant Session Storage — prompt + result per variant
+// ============================================================================
+// In-memory store (per session). Refine endpoint reads this for full context.
+const variantStore = {};  // { sessionId: { A: {prompt, scenario, html, critic}, B: {...} } }
+
+function handleVariantSync(body, res) {
+  const sid = body.sessionId || 'default';
+  variantStore[sid] = body.variants || {};
+  const aPrompt = body.variants?.A?.prompt || '';
+  const bPrompt = body.variants?.B?.prompt || '';
+  console.log(`  [variants] Session ${sid}: A="${aPrompt.substring(0, 40)}" B="${bPrompt.substring(0, 40)}"`);
+  sendJSON(res, 200, { success: true, sessionId: sid });
+}
+
+function getVariantContext(sessionId) {
+  return variantStore[sessionId || 'default'] || {};
 }
 
 // ============================================================================
@@ -931,6 +961,24 @@ const server = http.createServer(async (req, res) => {
       console.error('[API] Refine error:', e.message);
       sendJSON(res, 500, { error: e.message });
     }
+    return;
+  }
+
+  // Variant sync endpoint — store prompt+result per variant
+  if (url === '/api/agent/variants' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      handleVariantSync(body, res);
+    } catch (e) {
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // Variant read endpoint
+  if (url === '/api/agent/variants' && req.method === 'GET') {
+    const sid = (req.url.split('?')[1] || '').split('sessionId=')[1] || 'default';
+    sendJSON(res, 200, { sessionId: sid, variants: getVariantContext(sid) });
     return;
   }
 

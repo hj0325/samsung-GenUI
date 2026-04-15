@@ -4,7 +4,7 @@
     {
       "name": "genui",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3000"],
+      "runtimeArgs": ["-m", "http.server", "3000", "-d", "/Users/kyuhashim/Design/samsung-oneui-design-system"],
       "port": 3000,
       "autoPort": false
     }
