@@ -4074,19 +4074,31 @@ async function runAutoRefine() {
   btn.disabled = true;
   const originalBtnText = btn.textContent;
 
+  // Severity ranking for picking the single top issue per iteration.
+  const sevRank = { high: 3, medium: 2, low: 1 };
+  const pickTopIssue = (issues) => {
+    if (!issues || !issues.length) return null;
+    return [...issues].sort((a, b) => (sevRank[b.severity] || 0) - (sevRank[a.severity] || 0))[0];
+  };
+
   // Use user-typed feedback as seed if provided, otherwise let agent self-analyze.
   const seedFeedback = (document.getElementById('refineFeedback').value || '').trim();
 
-  let lastScore = null;
+  let prevScore = null;
+  let prevSnapshot = null; // snapshot BEFORE the latest applied patch (for revert if score drops)
   try {
     for (let i = 1; i <= n; i++) {
       statusEl.textContent = `Iteration ${i}/${n} — analyzing…`;
       btn.textContent = `Running ${i}/${n}`;
 
-      // Seed text: use user's text on first iter only, else auto-prompt for self-critique
-      const feedback = (i === 1 && seedFeedback)
-        ? seedFeedback
-        : '자동 품질 개선: 현재 디자인을 평가하고 간격·정렬·위계·가독성·일관성 문제를 찾아 개선안을 적용해주세요.';
+      // Auto prompt asks for the SINGLE most important issue + minimal patches only.
+      // Explicitly forbid wholesale regeneration.
+      const autoPrompt =
+        '자동 품질 개선 (surgical mode): 현재 디자인에서 가장 중요한 문제 하나만 식별하고, ' +
+        '그 문제에만 해당하는 최소한의 CSS 패치만 반환하세요. ' +
+        '전체 레이아웃을 재생성하지 말고, 영향받는 노드만 수정합니다. ' +
+        '컴포넌트 구조·종류·순서는 그대로 유지하세요.';
+      const feedback = (i === 1 && seedFeedback) ? seedFeedback : autoPrompt;
 
       let resp;
       try {
@@ -4096,33 +4108,63 @@ async function runAutoRefine() {
         break;
       }
 
-      const issueCount = (refineActiveIssues || []).length;
-      const score = resp && resp.critic && typeof resp.critic.score === 'number' ? resp.critic.score : null;
-      if (score !== null) lastScore = score;
+      const curScore = resp && resp.critic && typeof resp.critic.score === 'number' ? resp.critic.score : null;
 
-      // Early exit if agent reports no issues
-      if (issueCount === 0 && (!resp || !resp.patchPlan || !(resp.patchPlan.patches || []).length)) {
-        statusEl.textContent = `Iteration ${i}/${n}: no issues found${score !== null ? ` (score ${score})` : ''}. Stopped.`;
+      // Score regression check — if the just-applied patch made things worse, revert and stop.
+      if (prevScore !== null && curScore !== null && curScore < prevScore && prevSnapshot) {
+        restoreSnapshot(prevSnapshot);
+        statusEl.textContent =
+          `Iteration ${i}: score dropped ${prevScore} → ${curScore}. Reverted and stopped.`;
         break;
+      }
+
+      const issueCount = (refineActiveIssues || []).length;
+      if (issueCount === 0 && (!resp || !resp.patchPlan || !(resp.patchPlan.patches || []).length)) {
+        statusEl.textContent =
+          `Iteration ${i}/${n}: no issues found${curScore !== null ? ` (score ${curScore})` : ''}. Stopped.`;
+        break;
+      }
+
+      // Narrow to the SINGLE top issue — surgical fix only, no wholesale rewrites.
+      const top = pickTopIssue(refineActiveIssues);
+      if (top) {
+        refineActiveIssues = [top];
       }
 
       statusEl.textContent = `Iteration ${i}/${n} — planning patches…`;
       planRefinementPatches();
 
-      statusEl.textContent = `Iteration ${i}/${n} — applying ${refinePatches.length} patch(es)…`;
+      // Further narrow: keep only patches whose issueType matches the top issue.
+      if (top && Array.isArray(refinePatches) && refinePatches.length > 1) {
+        const matching = refinePatches.filter(p => p.issueType === top.type);
+        if (matching.length) refinePatches = matching;
+      }
+
+      if (!refinePatches || refinePatches.length === 0) {
+        statusEl.textContent = `Iteration ${i}/${n}: no applicable patches. Stopped.`;
+        break;
+      }
+
+      // Snapshot BEFORE apply so we can revert if next critic score regresses.
+      prevSnapshot = captureSnapshot();
+      prevScore = curScore;
+
+      statusEl.textContent =
+        `Iteration ${i}/${n} — applying ${refinePatches.length} patch(es) for "${top ? top.type : 'top'}"…`;
       applyRefinementPatches();
 
-      // Brief pause so DOM updates flush and critic can see new layout
+      // Let DOM settle
       await new Promise(r => setTimeout(r, 400));
 
-      // Accept to clear state for next cycle (but preserve the applied changes)
+      // Accept to clear step state (snapshot cleared inside, but prevSnapshot retained separately)
       acceptRefinement();
 
-      statusEl.textContent = `Iteration ${i}/${n} — done${score !== null ? ` (score ${score})` : ''}.`;
-      // Small gap between cycles
+      statusEl.textContent =
+        `Iteration ${i}/${n} — done${curScore !== null ? ` (score ${curScore})` : ''}.`;
       await new Promise(r => setTimeout(r, 250));
     }
-    statusEl.textContent = `Auto refine complete${lastScore !== null ? ` · last score ${lastScore}/100` : ''}.`;
+    statusEl.textContent =
+      `Auto refine complete${prevScore !== null ? ` · last score ${prevScore}/100` : ''}.`;
   } finally {
     _autoRefineRunning = false;
     btn.disabled = false;
