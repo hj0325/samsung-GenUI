@@ -264,32 +264,6 @@ function normalizeComposerOutput(input) {
   };
 }
 
-// ---------------------------------------------------------------------------
-//  Back-compat adapters — emit the legacy snake_case shape that existing
-//  layout_composer / server / client code still reads. To be removed once
-//  Step 4 composer and validator wiring are refactored to the normalized
-//  camelCase contract.
-// ---------------------------------------------------------------------------
-
-function toLegacySelectorOutput(normalizedPlan) {
-  if (!normalizedPlan) return { required_components: [], planner_notes: {} };
-  return {
-    required_components: (normalizedPlan.requiredComponents || []).map(c => ({
-      slot:           c.slot,
-      component_type: c.componentType,
-      variant_hint:   c.variantHint,
-      priority:       c.priority,
-      content:        c.content,
-      constraints:    c.constraints
-    })),
-    planner_notes: {
-      kept_primary_tasks:       (normalizedPlan.plannerNotes || {}).keptPrimaryTasks       || [],
-      collapsed_optional_tasks: (normalizedPlan.plannerNotes || {}).collapsedOptionalTasks || [],
-      selection_reasoning:      (normalizedPlan.plannerNotes || {}).selectionReasoning     || []
-    }
-  };
-}
-
 module.exports = {
   allowed,
   camelizeKeysDeep,
@@ -297,6 +271,5 @@ module.exports = {
   normalizeInterpreterOutput,
   normalizeNormalizerOutput,
   normalizeSelectorOutput,
-  normalizeComposerOutput,
-  toLegacySelectorOutput
+  normalizeComposerOutput
 };

@@ -1,12 +1,17 @@
 // ============================================================================
-//  GENUI PIPELINE v1 — step_5 (layout_composer) + pipeline-level validators
+//  GENUI PIPELINE v1 — layout-level validators (context + overflow)
 //  ---------------------------------------------------------------------------
-//  Pure algorithm. NO LLM call. Takes the planner output + resolved ui_state
-//  and produces a layout_plan. Then runs two validators that operate on the
-//  plan (not on raw Figma): context_component_match, layout_overflow_check.
+//  Pure algorithm. NO LLM. Operates on the canonical camelCase layoutPlan
+//  emitted by Step 4 (groups[].children[]) + uiState + selected plan, and
+//  produces canonical violation rows (stage='layout').
+//
+//  The algorithmic composer that used to live here is superseded by the
+//  Step 4 LLM composer in pipeline.js and has been removed.
 // ============================================================================
 
-const fs = require('fs');
+'use strict';
+
+const fs   = require('fs');
 const path = require('path');
 
 const REGISTRY_PATH = path.join(__dirname, 'figma-refs', 'component_registry.json');
@@ -14,285 +19,294 @@ let REGISTRY = null;
 try { REGISTRY = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8')); }
 catch (e) { console.warn('[layout_composer] component_registry.json not found:', e.message); }
 
-// Canonical viewport used for overflow check (Galaxy S26 portrait, zoom=1).
-// Can be overridden via opts.viewport.
 const DEFAULT_VIEWPORT = { width: 360, height: 780 };
-
-// ----------------------------------------------------------------------------
-//  HELPERS
-// ----------------------------------------------------------------------------
 
 function getComponentSpec(componentType) {
   if (!REGISTRY) return null;
   return (REGISTRY.components || {})[componentType] || null;
 }
 
-function pickVariant(uiState, hinted, componentSpec) {
-  // Priority: explicit hint > density-driven > 'default'
-  if (hinted && componentSpec && componentSpec.states && componentSpec.states.includes(hinted)) {
-    return hinted;
-  }
-  if (uiState && uiState.densityMode === 'compressed' && componentSpec && componentSpec.states) {
-    if (componentSpec.states.includes('glance'))   return 'glance';
-    if (componentSpec.states.includes('compact'))  return 'compact';
-  }
-  if (uiState && uiState.attentionMode === 'glanceable' && componentSpec && componentSpec.states) {
-    if (componentSpec.states.includes('glance'))  return 'glance';
-  }
-  return 'default';
-}
+// ---------------------------------------------------------------------------
+//  Canonical violation row
+// ---------------------------------------------------------------------------
 
-function containerFor(uiState) {
-  // glanceable / driving → vertical-stack (single-column, large targets, clear priority order)
-  // default app screens  → vertical-stack
-  // QS overlay / dense tool-rows → grid
-  if (!uiState) return 'vertical-stack';
-  if (uiState.overlayType === 'quick-settings') return 'grid';
-  return 'vertical-stack';
-}
-
-function gapForDensity(densityMode) {
-  if (densityMode === 'compressed') return 8;
-  if (densityMode === 'expanded')   return 16;
-  return 12;
-}
-
-function paddingForSurface(uiState) {
-  if (!uiState) return { top: 16, right: 16, bottom: 16, left: 16 };
-  if (uiState.overlayType === 'system-dialog')  return { top: 24, right: 24, bottom: 16, left: 24 };
-  if (uiState.overlayType === 'quick-settings') return { top: 12, right: 16, bottom: 12, left: 16 };
-  if (uiState.densityMode === 'compressed')     return { top: 12, right: 16, bottom: 12, left: 16 };
-  return { top: 20, right: 20, bottom: 20, left: 20 };
-}
-
-function placementLabel(index, total) {
-  if (total === 1)            return 'center';
-  if (index === 0)            return 'top';
-  if (index === total - 1)    return 'bottom';
-  return 'middle';
-}
-
-// ----------------------------------------------------------------------------
-//  STEP 5 — COMPOSE LAYOUT
-// ----------------------------------------------------------------------------
-
-function composeLayout({ uiState, requiredComponents, opts }) {
-  const components = (requiredComponents || []).slice();
-  // Sort by priority ASC (1 first), preserving original order on ties.
-  components.sort((a, b) => (a.priority || 2) - (b.priority || 2));
-
-  const container = containerFor(uiState);
-  const gap       = gapForDensity(uiState && uiState.densityMode);
-  const padding   = paddingForSurface(uiState);
-
-  const total = components.length;
-  const children = components.map((c, i) => {
-    const spec = getComponentSpec(c.component_type);
-    return {
-      component_id: c.component_type,
-      variant:      pickVariant(uiState, c.variant_hint, spec),
-      placement:    placementLabel(i, total),
-      priority:     c.priority || 2,
-      slot:         c.slot || null,
-      content:      c.content || {},
-      _spec_found:  spec != null
-    };
-  });
-
+function buildViolation(fields) {
+  const autoFix = fields.autoFix || { possible: false, action: null, value: null };
+  const status  = fields.status || 'review-required';
   return {
-    layout_plan: {
-      container,
-      padding,
-      gap,
-      children
-    }
-  };
-}
-
-// ----------------------------------------------------------------------------
-//  PIPELINE-LEVEL VALIDATORS
-//  ---------------------------------------------------------------------------
-//  Output rows follow the canonical violation schema from
-//  figma-refs/validator.js where applicable. Pipeline validators operate on
-//  the layout_plan + ui_state + registry, not on raw Figma geometry.
-// ----------------------------------------------------------------------------
-
-function buildPipelineViolation({ id, property, ruleId, category, severity, status, actual, expected, delta, message, autoFix, element }) {
-  return {
-    id,
-    frame: '(pipeline)',
-    element: element || null,
-    nodeId: null,
-    property,
-    ruleId,
-    category,
-    severity,
+    id:          fields.id,
+    stage:       fields.stage || 'layout',
+    ruleId:      fields.ruleId,
+    category:    fields.category,
+    severity:    fields.severity,
     status,
-    actual,
-    expected,
-    delta: delta === undefined ? null : delta,
-    message,
-    autoFix: autoFix || { possible: false, action: null, value: null },
-    needsReview: status !== 'auto-fixable',
-    source: { rawFile: 'pipeline/layout_plan', ruleFile: 'figma-refs/component_registry.json' }
+    frame:       fields.frame || '(pipeline)',
+    element:     fields.element || null,
+    nodeId:      fields.nodeId || null,
+    property:    fields.property || null,
+    actual:      fields.actual   === undefined ? null : fields.actual,
+    expected:    fields.expected === undefined ? null : fields.expected,
+    delta:       fields.delta    === undefined ? null : fields.delta,
+    message:     fields.message || '',
+    autoFix,
+    needsReview: status !== 'auto-fixable'
   };
 }
 
-// Rule: each component's allowed_contexts must intersect the ui_state context tags.
-function validateContextComponentMatch(uiState, layoutPlan, idGen) {
-  const out = [];
-  const uiContextTags = [];
-  if (uiState) {
-    if (uiState.baseSurface)                      uiContextTags.push(uiState.baseSurface);
-    if (uiState.overlayType && uiState.overlayType !== 'none') uiContextTags.push(uiState.overlayType);
-    if (uiState.attentionMode)                    uiContextTags.push(uiState.attentionMode);
-    if (uiState.interactionMode)                  uiContextTags.push(uiState.interactionMode);
-  }
-  const ctxSet = new Set(uiContextTags);
+// ---------------------------------------------------------------------------
+//  Helpers — walk canonical layoutPlan.groups[].children[]
+// ---------------------------------------------------------------------------
 
-  (layoutPlan.children || []).forEach((child, idx) => {
-    const spec = getComponentSpec(child.component_id);
-    if (!spec) {
-      out.push(buildPipelineViolation({
-        id: idGen(),
-        element: child.component_id,
-        property: 'component_type',
-        ruleId: 'context_component_match',
-        category: 'context',
+function flattenGroups(layoutPlan) {
+  const groups = (layoutPlan && Array.isArray(layoutPlan.groups)) ? layoutPlan.groups : [];
+  const out = [];
+  groups.forEach(g => {
+    (g.children || []).forEach(ch => {
+      out.push({
+        componentId: ch.componentId,
+        variant:     ch.variant,
+        placement:   ch.placement,
+        priority:    ch.priority,
+        visibility:  ch.visibility,
+        _groupId:    g.groupId,
+        _groupContainer: g.container,
+        _groupGap:   g.gap
+      });
+    });
+  });
+  return out;
+}
+
+function uiContextTags(uiState) {
+  const tags = [];
+  if (!uiState) return tags;
+  if (uiState.baseSurface)     tags.push(uiState.baseSurface);
+  if (uiState.overlayType && uiState.overlayType !== 'none') tags.push(uiState.overlayType);
+  if (uiState.attentionMode)   tags.push(uiState.attentionMode);
+  if (uiState.interactionMode) tags.push(uiState.interactionMode);
+  return tags;
+}
+
+// ---------------------------------------------------------------------------
+//  context_component_match
+//  ---------------------------------------------------------------------------
+//  Every componentId in layoutPlan.groups[].children[]:
+//    (a) must be in plan.requiredComponents[].componentType
+//    (b) its registry allowed_contexts must intersect the uiState tags
+// ---------------------------------------------------------------------------
+
+function validateContextComponentMatch(layoutPlan, uiState, plan, idGen) {
+  const out = [];
+  const ctxTags = uiContextTags(uiState);
+  const ctxSet  = new Set(ctxTags);
+  const selectedTypes = new Set(
+    ((plan && plan.requiredComponents) || []).map(c => c.componentType).filter(Boolean)
+  );
+  const flat = flattenGroups(layoutPlan);
+
+  flat.forEach(ch => {
+    // (a) selection coherence
+    if (!selectedTypes.has(ch.componentId)) {
+      out.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'context_component_match',
+        category: 'consistency',
         severity: 'high',
-        status: 'review-required',
-        actual: child.component_id,
-        expected: 'registered component',
-        message: `component_type "${child.component_id}" is not in the registry`,
-        autoFix: { possible: false, action: null, value: null }
+        status:   'review-required',
+        element:  ch.componentId,
+        property: 'componentId',
+        actual:   ch.componentId,
+        expected: Array.from(selectedTypes),
+        message:  `componentId "${ch.componentId}" is not in STEP 3 requiredComponents`
       }));
       return;
     }
-    const allowed = spec.allowed_contexts || [];
+    // (b) registry allowed_contexts intersection
+    const spec = getComponentSpec(ch.componentId);
+    if (!spec) {
+      out.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'context_component_match',
+        category: 'vocabulary',
+        severity: 'high',
+        status:   'review-required',
+        element:  ch.componentId,
+        property: 'component_type',
+        actual:   ch.componentId,
+        expected: 'registered component',
+        message:  `component_type "${ch.componentId}" is not in the registry`
+      }));
+      return;
+    }
+    const allowed = Array.isArray(spec.allowed_contexts) ? spec.allowed_contexts : [];
     if (allowed.length === 0) return;
-    const match = allowed.some(tag => ctxSet.has(tag));
-    if (!match) {
-      out.push(buildPipelineViolation({
-        id: idGen(),
-        element: child.component_id,
-        property: 'allowed_contexts',
-        ruleId: 'context_component_match',
+    if (!allowed.some(tag => ctxSet.has(tag))) {
+      out.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'context_component_match',
         category: 'context',
         severity: 'medium',
-        status: 'review-required',
-        actual: Array.from(ctxSet),
+        status:   'review-required',
+        element:  ch.componentId,
+        property: 'allowed_contexts',
+        actual:   ctxTags,
         expected: allowed,
-        message: `"${child.component_id}" allowed_contexts [${allowed.join(', ')}] do not intersect ui_state context [${Array.from(ctxSet).join(', ')}]`,
-        autoFix: { possible: false, action: null, value: null }
+        message:  `"${ch.componentId}" allowed_contexts [${allowed.join(', ')}] do not intersect uiState context [${ctxTags.join(', ')}]`
       }));
     }
   });
+
   return out;
 }
 
-// Rule: sum of children min_height + gaps + padding ≤ viewport.height (portrait)
-function validateLayoutOverflow(uiState, layoutPlan, viewport, idGen) {
-  const out = [];
-  const vp = viewport || DEFAULT_VIEWPORT;
-  const pad = layoutPlan.padding || { top: 0, right: 0, bottom: 0, left: 0 };
-  const gap = layoutPlan.gap || 0;
-  const children = layoutPlan.children || [];
+// ---------------------------------------------------------------------------
+//  layout_overflow_check
+//  ---------------------------------------------------------------------------
+//  Walks canonical groups[] — per-group height (vertical-stack / horizontal-
+//  stack / grid) + inter-group gap + top/bottom padding. Only visible children
+//  are counted. Also widens by densityMode / attentionMode / overlayType:
+//    - overlayType !== 'none' → usable height ~ 60% of viewport
+//    - densityMode === 'compressed' with >6 visible children → flag
+//    - attentionMode === 'glanceable' with >4 visible children → flag
+// ---------------------------------------------------------------------------
 
-  // vertical-stack is the common case; for grid we approximate as ceil(n/columns).
-  const isGrid = layoutPlan.container === 'grid';
-  const columns = isGrid ? 4 : 1; // QS grid default 4 columns
+function groupIntrinsicHeight(group, visibleChildren) {
+  if (visibleChildren.length === 0) return 0;
+  const heights = visibleChildren.map(ch => {
+    const spec = getComponentSpec(ch.componentId);
+    return (spec && spec.layout_spec && spec.layout_spec.min_height) || 0;
+  });
+  const gap = group.gap || 0;
 
-  let needed = pad.top + pad.bottom;
-  let widthNeeded = pad.left + pad.right;
-
-  if (isGrid) {
-    const rows = Math.ceil(children.length / columns);
-    let maxRowHeight = 0;
-    children.forEach((child) => {
-      const spec = getComponentSpec(child.component_id);
-      if (spec) maxRowHeight = Math.max(maxRowHeight, spec.layout_spec?.min_height || 0);
-    });
-    needed += rows * maxRowHeight + Math.max(0, rows - 1) * gap;
-  } else {
-    children.forEach((child, i) => {
-      const spec = getComponentSpec(child.component_id);
-      if (spec) {
-        needed += spec.layout_spec?.min_height || 0;
-        widthNeeded = Math.max(widthNeeded, (spec.layout_spec?.min_width || 0) + pad.left + pad.right);
-      }
-      if (i < children.length - 1) needed += gap;
-    });
+  if (group.container === 'horizontal-stack') {
+    return Math.max.apply(null, heights);
   }
+  if (group.container === 'grid') {
+    const cols = 2;
+    const rows = Math.ceil(visibleChildren.length / cols);
+    const rowMax = Math.max.apply(null, heights);
+    return rows * rowMax + Math.max(0, rows - 1) * gap;
+  }
+  // vertical-stack (default)
+  return heights.reduce((a, b) => a + b, 0) + Math.max(0, visibleChildren.length - 1) * gap;
+}
 
-  if (needed > vp.height) {
-    out.push(buildPipelineViolation({
-      id: idGen(),
-      element: layoutPlan.container,
-      property: 'height',
-      ruleId: 'layout_overflow_check',
+function validateLayoutOverflow(layoutPlan, uiState, viewport, idGen) {
+  const out = [];
+  const vp  = viewport || DEFAULT_VIEWPORT;
+  const lp  = layoutPlan || {};
+  const pad = lp.padding || { top: 0, right: 0, bottom: 0, left: 0 };
+  const groupGap = lp.gap || 0;
+  const groups   = Array.isArray(lp.groups) ? lp.groups : [];
+
+  const visibleByGroup = groups.map(g => ({
+    group: g,
+    visible: (g.children || []).filter(ch => ch.visibility === 'visible')
+  }));
+
+  // Height check
+  let needed = pad.top + pad.bottom;
+  let nonEmptyGroups = 0;
+  visibleByGroup.forEach(({ group, visible }) => {
+    if (visible.length === 0) return;
+    needed += groupIntrinsicHeight(group, visible);
+    nonEmptyGroups += 1;
+  });
+  if (nonEmptyGroups > 1) needed += (nonEmptyGroups - 1) * groupGap;
+
+  // Overlay surfaces have less usable height
+  const overlayDiscount = (uiState && uiState.overlayType && uiState.overlayType !== 'none') ? 0.6 : 1.0;
+  const usableHeight = Math.floor(vp.height * overlayDiscount);
+
+  if (needed > usableHeight) {
+    out.push(buildViolation({
+      id:       idGen(),
+      stage:    'layout',
+      ruleId:   'layout_overflow_check',
       category: 'layout',
       severity: 'high',
-      status: 'auto-fixable',
-      actual: needed,
-      expected: vp.height,
-      delta: needed - vp.height,
-      message: `layout exceeds viewport height by ${needed - vp.height}px — collapse lowest-priority children or switch to compact variant`,
-      autoFix: { possible: true, action: 'remove', value: 'collapse_priority_3_first' }
+      status:   'auto-fixable',
+      element:  lp.container || 'layoutPlan',
+      property: 'height',
+      actual:   needed,
+      expected: usableHeight,
+      delta:    needed - usableHeight,
+      message:  `layout exceeds usable height by ${needed - usableHeight}px (usable=${usableHeight}, overlay=${uiState && uiState.overlayType}) — collapse priority-3 children or switch to compact variants`,
+      autoFix:  { possible: true, action: 'collapse', value: 'priority_3_first' }
     }));
   }
 
-  if (widthNeeded > vp.width) {
-    out.push(buildPipelineViolation({
-      id: idGen(),
-      element: layoutPlan.container,
-      property: 'width',
-      ruleId: 'layout_overflow_check',
+  // Width check — any single child whose min_width + horizontal padding exceeds viewport.width
+  const widthCap = vp.width - pad.left - pad.right;
+  flattenGroups(lp).forEach(ch => {
+    if (ch.visibility !== 'visible') return;
+    const spec = getComponentSpec(ch.componentId);
+    const minW = (spec && spec.layout_spec && spec.layout_spec.min_width) || 0;
+    if (minW > widthCap) {
+      out.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'layout_overflow_check',
+        category: 'layout',
+        severity: 'medium',
+        status:   'review-required',
+        element:  ch.componentId,
+        property: 'width',
+        actual:   minW,
+        expected: widthCap,
+        delta:    minW - widthCap,
+        message:  `"${ch.componentId}" min_width (${minW}) exceeds usable width (${widthCap}) — switch to compact variant or relax padding`
+      }));
+    }
+  });
+
+  // Density / attention heuristics
+  const allVisible = flattenGroups(lp).filter(ch => ch.visibility === 'visible');
+  if (uiState && uiState.densityMode === 'compressed' && allVisible.length > 6) {
+    out.push(buildViolation({
+      id:       idGen(),
+      stage:    'layout',
+      ruleId:   'layout_overflow_check',
       category: 'layout',
       severity: 'medium',
-      status: 'review-required',
-      actual: widthNeeded,
-      expected: vp.width,
-      delta: widthNeeded - vp.width,
-      message: `a child's min_width + padding exceeds viewport width — switch to compact variant or relax padding`,
-      autoFix: { possible: false, action: null, value: null }
+      status:   'review-required',
+      element:  lp.container || 'layoutPlan',
+      property: 'visibleChildren',
+      actual:   allVisible.length,
+      expected: 6,
+      delta:    allVisible.length - 6,
+      message:  `densityMode=compressed but ${allVisible.length} visible children (>6) — collapse lower-priority items`
+    }));
+  }
+  if (uiState && uiState.attentionMode === 'glanceable' && allVisible.length > 4) {
+    out.push(buildViolation({
+      id:       idGen(),
+      stage:    'layout',
+      ruleId:   'layout_overflow_check',
+      category: 'layout',
+      severity: 'medium',
+      status:   'review-required',
+      element:  lp.container || 'layoutPlan',
+      property: 'visibleChildren',
+      actual:   allVisible.length,
+      expected: 4,
+      delta:    allVisible.length - 4,
+      message:  `attentionMode=glanceable but ${allVisible.length} visible children (>4) — surface only the top 4`
     }));
   }
 
   return out;
-}
-
-// ----------------------------------------------------------------------------
-//  COMPOSE + VALIDATE (one-shot)
-// ----------------------------------------------------------------------------
-
-function runCompose({ uiState, requiredComponents, opts }) {
-  const { layout_plan } = composeLayout({ uiState, requiredComponents, opts });
-
-  let counter = 0;
-  const idGen = () => `pipeline-v-${String(++counter).padStart(3, '0')}`;
-
-  const violations = [
-    ...validateContextComponentMatch(uiState, layout_plan, idGen),
-    ...validateLayoutOverflow(uiState, layout_plan, opts && opts.viewport, idGen)
-  ];
-
-  const summary = {
-    total: violations.length,
-    high:   violations.filter(v => v.severity === 'high').length,
-    medium: violations.filter(v => v.severity === 'medium').length,
-    low:    violations.filter(v => v.severity === 'low').length,
-    autoFixable:    violations.filter(v => v.status === 'auto-fixable').length,
-    reviewRequired: violations.filter(v => v.status === 'review-required').length,
-    semanticReview: violations.filter(v => v.status === 'semantic-review').length
-  };
-
-  return { layout_plan, validation: { summary, violations } };
 }
 
 module.exports = {
-  composeLayout,
   validateContextComponentMatch,
   validateLayoutOverflow,
-  runCompose,
-  DEFAULT_VIEWPORT
+  buildViolation,
+  getComponentSpec,
+  flattenGroups,
+  DEFAULT_VIEWPORT,
+  REGISTRY_PATH
 };

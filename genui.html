@@ -2860,19 +2860,19 @@ const PIPELINE_FALLBACK_TEMPLATES = {
   </div>`
 };
 
-function pipelineRenderChild(child) {
-  const type = child.component_id;
-  const content = child.content || {};
+// Canonical-only renderer. Walks layoutPlan.groups[].children[], pulls
+// content by componentType from plan.requiredComponents[].
+function pipelineRenderChild(child, content, groupId) {
+  const type = child.componentId;
   let html;
   if (templates[type]) {
     html = templates[type]();
   } else if (PIPELINE_FALLBACK_TEMPLATES[type]) {
-    html = PIPELINE_FALLBACK_TEMPLATES[type](content);
-    // Substitution for non-fallback templates is best-effort (they use hard-coded sample text).
+    html = PIPELINE_FALLBACK_TEMPLATES[type](content || {});
   } else {
     html = `<div class="oui-card"><div class="oui-card-title">${type}</div><div class="oui-card-desc">(no template registered)</div></div>`;
   }
-  // Best-effort content injection for core templates (title/value)
+  // Best-effort content injection for registry-native templates
   if (templates[type] && content && (content.label || content.value)) {
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
@@ -2886,10 +2886,12 @@ function pipelineRenderChild(child) {
   const wrapper = document.createElement('div');
   wrapper.className = 'canvas-item full-width';
   wrapper.id = 'pipeline-item-' + (++itemCounter);
-  wrapper.dataset.compType = type;
-  wrapper.dataset.pipelineSlot    = child.slot || '';
-  wrapper.dataset.pipelineVariant = child.variant || '';
-  wrapper.dataset.pipelinePriority = String(child.priority || 2);
+  wrapper.dataset.compType          = type;
+  wrapper.dataset.pipelineGroup     = groupId || '';
+  wrapper.dataset.pipelineVariant   = child.variant || '';
+  wrapper.dataset.pipelinePlacement = child.placement || '';
+  wrapper.dataset.pipelinePriority  = String(child.priority || 2);
+  wrapper.dataset.pipelineVisibility = child.visibility || 'visible';
   wrapper.innerHTML = html;
   wrapper.setAttribute('draggable','true');
   wrapper.addEventListener('click', (e) => toggleSelect(wrapper, e));
@@ -2902,63 +2904,91 @@ function renderPipelineResponse(resp) {
   const frame  = document.getElementById('canvasFrame');
   const output = document.getElementById('pipelineOutput');
 
-  // (1) Background: apply resolved ui_state → decision → frame
-  if (window.UIState && resp.ui_state) {
+  const uiState    = resp.uiState    || {};
+  const layoutPlan = resp.layoutPlan || {};
+  const plan       = resp.plan       || {};
+  const validation = resp.validation || { summary: {}, violations: [] };
+  const explanation = resp.explanation || {};
+
+  // (1) Background from canonical uiState
+  if (window.UIState && uiState.backgroundPolicy) {
     const decision = {
-      showWallpaper: (resp.ui_state.backgroundPolicy === 'wallpaper' ||
-                      resp.ui_state.backgroundPolicy === 'scrim-over-wallpaper'),
-      backgroundPolicy: resp.ui_state.backgroundPolicy
+      showWallpaper: (uiState.backgroundPolicy === 'wallpaper' ||
+                      uiState.backgroundPolicy === 'scrim-over-wallpaper'),
+      backgroundPolicy: uiState.backgroundPolicy
     };
-    window.UIState.applyDecisionToFrame(frame, decision, resp.ui_state);
-    // Also swap the wallpaper visual per the policy (reuse existing swap logic)
+    window.UIState.applyDecisionToFrame(frame, decision, uiState);
     const target = (decision.backgroundPolicy === 'dialog-surface') ? 'dialog-surface'
                  : decision.showWallpaper ? userWallpaperChoice
                  : 'galaxy-night';
     if (typeof setWallpaper === 'function') setWallpaper(target, { system: true });
   }
 
-  // (2) Canvas: clear + apply layout_plan padding/gap + render children
+  // (2) Canvas: walk canonical groups[].children[]
   clearCanvas();
-  canvas.style.display = 'flex';
+  canvas.style.display       = 'flex';
   canvas.style.flexDirection = 'column';
-  canvas.style.alignItems = 'stretch';
-  const lp = resp.layout_plan || {};
-  canvas.style.gap = (lp.gap ?? 12) + 'px';
-  const pad = lp.padding || { top:16, right:16, bottom:16, left:16 };
+  canvas.style.alignItems    = 'stretch';
+  canvas.style.gap           = (layoutPlan.gap ?? 12) + 'px';
+  const pad = layoutPlan.padding || { top:16, right:16, bottom:16, left:16 };
   canvas.style.padding = `${pad.top}px ${pad.right}px ${pad.bottom}px ${pad.left}px`;
 
-  (lp.children || []).forEach((child, i) => {
-    const el = pipelineRenderChild(child);
-    el.style.animation = `fadeIn 300ms cubic-bezier(0.2,0,0,1) ${i * 40}ms backwards`;
-    canvas.appendChild(el);
+  const contentByType = new Map(
+    (plan.requiredComponents || []).map(c => [c.componentType, c.content || {}])
+  );
+
+  let renderedIndex = 0;
+  (layoutPlan.groups || []).forEach(group => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'canvas-group';
+    groupEl.dataset.groupId = group.groupId || '';
+    groupEl.style.display = 'flex';
+    groupEl.style.flexDirection = (group.container === 'horizontal-stack') ? 'row'
+                                : (group.container === 'grid')             ? 'row'
+                                : 'column';
+    if (group.container === 'grid') groupEl.style.flexWrap = 'wrap';
+    groupEl.style.gap = (group.gap ?? 8) + 'px';
+    groupEl.style.width = '100%';
+
+    (group.children || []).forEach(child => {
+      if (child.visibility && child.visibility !== 'visible') return;
+      const content = contentByType.get(child.componentId) || {};
+      const el = pipelineRenderChild(child, content, group.groupId);
+      el.style.animation = `fadeIn 300ms cubic-bezier(0.2,0,0,1) ${renderedIndex * 40}ms backwards`;
+      if (group.container === 'grid') el.style.flex = '1 1 calc(50% - 8px)';
+      groupEl.appendChild(el);
+      renderedIndex++;
+    });
+
+    if (groupEl.children.length > 0) canvas.appendChild(groupEl);
   });
 
-  // (3) Output panel: ui_state chip + explanation + violations
+  // (3) Output panel: uiState chips + explanation + canonical validation summary
   if (output) {
-    const st = resp.ui_state || {};
-    const ex = resp.explanation || {};
-    const pv = resp.plan_validation || {};
-    const lv = resp.layout_validation || {};
     const chips = [
-      st.baseSurface && `surface:${st.baseSurface}`,
-      st.overlayType && st.overlayType !== 'none' && `overlay:${st.overlayType}`,
-      st.attentionMode && `attn:${st.attentionMode}`,
-      st.densityMode && `density:${st.densityMode}`,
-      st.interactionMode && `int:${st.interactionMode}`,
-      st.backgroundPolicy && `bg:${st.backgroundPolicy}`
+      uiState.baseSurface       && `surface:${uiState.baseSurface}`,
+      uiState.overlayType       && uiState.overlayType !== 'none' && `overlay:${uiState.overlayType}`,
+      uiState.attentionMode     && `attn:${uiState.attentionMode}`,
+      uiState.densityMode       && `density:${uiState.densityMode}`,
+      uiState.interactionMode   && `int:${uiState.interactionMode}`,
+      uiState.backgroundPolicy  && `bg:${uiState.backgroundPolicy}`
     ].filter(Boolean).map(t => `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(3,129,254,0.15);color:#3E91FF;font-size:10px;margin:0 4px 4px 0;">${t}</span>`).join('');
+
     const bullet = arr => (arr && arr.length) ? arr.map(s => `<li>${s}</li>`).join('') : '<li style="color:var(--text-3);">—</li>';
-    const violationsCount = (pv.errors?.length || 0) + (lv.summary?.total || 0);
+    const summary = validation.summary || {};
+    const violations = validation.violations || [];
+    const violationLines = violations.map(v => `[${v.stage}] ${v.ruleId} — ${v.message}`);
+
     output.innerHTML = `
       <div style="margin-bottom:6px;">${chips}</div>
       <div style="color:#fff;font-weight:600;margin-bottom:4px;">Why this UI</div>
-      <div style="margin-bottom:8px;">${ex.why_this_ui || '—'}</div>
+      <div style="margin-bottom:8px;">${explanation.why_this_ui || '—'}</div>
       <div style="color:#fff;font-weight:600;margin-top:8px;">Prioritized</div>
-      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(ex.what_was_prioritized)}</ul>
+      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(explanation.what_was_prioritized)}</ul>
       <div style="color:#fff;font-weight:600;margin-top:8px;">Collapsed / removed</div>
-      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(ex.what_was_removed_or_collapsed)}</ul>
-      <div style="color:#fff;font-weight:600;margin-top:8px;">Should fix (${violationsCount})</div>
-      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(ex.what_should_be_fixed)}</ul>`;
+      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(explanation.what_was_removed_or_collapsed)}</ul>
+      <div style="color:#fff;font-weight:600;margin-top:8px;">Validation (${summary.total || 0} — ${summary.high || 0}H / ${summary.medium || 0}M / ${summary.low || 0}L)</div>
+      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(violationLines)}</ul>`;
     output.style.display = 'block';
   }
 }

@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const pipeline = require('./pipeline');           // genui_pipeline_v1 step_1 + step_3
 const UIState = require('./ui-state.js') || (global.UIState);  // step_2 resolver (Node CJS export)
-const composer = require('./layout_composer');    // genui_pipeline_v1 step_5 + pipeline validators
+// layout_composer is consumed indirectly by pipeline.runComposeLayout
 
 // --- Load .env ---
 const envPath = path.join(__dirname, '.env');
@@ -950,81 +950,79 @@ const server = http.createServer(async (req, res) => {
 
   const url = req.url.split('?')[0];
 
-  // ── genui_pipeline_v1 endpoint ──────────────────────────────────────────
-  // POST /api/pipeline/plan
-  // body: { scenario_text: string, user_context?: {...}, scenario_key?: string }
-  // returns: { interpretation, ui_state, plan, validation }
+  // ── genui_pipeline_v1 endpoints ─────────────────────────────────────────
+  //
+  //   POST /api/pipeline/plan     → steps 1 → 2 → 3 + plan validation
+  //   POST /api/pipeline/compose  → + step 4 (LLM composer) + layout validation
+  //   POST /api/pipeline/full     → + step 7 (explanation)
+  //
+  // All endpoints emit the canonical camelCase contract:
+  //   { interpretation, planningPacket, plan, uiState, layoutPlan?,
+  //     composerNotes?, explanation?, validation: { summary, violations[] } }
+  // ------------------------------------------------------------------------
+
   if (url === '/api/pipeline/plan' && req.method === 'POST') {
     try {
       const body = await readBody(req);
       const scenarioText = body.scenario_text || body.prompt || '';
 
-      // 3-step pipeline: ui_state is produced by STEP 1 (LLM-authoritative).
-      const result = await pipeline.runPlan({
+      const planResult = await pipeline.runPlan({
         scenarioText,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
 
-      const legacyPlan = result.legacy && result.legacy.plan;
-      console.log(`[Pipeline] plan for "${scenarioText.substring(0,50)}" → ${result.plan?.requiredComponents?.length ?? 0} components, validation:${result.validation.ok ? 'ok' : 'FAIL'}`);
-      // Wire-compat: clients still read required_components (snake_case).
-      // Emit legacy plan as `plan`, and include the normalized form alongside.
+      const validation = pipeline.rollupValidationResults({
+        planViolations:   planResult.planViolations,
+        layoutViolations: []
+      });
+
+      console.log(`[Pipeline] plan for "${scenarioText.substring(0,50)}" → ${planResult.plan.requiredComponents.length} components, violations:${validation.summary.total}`);
       sendJSON(res, 200, {
-        interpretation:   result.interpretation,
-        planning_packet:  result.planningPacket,
-        ui_state:         result.uiState,
-        plan:             legacyPlan,
-        plan_normalized:  result.plan,
-        validation:       result.validation
+        interpretation: planResult.interpretation,
+        planningPacket: planResult.planningPacket,
+        plan:           planResult.plan,
+        uiState:        planResult.uiState,
+        validation
       });
     } catch (e) {
-      console.error('[Pipeline] error:', e.message);
+      console.error('[Pipeline] plan error:', e.message);
       sendJSON(res, 500, { error: e.message });
     }
     return;
   }
 
-  // POST /api/pipeline/compose
-  // End-to-end: steps 1 → 3 → 5 + pipeline validators. Same body as /plan.
-  // returns: { interpretation, ui_state, plan, plan_validation, layout_plan, layout_validation }
   if (url === '/api/pipeline/compose' && req.method === 'POST') {
     try {
       const body = await readBody(req);
       const scenarioText = body.scenario_text || body.prompt || '';
       const viewport     = body.viewport || null;
 
-      // Steps 1 → 2 → 3 (LLM-authoritative ui_state from step_1)
       const planResult = await pipeline.runPlan({
         scenarioText,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
-      const uiState    = planResult.uiState;
-      const legacyPlan = planResult.legacy && planResult.legacy.plan;
 
-      // STEP 4 — LLM layout composer + hard-check validateLayout
       const layoutResult = await pipeline.runComposeLayout({
         planningPacket: planResult.planningPacket,
         plan:           planResult.plan,
-        llmCall:        (sys, user) => callOpenAI(sys, user, 0.3)
+        llmCall:        (sys, user) => callOpenAI(sys, user, 0.3),
+        viewport
       });
 
-      const legacyLayoutPlan = pipeline.toLegacyLayoutPlan(
-        layoutResult.composed.layoutPlan,
-        planResult.plan
-      );
+      const validation = pipeline.rollupValidationResults({
+        planViolations:   planResult.planViolations,
+        layoutViolations: layoutResult.violations
+      });
 
-      console.log(`[Pipeline] compose for "${scenarioText.substring(0,50)}" → groups:${layoutResult.composed.layoutPlan.groups.length} layout errors:${layoutResult.validation.errors.length}`);
+      console.log(`[Pipeline] compose for "${scenarioText.substring(0,50)}" → groups:${layoutResult.composed.layoutPlan.groups.length} violations:${validation.summary.total}`);
       sendJSON(res, 200, {
-        interpretation:     planResult.interpretation,
-        planning_packet:    planResult.planningPacket,
-        ui_state:           uiState,
-        plan:               legacyPlan,
-        plan_normalized:    planResult.plan,
-        plan_validation:    planResult.validation,
-        layout_plan:        legacyLayoutPlan,                       // client back-compat
-        layout_plan_normalized: layoutResult.composed.layoutPlan,   // canonical groups[]
-        composer_notes:     layoutResult.composed.composerNotes,
-        layout_validation:  layoutResult.validation
+        interpretation: planResult.interpretation,
+        planningPacket: planResult.planningPacket,
+        plan:           planResult.plan,
+        uiState:        planResult.uiState,
+        layoutPlan:     layoutResult.composed.layoutPlan,
+        composerNotes:  layoutResult.composed.composerNotes,
+        validation
       });
     } catch (e) {
       console.error('[Pipeline] compose error:', e.message);
@@ -1033,65 +1031,48 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // POST /api/pipeline/full
-  // End-to-end including explanation layer (step_7).
-  // returns: { interpretation, ui_state, plan, plan_validation,
-  //            layout_plan, layout_validation, explanation }
   if (url === '/api/pipeline/full' && req.method === 'POST') {
     try {
       const body = await readBody(req);
       const scenarioText = body.scenario_text || body.prompt || '';
       const viewport     = body.viewport || null;
 
-      // Steps 1 → 2 → 3 (LLM-authoritative ui_state from step_1)
       const planResult = await pipeline.runPlan({
         scenarioText,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
-      const uiState    = planResult.uiState;
-      const legacyPlan = planResult.legacy && planResult.legacy.plan;
 
-      // STEP 4 — LLM layout composer + validateLayout
       const layoutResult = await pipeline.runComposeLayout({
         planningPacket: planResult.planningPacket,
         plan:           planResult.plan,
-        llmCall:        (sys, user) => callOpenAI(sys, user, 0.3)
+        llmCall:        (sys, user) => callOpenAI(sys, user, 0.3),
+        viewport
       });
-      const legacyLayoutPlan = pipeline.toLegacyLayoutPlan(
-        layoutResult.composed.layoutPlan,
-        planResult.plan
-      );
 
-      // Merge plan + layout validation for the explanation input
-      const combinedValidation = {
-        plan:   planResult.validation,
-        layout: layoutResult.validation
-      };
+      const validation = pipeline.rollupValidationResults({
+        planViolations:   planResult.planViolations,
+        layoutViolations: layoutResult.violations
+      });
 
-      // Step 7 — runExplain accepts normalized plan directly
       const explanation = await pipeline.runExplain({
         scenarioText,
-        uiState,
-        plan:         planResult.plan,
-        plannerNotes: planResult.plan?.plannerNotes || null,
-        layoutPlan:   layoutResult.composed.layoutPlan,
-        validation:   combinedValidation,
-        llmCall:      (sys, user) => callOpenAI(sys, user, 0.4)
+        uiState:          planResult.uiState,
+        plan:             planResult.plan,
+        layoutPlan:       layoutResult.composed.layoutPlan,
+        validationReport: validation,
+        llmCall:          (sys, user) => callOpenAI(sys, user, 0.4)
       });
 
-      console.log(`[Pipeline] full for "${scenarioText.substring(0,50)}" → groups:${layoutResult.composed.layoutPlan.groups.length} layout_errors:${layoutResult.validation.errors.length} explained:${!!explanation}`);
+      console.log(`[Pipeline] full for "${scenarioText.substring(0,50)}" → groups:${layoutResult.composed.layoutPlan.groups.length} violations:${validation.summary.total} explained:${!!explanation}`);
       sendJSON(res, 200, {
-        interpretation:     planResult.interpretation,
-        planning_packet:    planResult.planningPacket,
-        ui_state:           uiState,
-        plan:               legacyPlan,
-        plan_normalized:    planResult.plan,
-        plan_validation:    planResult.validation,
-        layout_plan:        legacyLayoutPlan,
-        layout_plan_normalized: layoutResult.composed.layoutPlan,
-        composer_notes:     layoutResult.composed.composerNotes,
-        layout_validation:  layoutResult.validation,
-        explanation
+        interpretation: planResult.interpretation,
+        planningPacket: planResult.planningPacket,
+        plan:           planResult.plan,
+        uiState:        planResult.uiState,
+        layoutPlan:     layoutResult.composed.layoutPlan,
+        composerNotes:  layoutResult.composed.composerNotes,
+        explanation,
+        validation
       });
     } catch (e) {
       console.error('[Pipeline] full error:', e.message);

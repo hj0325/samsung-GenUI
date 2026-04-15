@@ -21,9 +21,14 @@ const {
   normalizeInterpreterOutput,
   normalizeNormalizerOutput,
   normalizeSelectorOutput,
-  normalizeComposerOutput,
-  toLegacySelectorOutput
+  normalizeComposerOutput
 } = require('./schema_normalizer');
+const {
+  validateContextComponentMatch,
+  validateLayoutOverflow,
+  buildViolation:  buildLayoutViolation,
+  flattenGroups:   _flattenGroups
+} = require('./layout_composer');
 
 const REGISTRY_PATH = path.join(__dirname, 'figma-refs', 'component_registry.json');
 let REGISTRY = null;
@@ -240,31 +245,96 @@ RULES
 }
 
 // ---------------------------------------------------------------------------
-//  VALIDATION — enforce the hard rule "no invented components"
+//  CANONICAL VIOLATION FACTORY + ID GEN
 // ---------------------------------------------------------------------------
 
-// Accepts either a NormalizedSelectorOutput (camelCase) or the legacy
-// snake_case shape. After schema normalization this runs on the
-// NormalizedSelectorOutput; the legacy branch exists for outside callers.
+function makeIdGen(prefix) {
+  let n = 0;
+  return () => `${prefix}-${String(++n).padStart(3, '0')}`;
+}
+
+function buildViolation(fields) {
+  const autoFix = fields.autoFix || { possible: false, action: null, value: null };
+  const status  = fields.status || 'review-required';
+  return {
+    id:          fields.id,
+    stage:       fields.stage,
+    ruleId:      fields.ruleId,
+    category:    fields.category,
+    severity:    fields.severity,
+    status,
+    frame:       fields.frame || '(pipeline)',
+    element:     fields.element || null,
+    nodeId:      fields.nodeId || null,
+    property:    fields.property || null,
+    actual:      fields.actual   === undefined ? null : fields.actual,
+    expected:    fields.expected === undefined ? null : fields.expected,
+    delta:       fields.delta    === undefined ? null : fields.delta,
+    message:     fields.message || '',
+    autoFix,
+    needsReview: status !== 'auto-fixable'
+  };
+}
+
+// ---------------------------------------------------------------------------
+//  validatePlan — canonical, camelCase only (stage='plan')
+// ---------------------------------------------------------------------------
+
 function validatePlan(plan) {
-  const allowed = new Set(allowedSemanticComponentTypes());
-  const errors = [];
-  const isNormalized = plan && Array.isArray(plan.requiredComponents);
-  const components = isNormalized
-    ? plan.requiredComponents
-    : ((plan && plan.required_components) || []);
+  const allowedVocab = new Set(allowedSemanticComponentTypes());
+  const components = (plan && plan.requiredComponents) || [];
+  const idGen = makeIdGen('plan-v');
+  const violations = [];
+
   components.forEach((c, idx) => {
-    const type = isNormalized ? c.componentType : c.component_type;
+    const type = c.componentType;
     if (!type) {
-      errors.push({ index: idx, error: 'missing component_type' });
-    } else if (!allowed.has(type)) {
-      errors.push({ index: idx, component_type: type, error: 'component_type not in semantic vocabulary' });
+      violations.push(buildViolation({
+        id:       idGen(),
+        stage:    'plan',
+        ruleId:   'plan_missing_component_type',
+        category: 'vocabulary',
+        severity: 'high',
+        status:   'review-required',
+        element:  `requiredComponents[${idx}]`,
+        property: 'componentType',
+        actual:   null,
+        expected: 'non-empty componentType',
+        message:  `requiredComponents[${idx}] is missing componentType`
+      }));
+    } else if (!allowedVocab.has(type)) {
+      violations.push(buildViolation({
+        id:       idGen(),
+        stage:    'plan',
+        ruleId:   'plan_vocabulary_violation',
+        category: 'vocabulary',
+        severity: 'high',
+        status:   'review-required',
+        element:  type,
+        property: 'componentType',
+        actual:   type,
+        expected: Array.from(allowedVocab),
+        message:  `componentType "${type}" is not in the semantic vocabulary`
+      }));
     }
-    if (c.priority == null || ![1,2,3].includes(c.priority)) {
-      errors.push({ index: idx, component_type: type, error: 'priority must be 1|2|3' });
+    if (c.priority == null || ![1, 2, 3].includes(c.priority)) {
+      violations.push(buildViolation({
+        id:       idGen(),
+        stage:    'plan',
+        ruleId:   'plan_priority_out_of_range',
+        category: 'consistency',
+        severity: 'medium',
+        status:   'review-required',
+        element:  type || `requiredComponents[${idx}]`,
+        property: 'priority',
+        actual:   c.priority,
+        expected: [1, 2, 3],
+        message:  `priority must be 1, 2, or 3 (got ${JSON.stringify(c.priority)})`
+      }));
     }
   });
-  return { ok: errors.length === 0, errors };
+
+  return { violations };
 }
 
 // ---------------------------------------------------------------------------
@@ -357,21 +427,21 @@ Composition rules:
 //  STEP 4 — VALIDATION (hard checks)
 //  ---------------------------------------------------------------------------
 //  Operates on the normalized composer output (camelCase, groups-based).
-//  Rejects outputs that contradict uiState or reference unknown components.
+//  Returns canonical violation rows with stage='layout'.
 // ---------------------------------------------------------------------------
 
 function validateLayout(layoutPlan, uiState, plan) {
-  const errors = [];
+  const violations = [];
   const lp     = layoutPlan || {};
   const groups = Array.isArray(lp.groups) ? lp.groups : [];
+  const idGen  = makeIdGen('layout-v');
 
   const selectedTypes = new Set(
-    ((plan && (plan.requiredComponents || plan.required_components)) || [])
-      .map(c => c.componentType || c.component_type)
+    ((plan && plan.requiredComponents) || [])
+      .map(c => c.componentType)
       .filter(Boolean)
   );
 
-  // flatten children with group context
   const allChildren = [];
   groups.forEach(g => {
     (g.children || []).forEach(ch => {
@@ -382,11 +452,19 @@ function validateLayout(layoutPlan, uiState, plan) {
   // 1. unknown componentIds
   allChildren.forEach(ch => {
     if (!selectedTypes.has(ch.componentId)) {
-      errors.push({
-        ruleId: 'unknown_component_id',
-        componentId: ch.componentId,
-        message: `componentId "${ch.componentId}" is not in STEP 3 requiredComponents`
-      });
+      violations.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'unknown_component_id',
+        category: 'consistency',
+        severity: 'high',
+        status:   'review-required',
+        element:  ch.componentId,
+        property: 'componentId',
+        actual:   ch.componentId,
+        expected: Array.from(selectedTypes),
+        message:  `componentId "${ch.componentId}" is not in STEP 3 requiredComponents`
+      }));
     }
   });
 
@@ -396,15 +474,21 @@ function validateLayout(layoutPlan, uiState, plan) {
     const spec = REGISTRY.components[ch.componentId];
     if (!spec) return;
     const states = Array.isArray(spec.states) ? spec.states : [];
-    if (!ch.variant) return;
-    if (ch.variant === 'default') return;
+    if (!ch.variant || ch.variant === 'default') return;
     if (!states.includes(ch.variant)) {
-      errors.push({
-        ruleId: 'invalid_variant',
-        componentId: ch.componentId,
-        variant: ch.variant,
-        message: `variant "${ch.variant}" not in registry states [${states.join(', ')}] for "${ch.componentId}"`
-      });
+      violations.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'invalid_variant',
+        category: 'vocabulary',
+        severity: 'medium',
+        status:   'review-required',
+        element:  ch.componentId,
+        property: 'variant',
+        actual:   ch.variant,
+        expected: states,
+        message:  `variant "${ch.variant}" not in registry states [${states.join(', ')}] for "${ch.componentId}"`
+      }));
     }
   });
 
@@ -412,30 +496,57 @@ function validateLayout(layoutPlan, uiState, plan) {
   if (uiState && uiState.densityMode === 'compressed') {
     allChildren.forEach(ch => {
       if (ch.priority === 3 && ch.visibility === 'visible') {
-        errors.push({
-          ruleId: 'compressed_priority3_visible',
-          componentId: ch.componentId,
-          message: 'priority 3 child must be collapsed or hidden when densityMode=compressed'
-        });
+        violations.push(buildViolation({
+          id:       idGen(),
+          stage:    'layout',
+          ruleId:   'compressed_priority3_visible',
+          category: 'layout',
+          severity: 'medium',
+          status:   'auto-fixable',
+          element:  ch.componentId,
+          property: 'visibility',
+          actual:   'visible',
+          expected: 'collapsed|hidden',
+          message:  `priority 3 child "${ch.componentId}" must be collapsed or hidden when densityMode=compressed`,
+          autoFix:  { possible: true, action: 'setVisibility', value: 'collapsed' }
+        }));
       }
     });
   }
 
-  // 4. attentionMode === 'glanceable' → no grid at top-level, no grid groups with >2 children
+  // 4. attentionMode === 'glanceable' → no top-level grid, no grid groups with >2 children
   if (uiState && uiState.attentionMode === 'glanceable') {
     if (lp.container === 'grid') {
-      errors.push({
-        ruleId: 'glanceable_forbids_grid_root',
-        message: 'attentionMode=glanceable forbids grid as top-level container'
-      });
+      violations.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'glanceable_forbids_grid_root',
+        category: 'layout',
+        severity: 'high',
+        status:   'review-required',
+        element:  'layoutPlan',
+        property: 'container',
+        actual:   'grid',
+        expected: 'vertical-stack|overlay-stack',
+        message:  'attentionMode=glanceable forbids grid as top-level container'
+      }));
     }
     groups.forEach(g => {
       if (g.container === 'grid' && (g.children || []).length > 2) {
-        errors.push({
-          ruleId: 'glanceable_grid_too_wide',
-          groupId: g.groupId,
-          message: 'attentionMode=glanceable forbids grid groups with >2 children'
-        });
+        violations.push(buildViolation({
+          id:       idGen(),
+          stage:    'layout',
+          ruleId:   'glanceable_grid_too_wide',
+          category: 'layout',
+          severity: 'medium',
+          status:   'review-required',
+          element:  g.groupId,
+          property: 'children.length',
+          actual:   (g.children || []).length,
+          expected: 2,
+          delta:    (g.children || []).length - 2,
+          message:  `attentionMode=glanceable forbids grid groups with >2 children (found ${(g.children||[]).length})`
+        }));
       }
     });
   }
@@ -444,103 +555,115 @@ function validateLayout(layoutPlan, uiState, plan) {
   if (uiState && uiState.interactionMode === 'minimal-touch') {
     groups.forEach(g => {
       if (g.container === 'horizontal-stack' && (g.children || []).length > 3) {
-        errors.push({
-          ruleId: 'minimal_touch_dense_cluster',
-          groupId: g.groupId,
-          message: 'interactionMode=minimal-touch forbids horizontal-stack groups with >3 children'
-        });
+        violations.push(buildViolation({
+          id:       idGen(),
+          stage:    'layout',
+          ruleId:   'minimal_touch_dense_cluster',
+          category: 'touch-target',
+          severity: 'medium',
+          status:   'review-required',
+          element:  g.groupId,
+          property: 'children.length',
+          actual:   (g.children || []).length,
+          expected: 3,
+          delta:    (g.children || []).length - 3,
+          message:  `interactionMode=minimal-touch forbids horizontal-stack groups with >3 children (found ${(g.children||[]).length})`
+        }));
       }
     });
   }
 
-  // 6. overlayType !== 'none' → at most 2 groups with any visible children
+  // 6. overlayType !== 'none' → at most 2 groups with visible children
   if (uiState && uiState.overlayType && uiState.overlayType !== 'none') {
     const visibleGroups = groups.filter(g => (g.children || []).some(ch => ch.visibility === 'visible'));
     if (visibleGroups.length > 2) {
-      errors.push({
-        ruleId: 'overlay_too_many_groups',
-        message: `overlayType=${uiState.overlayType} limits visible groups to 2; found ${visibleGroups.length}`
-      });
+      violations.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'overlay_too_many_groups',
+        category: 'layout',
+        severity: 'medium',
+        status:   'review-required',
+        element:  'layoutPlan',
+        property: 'groups.visibleCount',
+        actual:   visibleGroups.length,
+        expected: 2,
+        delta:    visibleGroups.length - 2,
+        message:  `overlayType=${uiState.overlayType} limits visible groups to 2; found ${visibleGroups.length}`
+      }));
     }
   }
 
   // 7. priority 1 must remain visible
   allChildren.forEach(ch => {
     if (ch.priority === 1 && (ch.visibility === 'hidden' || ch.visibility === 'collapsed')) {
-      errors.push({
-        ruleId: 'priority1_removed',
-        componentId: ch.componentId,
-        message: 'priority 1 component must not be hidden or collapsed'
-      });
+      violations.push(buildViolation({
+        id:       idGen(),
+        stage:    'layout',
+        ruleId:   'priority1_removed',
+        category: 'consistency',
+        severity: 'high',
+        status:   'review-required',
+        element:  ch.componentId,
+        property: 'visibility',
+        actual:   ch.visibility,
+        expected: 'visible',
+        message:  `priority 1 component "${ch.componentId}" must not be hidden or collapsed`
+      }));
     }
   });
 
   // 8. backgroundPolicy mismatch
   if (uiState && uiState.backgroundPolicy && lp.backgroundPolicy
       && lp.backgroundPolicy !== uiState.backgroundPolicy) {
-    errors.push({
-      ruleId: 'background_policy_mismatch',
-      actual: lp.backgroundPolicy,
+    violations.push(buildViolation({
+      id:       idGen(),
+      stage:    'layout',
+      ruleId:   'background_policy_mismatch',
+      category: 'context',
+      severity: 'high',
+      status:   'review-required',
+      element:  'layoutPlan',
+      property: 'backgroundPolicy',
+      actual:   lp.backgroundPolicy,
       expected: uiState.backgroundPolicy,
-      message: `layoutPlan.backgroundPolicy=${lp.backgroundPolicy} must equal uiState.backgroundPolicy=${uiState.backgroundPolicy}`
-    });
+      message:  `layoutPlan.backgroundPolicy=${lp.backgroundPolicy} must equal uiState.backgroundPolicy=${uiState.backgroundPolicy}`
+    }));
   }
 
-  return { ok: errors.length === 0, errors };
+  return { violations };
 }
 
 // ---------------------------------------------------------------------------
 //  STEP 4 — RUNNER
+//  ---------------------------------------------------------------------------
+//  LLM composer → normalize → validateLayout + context/overflow validators.
+//  Returns the canonical composed output and the merged layout-stage
+//  violations (still canonical rows; rollup happens at the orchestrator).
 // ---------------------------------------------------------------------------
 
-async function runComposeLayout({ planningPacket, plan, llmCall }) {
-  if (!llmCall) throw new Error('runComposeLayout requires llmCall(systemPrompt, userMessage)');
+async function runComposeLayout({ planningPacket, plan, llmCall, viewport }) {
+  if (!llmCall)        throw new Error('runComposeLayout requires llmCall(systemPrompt, userMessage)');
   if (!planningPacket) throw new Error('runComposeLayout requires planningPacket');
-  if (!plan) throw new Error('runComposeLayout requires plan');
+  if (!plan)           throw new Error('runComposeLayout requires plan');
 
   const userMessage =
     `Normalized Planning Packet:\n${JSON.stringify(planningPacket)}\n\n` +
     `Selected Components:\n${JSON.stringify(plan)}`;
 
-  const raw = await llmCall(buildComposerPrompt(), userMessage);
+  const raw      = await llmCall(buildComposerPrompt(), userMessage);
   const composed = normalizeComposerOutput(raw);
-  const validation = validateLayout(composed.layoutPlan, planningPacket.uiState, plan);
-  return { composed, validation };
-}
+  const uiState  = planningPacket.uiState;
 
-// Back-compat: flatten normalized layoutPlan.groups[].children into the old
-// {container, padding, gap, children:[{component_id, variant, placement,
-// priority, content, slot, _spec_found}]} shape used by layout_composer.js
-// overflow/context validators and the genui.html client renderer. Content
-// (label/value) is pulled from the plan's requiredComponents.
-function toLegacyLayoutPlan(normalizedLayoutPlan, plan) {
-  const lp = normalizedLayoutPlan || {};
-  const components = (plan && (plan.requiredComponents || [])) || [];
-  const contentByType = new Map(components.map(c => [c.componentType, c.content || {}]));
-  const slotByType    = new Map(components.map(c => [c.componentType, c.slot]));
+  const hardChecks = validateLayout(composed.layoutPlan, uiState, plan);
 
-  const children = [];
-  (lp.groups || []).forEach(g => {
-    (g.children || []).forEach(ch => {
-      if (ch.visibility && ch.visibility !== 'visible') return;
-      children.push({
-        component_id: ch.componentId,
-        variant:      ch.variant || 'default',
-        placement:    ch.placement || 'middle',
-        priority:     ch.priority || 2,
-        slot:         slotByType.get(ch.componentId) || null,
-        content:      contentByType.get(ch.componentId) || {},
-        _spec_found:  true,
-        _groupId:     g.groupId
-      });
-    });
-  });
-  return {
-    container: lp.container === 'grid' ? 'grid' : 'vertical-stack',
-    padding:   lp.padding || { top: 0, right: 0, bottom: 0, left: 0 },
-    gap:       lp.gap || 0,
-    children
-  };
+  const ctxIdGen  = makeIdGen('layout-c');
+  const ovfIdGen  = makeIdGen('layout-o');
+  const ctxViolations = validateContextComponentMatch(composed.layoutPlan, uiState, plan, ctxIdGen);
+  const ovfViolations = validateLayoutOverflow(composed.layoutPlan, uiState, viewport, ovfIdGen);
+
+  const violations = [].concat(hardChecks.violations, ctxViolations, ovfViolations);
+  return { composed, violations };
 }
 
 // ---------------------------------------------------------------------------
@@ -550,93 +673,96 @@ function toLegacyLayoutPlan(normalizedLayoutPlan, plan) {
 async function runPlan({ scenarioText, llmCall }) {
   if (!llmCall) throw new Error('runPlan requires llmCall(systemPrompt, userMessage)');
 
-  // STEP 1: interpret → normalize
+  // STEP 1
   const interpretationRaw = await llmCall(
     buildInterpreterPrompt(),
     `User Scenario:\n${scenarioText}`
   );
   const interpretation = normalizeInterpreterOutput(interpretationRaw);
 
-  // STEP 2: handoff packet → normalize
-  // (Downstream normalizer receives the normalized camelCase, but the LLM
-  //  prompt itself speaks in snake_case per spec — so we hand it the raw
-  //  step-1 output verbatim when available, otherwise the normalized one.)
+  // STEP 2 — hand the LLM the raw step-1 JSON verbatim (snake_case per prompt
+  // contract); the normalizer then enforces canonical camelCase for code use.
   const planningPacketRaw = await llmCall(
     buildNormalizerPrompt(),
     `Input JSON:\n${JSON.stringify(interpretationRaw || interpretation)}`
   );
   const planningPacket = normalizeNormalizerOutput(planningPacketRaw);
 
-  // STEP 3: component selection → normalize
+  // STEP 3
   const planRaw = await llmCall(
     buildPlannerPrompt(),
     `Planning Packet:\n${JSON.stringify(planningPacketRaw || planningPacket)}`
   );
   const plan = normalizeSelectorOutput(planRaw);
 
-  const validation = validatePlan(plan);
-
-  // ui_state is LLM-authoritative from step_1; step_2 carries a copy.
+  const { violations } = validatePlan(plan);
   const uiState = planningPacket.uiState || interpretation.uiState;
 
-  // Legacy snake_case view for consumers not yet migrated (composer, server
-  // response shape, client renderer). To be removed after Step 4 + validator
-  // rewiring lands on the normalized contract.
-  const legacyPlan = toLegacySelectorOutput(plan);
-
   return {
-    // normalized (canonical, camelCase)
     interpretation,
     planningPacket,
     plan,
     uiState,
-    validation,
-    // back-compat aliases (snake_case)
-    planning_packet: planningPacket,
-    ui_state:        uiState,
-    legacy: { plan: legacyPlan }
+    planViolations: violations
   };
 }
 
-async function runExplain({ scenarioText, uiState, plan, plannerNotes, layoutPlan, validation, llmCall }) {
+// ---------------------------------------------------------------------------
+//  VALIDATION ROLLUP — single canonical report
+// ---------------------------------------------------------------------------
+
+function rollupValidationResults({ planViolations, layoutViolations }) {
+  const violations = [].concat(planViolations || [], layoutViolations || []);
+  const summary = {
+    total:          violations.length,
+    high:           violations.filter(v => v.severity === 'high').length,
+    medium:         violations.filter(v => v.severity === 'medium').length,
+    low:            violations.filter(v => v.severity === 'low').length,
+    autoFixable:    violations.filter(v => v.status === 'auto-fixable').length,
+    reviewRequired: violations.filter(v => v.status === 'review-required').length
+  };
+  return { summary, violations };
+}
+
+// ---------------------------------------------------------------------------
+//  STEP 7 — EXPLANATION (canonical camelCase input)
+// ---------------------------------------------------------------------------
+
+async function runExplain({ scenarioText, uiState, plan, layoutPlan, validationReport, llmCall }) {
   if (!llmCall) throw new Error('runExplain requires llmCall(systemPrompt, userMessage)');
-  // `plan` may arrive normalized (camelCase) or legacy (snake_case); accept both.
-  const requiredComponents = plan
-    ? (plan.requiredComponents || plan.required_components || [])
-    : [];
-  const notes = plannerNotes
-    || (plan && (plan.plannerNotes || plan.planner_notes))
-    || null;
   const payload = {
-    scenario_text:       scenarioText,
-    ui_state:            uiState,
-    required_components: requiredComponents,
-    planner_notes:       notes,
-    layout_plan:         layoutPlan,
-    validation_report:   validation
+    scenarioText,
+    uiState,
+    requiredComponents: (plan && plan.requiredComponents) || [],
+    plannerNotes:       (plan && plan.plannerNotes)       || null,
+    layoutPlan,
+    validationReport
   };
   return llmCall(buildExplanationPrompt(), JSON.stringify(payload));
 }
 
 module.exports = {
+  // prompts
   buildInterpreterPrompt,
   buildNormalizerPrompt,
   buildPlannerPrompt,
   buildComposerPrompt,
   buildExplanationPrompt,
+  // validators (canonical, camelCase)
   validatePlan,
   validateLayout,
+  rollupValidationResults,
+  // orchestrators
   runPlan,
   runComposeLayout,
   runExplain,
-  toLegacyLayoutPlan,
+  // vocabulary introspection
   allowedComponentTypes,
   allowedSemanticComponentTypes,
   REGISTRY_PATH,
-  // schema-normalizer re-exports for consumers that want the raw primitives
+  // schema-normalizer re-exports
   normalizeInterpreterOutput,
   normalizeNormalizerOutput,
   normalizeSelectorOutput,
-  normalizeComposerOutput,
-  toLegacySelectorOutput
+  normalizeComposerOutput
 };
