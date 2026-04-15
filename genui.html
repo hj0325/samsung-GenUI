@@ -1406,6 +1406,21 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
       <!-- PANEL 7: REFINE -->
       <div class="panel" id="panel-7">
 
+        <!-- Auto-Refine Loop Control -->
+        <div id="autoRefineBox" style="background:var(--surface);border:1px solid var(--divider);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text);">Auto Refine Loop</div>
+            <div style="font-size:10px;color:var(--text-3);">analyze → patch → re-evaluate</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label style="font-size:11px;color:var(--text-2);">Iterations</label>
+            <input id="autoRefineCount" type="number" min="0" max="5" step="1" value="0"
+              style="width:56px;padding:6px 8px;border-radius:8px;border:1px solid var(--divider);background:var(--bg);color:var(--text);font-size:13px;text-align:center;font-family:var(--font);">
+            <button class="topbar-btn primary" id="autoRefineBtn" style="flex:1;padding:8px;font-size:11px;" onclick="runAutoRefine()">Start Auto Refine</button>
+          </div>
+          <div id="autoRefineStatus" style="font-size:11px;color:var(--text-3);margin-top:6px;min-height:14px;"></div>
+        </div>
+
         <!-- Step 1: Feedback Input -->
         <div class="refine-step visible" id="refineStep1">
           <div class="refine-step-header">
@@ -3610,57 +3625,54 @@ function localizeIssue(issue, items) {
 }
 
 // --- Analyze ---
-function analyzeRefinement() {
+function analyzeRefinement(opts) {
+  opts = opts || {};
   const canvas = document.getElementById('canvas');
   if (canvas.querySelectorAll('.canvas-item').length === 0) {
-    alert('Generate a design first, then refine it.');
-    return;
+    if (!opts.silent) alert('Generate a design first, then refine it.');
+    return Promise.reject(new Error('no canvas items'));
   }
 
   // Capture snapshot
   refineSnapshot = captureSnapshot();
 
-  // Get feedback
-  const text = document.getElementById('refineFeedback').value;
-  if (!text && refineSelectedTags.size === 0) {
-    alert('Enter feedback or select issue tags first.');
-    return;
+  // Get feedback (allow auto-override)
+  const text = (opts.feedback !== undefined)
+    ? opts.feedback
+    : document.getElementById('refineFeedback').value;
+  if (!text && refineSelectedTags.size === 0 && !opts.auto) {
+    if (!opts.silent) alert('Enter feedback or select issue tags first.');
+    return Promise.reject(new Error('no feedback'));
   }
 
-  if (agentSession.mode === 'agent') {
-    // --- Agent Mode: send feedback + snapshot to agent ---
-    const payload = StateManager.getRefinePayload(text, refineSelectedTags, refineSnapshot);
-    showAgentLoading('Analyzing with Agent...');
+  return new Promise((resolve, reject) => {
+    if (agentSession.mode === 'agent') {
+      const payload = StateManager.getRefinePayload(text, refineSelectedTags, refineSnapshot);
+      if (!opts.silent) showAgentLoading('Analyzing with Agent...');
 
-    AgentAPI.refineUI(payload)
-      .then(response => {
-        hideAgentLoading();
-        StateManager.updateFromAgentRefine(response);
-
-        // Store parsed issues from agent
-        refineActiveIssues = response.parsedIssue || [];
-
-        // Store patch plan from agent for later apply
-        window._agentPatchPlan = response.patchPlan || null;
-        window._agentRenderModel = response.updatedRenderModel || null;
-
-        // Highlight affected nodes
-        _renderRefineIssues(canvas);
-
-        // Render critic if present
-        RenderEngine.renderCritic(response.critic);
-
-        showRefineStep(2);
-      })
-      .catch(err => {
-        console.warn('Agent refine failed, falling back to local:', err.message);
-        hideAgentLoading();
-        _local_analyzeRefinement(canvas, text);
-      });
-  } else {
-    // --- Local Mode: original logic ---
-    _local_analyzeRefinement(canvas, text);
-  }
+      AgentAPI.refineUI(payload)
+        .then(response => {
+          if (!opts.silent) hideAgentLoading();
+          StateManager.updateFromAgentRefine(response);
+          refineActiveIssues = response.parsedIssue || [];
+          window._agentPatchPlan = response.patchPlan || null;
+          window._agentRenderModel = response.updatedRenderModel || null;
+          _renderRefineIssues(canvas);
+          RenderEngine.renderCritic(response.critic);
+          showRefineStep(2);
+          resolve(response);
+        })
+        .catch(err => {
+          console.warn('Agent refine failed, falling back to local:', err.message);
+          if (!opts.silent) hideAgentLoading();
+          _local_analyzeRefinement(canvas, text);
+          resolve({ critic: null, parsedIssue: refineActiveIssues, fallback: true });
+        });
+    } else {
+      _local_analyzeRefinement(canvas, text);
+      resolve({ critic: null, parsedIssue: refineActiveIssues, local: true });
+    }
+  });
 }
 
 function _local_analyzeRefinement(canvas, text) {
@@ -4032,6 +4044,90 @@ function resetRefinement() {
   document.getElementById('refinePatchList').innerHTML = '';
   document.getElementById('refineSummary').innerHTML = '';
   showRefineStep(1);
+}
+
+// --- Auto Refine Loop ---
+// Runs analyze → plan → apply → accept N times, letting the agent drive each cycle.
+let _autoRefineRunning = false;
+async function runAutoRefine() {
+  if (_autoRefineRunning) return;
+  const input = document.getElementById('autoRefineCount');
+  const statusEl = document.getElementById('autoRefineStatus');
+  const btn = document.getElementById('autoRefineBtn');
+  let n = parseInt(input.value, 10);
+  if (isNaN(n) || n < 0) n = 0;
+  if (n > 5) n = 5;
+  input.value = n;
+
+  if (n === 0) {
+    statusEl.textContent = 'Set 1–5 iterations to run auto refine.';
+    return;
+  }
+
+  const canvas = document.getElementById('canvas');
+  if (canvas.querySelectorAll('.canvas-item').length === 0) {
+    statusEl.textContent = 'Generate a design first.';
+    return;
+  }
+
+  _autoRefineRunning = true;
+  btn.disabled = true;
+  const originalBtnText = btn.textContent;
+
+  // Use user-typed feedback as seed if provided, otherwise let agent self-analyze.
+  const seedFeedback = (document.getElementById('refineFeedback').value || '').trim();
+
+  let lastScore = null;
+  try {
+    for (let i = 1; i <= n; i++) {
+      statusEl.textContent = `Iteration ${i}/${n} — analyzing…`;
+      btn.textContent = `Running ${i}/${n}`;
+
+      // Seed text: use user's text on first iter only, else auto-prompt for self-critique
+      const feedback = (i === 1 && seedFeedback)
+        ? seedFeedback
+        : '자동 품질 개선: 현재 디자인을 평가하고 간격·정렬·위계·가독성·일관성 문제를 찾아 개선안을 적용해주세요.';
+
+      let resp;
+      try {
+        resp = await analyzeRefinement({ feedback, auto: true, silent: true });
+      } catch (e) {
+        statusEl.textContent = `Iteration ${i}: analyze failed (${e.message}). Stopped.`;
+        break;
+      }
+
+      const issueCount = (refineActiveIssues || []).length;
+      const score = resp && resp.critic && typeof resp.critic.score === 'number' ? resp.critic.score : null;
+      if (score !== null) lastScore = score;
+
+      // Early exit if agent reports no issues
+      if (issueCount === 0 && (!resp || !resp.patchPlan || !(resp.patchPlan.patches || []).length)) {
+        statusEl.textContent = `Iteration ${i}/${n}: no issues found${score !== null ? ` (score ${score})` : ''}. Stopped.`;
+        break;
+      }
+
+      statusEl.textContent = `Iteration ${i}/${n} — planning patches…`;
+      planRefinementPatches();
+
+      statusEl.textContent = `Iteration ${i}/${n} — applying ${refinePatches.length} patch(es)…`;
+      applyRefinementPatches();
+
+      // Brief pause so DOM updates flush and critic can see new layout
+      await new Promise(r => setTimeout(r, 400));
+
+      // Accept to clear state for next cycle (but preserve the applied changes)
+      acceptRefinement();
+
+      statusEl.textContent = `Iteration ${i}/${n} — done${score !== null ? ` (score ${score})` : ''}.`;
+      // Small gap between cycles
+      await new Promise(r => setTimeout(r, 250));
+    }
+    statusEl.textContent = `Auto refine complete${lastScore !== null ? ` · last score ${lastScore}/100` : ''}.`;
+  } finally {
+    _autoRefineRunning = false;
+    btn.disabled = false;
+    btn.textContent = originalBtnText;
+  }
 }
 
 // --- Step visibility ---
