@@ -368,12 +368,109 @@
       "layout_spec": { "min_width": 240, "min_height": 64, "padding": { "top": 10, "right": 12, "bottom": 10, "left": 12 }, "gap": 12 },
       "tokens": { "radius": "pill", "background": "surface-primary", "text_style_title": "label-md" },
       "behavior": { "interactive": true, "collapse_priority": 3 },
-      "_status": "planned — not yet rendered by genui.html"
+      "_status": "semantic — rendered via fallback template"
+    },
+
+    "action_chip_row": {
+      "id": "action_chip_row",
+      "category": "selection",
+      "orchestration_type": "chip",
+      "allowed_contexts": ["app","home","focused","glanceable","minimal-touch"],
+      "states": ["default","compact"],
+      "slots": { "actions": "action-group" },
+      "layout_spec": { "min_width": 240, "min_height": 44, "padding": { "top": 6, "right": 8, "bottom": 6, "left": 8 }, "gap": 6 },
+      "tokens": { "radius": "pill", "background": "surface-2", "text_style_title": "label-sm" },
+      "behavior": { "interactive": true, "collapse_priority": 3 },
+      "_status": "semantic — rendered via fallback template"
+    },
+    "calendar_summary_card": {
+      "id": "calendar_summary_card",
+      "category": "info-card",
+      "orchestration_type": "card",
+      "allowed_contexts": ["glanceable","home","lock","quick-view"],
+      "states": ["default","compact","glance"],
+      "slots": { "title": "text", "value": "text", "icon": "icon" },
+      "layout_spec": { "min_width": 200, "min_height": 72, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
+      "tokens": { "radius": "medium", "background": "surface-2", "text_style_title": "label-sm", "text_style_value": "title-md" },
+      "behavior": { "interactive": false, "collapse_priority": 2 },
+      "_status": "semantic — rendered via fallback template"
+    },
+    "weather_glance_card": {
+      "id": "weather_glance_card",
+      "category": "info-card",
+      "orchestration_type": "card",
+      "allowed_contexts": ["glanceable","home","lock","quick-view"],
+      "states": ["default","compact","glance"],
+      "slots": { "title": "text", "value": "text", "icon": "icon" },
+      "layout_spec": { "min_width": 160, "min_height": 72, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
+      "tokens": { "radius": "medium", "background": "surface-2", "text_style_title": "label-sm", "text_style_value": "headline-md" },
+      "behavior": { "interactive": false, "collapse_priority": 2 },
+      "_status": "semantic — rendered via fallback template"
+    },
+    "navigation_turn_card": {
+      "id": "navigation_turn_card",
+      "category": "info-card",
+      "orchestration_type": "card",
+      "allowed_contexts": ["driving","glanceable","minimal-touch","quick-view"],
+      "states": ["default","compact","glance"],
+      "slots": { "title": "text", "value": "text", "icon": "icon" },
+      "layout_spec": { "min_width": 200, "min_height": 80, "padding": { "top": 14, "right": 14, "bottom": 14, "left": 14 }, "gap": 8 },
+      "tokens": { "radius": "medium", "background": "primary", "text_style_title": "label-sm", "text_style_value": "headline-md" },
+      "behavior": { "interactive": false, "collapse_priority": 1 },
+      "_status": "semantic — rendered via fallback template"
+    },
+    "reminder_card": {
+      "id": "reminder_card",
+      "category": "info-card",
+      "orchestration_type": "card",
+      "allowed_contexts": ["app","home","lock","glanceable"],
+      "states": ["default","compact","glance"],
+      "slots": { "title": "text", "value": "text", "icon": "icon" },
+      "layout_spec": { "min_width": 200, "min_height": 64, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
+      "tokens": { "radius": "medium", "background": "surface-2", "text_style_title": "label-sm", "text_style_value": "body-md" },
+      "behavior": { "interactive": true, "collapse_priority": 2 },
+      "_status": "semantic — rendered via fallback template"
+    },
+    "quick_toggle_row": {
+      "id": "quick_toggle_row",
+      "category": "selection",
+      "orchestration_type": "qs-toggle",
+      "allowed_contexts": ["app","quick-settings","focused"],
+      "states": ["default","compact"],
+      "slots": { "actions": "action-group" },
+      "layout_spec": { "min_width": 280, "min_height": 56, "padding": { "top": 8, "right": 10, "bottom": 8, "left": 10 }, "gap": 8 },
+      "tokens": { "radius": "16", "background": "surface-2", "text_style_title": "label-xs" },
+      "behavior": { "interactive": true, "collapse_priority": 2 },
+      "_status": "semantic — rendered via fallback template"
+    },
+    "input_summary_card": {
+      "id": "input_summary_card",
+      "category": "input",
+      "orchestration_type": "card",
+      "allowed_contexts": ["app","focused"],
+      "states": ["default","compact"],
+      "slots": { "title": "text", "value": "text", "icon": "icon | optional" },
+      "layout_spec": { "min_width": 240, "min_height": 64, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
+      "tokens": { "radius": "12", "background": "surface-2", "text_style_title": "label-sm", "text_style_value": "body-md" },
+      "behavior": { "interactive": true, "collapse_priority": 2 },
+      "_status": "semantic — rendered via fallback template"
     }
   },
 
   "vocabulary": {
-    "note": "component_planner (step_3) must select component_type ONLY from this list.",
+    "note": "STEP 3 (component_selector) must select component_type ONLY from semantic_allowed_types. The broader allowed_types list includes UI primitives used by the composer/renderer but is NOT exposed to the planner.",
+    "semantic_allowed_types": [
+      "eta_card",
+      "message_summary_card",
+      "media_control_bar",
+      "action_chip_row",
+      "calendar_summary_card",
+      "weather_glance_card",
+      "navigation_turn_card",
+      "reminder_card",
+      "quick_toggle_row",
+      "input_summary_card"
+    ],
     "allowed_types": [
       "btn-contained","btn-outlined","btn-flat","fab",
       "switch","checkbox","radio","chip",
@@ -382,7 +479,9 @@
       "card","list-item","dialog","snackbar",
       "divider","badge",
       "now-bar","qs-toggle","qs-grid","media-card","notification-card","widget-small","keyboard",
-      "eta_card","message_summary_card","media_control_bar"
+      "eta_card","message_summary_card","media_control_bar",
+      "action_chip_row","calendar_summary_card","weather_glance_card",
+      "navigation_turn_card","reminder_card","quick_toggle_row","input_summary_card"
     ]
   }
 }

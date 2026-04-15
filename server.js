@@ -958,27 +958,10 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       const scenarioText = body.scenario_text || body.prompt || '';
-      const userContext  = body.user_context || {};
-      const scenarioKey  = body.scenario_key || null;
 
-      // Step 2: resolve ui_state via ui-state.js (Node CJS export)
-      let uiState;
-      if (scenarioKey && UIState && UIState.resolveForScenario) {
-        uiState = UIState.resolveForScenario(scenarioKey, userContext);
-      } else if (UIState && UIState.resolveUIState) {
-        // Fallback: assume app surface if no scenario_key provided
-        uiState = UIState.resolveUIState(
-          { baseSurface: 'app', homeSubstate: 'none', overlayType: 'none', overlayCoverage: 'none', windowMode: 'single' },
-          userContext
-        );
-      } else {
-        throw new Error('UIState resolver unavailable');
-      }
-
-      // Step 1 + Step 3: interpret + plan (driven by OpenAI)
+      // 3-step pipeline: ui_state is produced by STEP 1 (LLM-authoritative).
       const result = await pipeline.runPlan({
         scenarioText,
-        uiState,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
 
@@ -998,27 +981,14 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       const scenarioText = body.scenario_text || body.prompt || '';
-      const userContext  = body.user_context || {};
-      const scenarioKey  = body.scenario_key || null;
       const viewport     = body.viewport || null;
 
-      // Step 2
-      let uiState;
-      if (scenarioKey && UIState && UIState.resolveForScenario) {
-        uiState = UIState.resolveForScenario(scenarioKey, userContext);
-      } else {
-        uiState = UIState.resolveUIState(
-          { baseSurface: 'app', homeSubstate: 'none', overlayType: 'none', overlayCoverage: 'none', windowMode: 'single' },
-          userContext
-        );
-      }
-
-      // Step 1 + Step 3
+      // Steps 1 → 2 → 3 (LLM-authoritative ui_state from step_1)
       const planResult = await pipeline.runPlan({
         scenarioText,
-        uiState,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
+      const uiState = planResult.ui_state;
 
       // Step 5 + pipeline validators
       const composeResult = composer.runCompose({
@@ -1051,27 +1021,14 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       const scenarioText = body.scenario_text || body.prompt || '';
-      const userContext  = body.user_context || {};
-      const scenarioKey  = body.scenario_key || null;
       const viewport     = body.viewport || null;
 
-      // Step 2
-      let uiState;
-      if (scenarioKey && UIState && UIState.resolveForScenario) {
-        uiState = UIState.resolveForScenario(scenarioKey, userContext);
-      } else {
-        uiState = UIState.resolveUIState(
-          { baseSurface: 'app', homeSubstate: 'none', overlayType: 'none', overlayCoverage: 'none', windowMode: 'single' },
-          userContext
-        );
-      }
-
-      // Steps 1 + 3
+      // Steps 1 → 2 → 3 (LLM-authoritative ui_state from step_1)
       const planResult = await pipeline.runPlan({
         scenarioText,
-        uiState,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
+      const uiState = planResult.ui_state;
 
       // Step 5 + 6
       const composeResult = composer.runCompose({
@@ -1091,6 +1048,7 @@ const server = http.createServer(async (req, res) => {
         scenarioText,
         uiState,
         plan: planResult.plan,
+        plannerNotes: planResult.plan?.planner_notes || null,
         layoutPlan: composeResult.layout_plan,
         validation: combinedValidation,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.4)

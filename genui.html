@@ -2806,7 +2806,58 @@ const PIPELINE_FALLBACK_TEMPLATES = {
     <div style="flex:1;min-width:0;font-size:13px;" contenteditable="true">${content.value || content.label || 'Now Playing'}</div>
     <span style="font-size:16px;color:var(--text-2);cursor:pointer;">&#9198;</span>
     <div style="width:36px;height:36px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;">&#9654;</div>
-    <span style="font-size:16px;color:var(--text-2);cursor:pointer;">&#9197;</span></div>`
+    <span style="font-size:16px;color:var(--text-2);cursor:pointer;">&#9197;</span></div>`,
+  // ── Semantic vocabulary fallbacks (3-step pipeline) ──────────────────────
+  'action_chip_row': (content) => {
+    const chips = Array.isArray(content.chips) && content.chips.length
+      ? content.chips
+      : (content.value ? String(content.value).split(/[,\|]/).map(s => s.trim()) : ['Action 1', 'Action 2', 'Action 3']);
+    return `<div style="display:flex;gap:8px;flex-wrap:wrap;">${
+      chips.map(c => `<div style="padding:8px 14px;border-radius:999px;background:var(--surface-2);border:1px solid rgba(255,255,255,0.08);font-size:13px;color:#fff;" contenteditable="true">${c}</div>`).join('')
+    }</div>`;
+  },
+  'calendar_summary_card': (content) => `<div class="oui-card" style="display:flex;align-items:center;gap:12px;">
+    <div style="width:44px;height:44px;border-radius:12px;background:var(--surface-2);display:flex;flex-direction:column;align-items:center;justify-content:center;">
+      <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;">${content.month || 'Today'}</div>
+      <div style="font-size:18px;font-weight:700;color:#fff;">${content.day || new Date().getDate()}</div>
+    </div>
+    <div style="flex:1;min-width:0;">
+      <div class="oui-card-title" style="font-size:14px;color:#fff;" contenteditable="true">${content.label || 'Next meeting'}</div>
+      <div class="oui-card-desc" style="font-size:12px;color:var(--text-3);" contenteditable="true">${content.value || '—'}</div>
+    </div></div>`,
+  'weather_glance_card': (content) => `<div class="oui-card" style="display:flex;align-items:center;gap:12px;">
+    <div style="font-size:32px;">${content.icon || '&#9728;'}</div>
+    <div style="flex:1;">
+      <div style="font-size:24px;font-weight:700;color:#fff;" contenteditable="true">${content.value || '—°'}</div>
+      <div class="oui-card-desc" style="font-size:12px;color:var(--text-3);" contenteditable="true">${content.label || 'Weather'}</div>
+    </div></div>`,
+  'navigation_turn_card': (content) => `<div class="oui-card" style="display:flex;align-items:center;gap:12px;">
+    <div style="width:44px;height:44px;border-radius:12px;background:var(--primary);display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;">&#8599;</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:20px;font-weight:700;color:#fff;" contenteditable="true">${content.value || 'In 500 m'}</div>
+      <div class="oui-card-desc" style="font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" contenteditable="true">${content.label || 'Turn right onto Main St'}</div>
+    </div></div>`,
+  'reminder_card': (content) => `<div class="oui-card" style="display:flex;align-items:center;gap:12px;">
+    <div style="font-size:22px;">&#128276;</div>
+    <div style="flex:1;min-width:0;">
+      <div class="oui-card-title" style="font-size:14px;color:#fff;" contenteditable="true">${content.label || 'Reminder'}</div>
+      <div class="oui-card-desc" style="font-size:12px;color:var(--text-3);" contenteditable="true">${content.value || ''}</div>
+    </div></div>`,
+  'quick_toggle_row': (content) => {
+    const toggles = Array.isArray(content.toggles) && content.toggles.length
+      ? content.toggles
+      : [{label: content.label || 'Wi-Fi', on: true}, {label: 'Bluetooth', on: false}, {label: 'DND', on: false}];
+    return `<div style="display:flex;gap:10px;">${
+      toggles.map(t => `<div style="flex:1;padding:12px;border-radius:16px;background:${t.on ? 'var(--primary)' : 'var(--surface-2)'};display:flex;flex-direction:column;align-items:center;gap:6px;">
+        <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.15);"></div>
+        <div style="font-size:11px;color:#fff;" contenteditable="true">${t.label}</div>
+      </div>`).join('')
+    }</div>`;
+  },
+  'input_summary_card': (content) => `<div class="oui-card">
+    <div class="oui-card-title" style="font-size:12px;color:var(--text-3);" contenteditable="true">${content.label || 'Input'}</div>
+    <div style="margin-top:6px;padding:10px 14px;border-radius:12px;background:var(--surface-2);font-size:14px;color:#fff;" contenteditable="true">${content.value || 'Type here…'}</div>
+  </div>`
 };
 
 function pipelineRenderChild(child) {

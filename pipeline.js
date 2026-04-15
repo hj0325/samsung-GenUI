@@ -1,9 +1,18 @@
 // ============================================================================
-//  GENUI PIPELINE v1 — step_1 (scenario_interpreter) + step_3 (component_planner)
+//  GENUI PIPELINE v1 (3-step variant) — interpreter → normalizer → planner
 //  ---------------------------------------------------------------------------
-//  Pure prompt builders + thin orchestrator. No HTML generation here.
-//  Consumed by server.js via /api/pipeline/plan. Runs AFTER
-//  ui-state.js (step_2) has produced the resolved ui_state.
+//  Each step is an INDEPENDENT LLM call. Output JSON of step N is passed
+//  verbatim to step N+1. No step invents UI markup.
+//
+//    STEP 1  scenario_interpreter  scenario_text → {intent, context, tasks,
+//                                                   constraints, ui_state}
+//    STEP 2  handoff_normalizer    STEP_1 → {planning_summary, task_groups,
+//                                            slot_requirements,
+//                                            selection_constraints, ui_state}
+//    STEP 3  component_selector    STEP_2 → {required_components[],
+//                                            planner_notes}
+//
+//  Plus step_7 explanation_layer (invoked separately).
 // ============================================================================
 
 const fs = require('fs');
@@ -19,15 +28,9 @@ function allowedComponentTypes() {
   return (REGISTRY.vocabulary && REGISTRY.vocabulary.allowed_types) || Object.keys(REGISTRY.components || {});
 }
 
-function registrySummaryForPrompt() {
-  if (!REGISTRY) return '(component_registry.json unavailable)';
-  const rows = [];
-  const comps = REGISTRY.components || {};
-  for (const id of Object.keys(comps)) {
-    const c = comps[id];
-    rows.push(`  ${id} — category:${c.category} · contexts:[${(c.allowed_contexts || []).join(',')}] · collapse_priority:${c.behavior?.collapse_priority ?? 2}`);
-  }
-  return rows.join('\n');
+function allowedSemanticComponentTypes() {
+  if (!REGISTRY) return [];
+  return (REGISTRY.vocabulary && REGISTRY.vocabulary.semantic_allowed_types) || allowedComponentTypes();
 }
 
 // ---------------------------------------------------------------------------
@@ -35,77 +38,198 @@ function registrySummaryForPrompt() {
 // ---------------------------------------------------------------------------
 
 function buildInterpreterPrompt() {
-  return `You are the SCENARIO INTERPRETER for genui_pipeline_v1 step_1.
+  return `You are a scenario interpreter for a state-based generative UI system.
 
-Your job: take a short natural-language scenario_text and return a STRUCTURED JSON with intent, context, tasks, and constraints.
+You must NOT generate UI.
+You must NOT choose components.
+You must ONLY convert the scenario into structured intent, context, tasks, constraints, and UI state.
 
-You do NOT generate UI. You do NOT pick components. You ONLY structure the scenario.
+Return STRICT JSON only.
 
-OUTPUT SCHEMA (return exactly this shape as JSON):
 {
-  "intent": { "primary_goal": "string", "secondary_goal": "string | null" },
+  "intent": {
+    "primary_goal": "",
+    "secondary_goal": null
+  },
   "context": {
-    "environment": "string",
+    "environment": "",
     "attention_mode": "focused | glanceable | distracted",
     "urgency": "low | medium | high",
     "mobility_mode": "stationary | walking | driving | transit",
     "interaction_mode": "touch | voice | mixed | minimal-touch"
   },
   "tasks": [
-    { "task_id": "t1", "type": "string", "priority": 1, "content_need": "string" }
+    {
+      "task_id": "",
+      "type": "",
+      "priority": 1,
+      "content_need": ""
+    }
   ],
-  "constraints": ["minimal_text","large_touch_targets","single_glance_readability","reduce_visual_density","one_hand_use","low_cognitive_load"]
+  "constraints": [],
+  "ui_state": {
+    "base_surface": "lock | home | app",
+    "home_substate": "none | launcher | app-drawer | widget-edit",
+    "overlay_type": "none | quick-settings | notification-shade | system-dialog",
+    "overlay_coverage": "none | partial | full",
+    "window_mode": "single | split | floating",
+    "attention_mode": "focused | glanceable | distracted",
+    "density_mode": "expanded | normal | compressed",
+    "interaction_mode": "touch | voice | mixed | minimal-touch",
+    "background_policy": "wallpaper | solid-dark | scrim-over-wallpaper | scrim-over-app | dialog-surface"
+  }
 }
 
-RULES
-- "priority" is an integer 1|2|3 (1 = most important).
-- "constraints" values must come from the enum above.
-- Emit 1–5 tasks maximum. Fewer is better.
-- If the scenario implies driving or a car context, set mobility_mode:"driving" AND attention_mode:"glanceable".
-- If minimal interaction is implied, set interaction_mode:"minimal-touch".
-- Return JSON only. No prose.`;
+Rules:
+- interpret, do not design
+- tasks must be atomic
+- priority must be explicit (1 highest)
+- constraints must reflect real UX constraints
+- ui_state must reflect context, not arbitrary guess`;
 }
 
 // ---------------------------------------------------------------------------
-//  STEP 3 — COMPONENT PLANNER
+//  STEP 2 — HANDOFF NORMALIZER (planner preparation)
+// ---------------------------------------------------------------------------
+
+function buildNormalizerPrompt() {
+  return `You are a handoff normalizer.
+
+You receive structured scenario JSON from STEP 1.
+Your job is to convert it into a component-selection-ready planning packet.
+
+You must NOT:
+- generate UI
+- invent components
+- change ui_state arbitrarily
+- reinterpret the scenario creatively
+
+You must:
+- group tasks into primary / secondary / optional
+- convert tasks into slot requirements
+- translate constraints into selection constraints
+- prepare a minimal, clean packet for component selection
+
+Return STRICT JSON:
+
+{
+  "planning_summary": {
+    "primary_goal": "",
+    "interaction_priority": "",
+    "attention_strategy": "",
+    "density_strategy": "",
+    "background_policy": ""
+  },
+  "task_groups": {
+    "primary": [],
+    "secondary": [],
+    "optional": []
+  },
+  "slot_requirements": [
+    {
+      "slot": "",
+      "purpose": "",
+      "content_type": "",
+      "priority": 1,
+      "selection_hint": ""
+    }
+  ],
+  "selection_constraints": {
+    "prefer": [],
+    "avoid": [],
+    "collapse_first": []
+  },
+  "ui_state": {}
+}
+
+Rules:
+- keep only top 2 tasks as primary/secondary if too many
+- rest → optional
+- convert tasks → slots (NOT components)
+- selection_hint must describe behavior, not component name
+- if attention_mode = glanceable → prefer summary, compact, single-value
+- if minimal-touch → avoid dense interaction clusters
+- if urgency high → primary must reflect urgency
+- DO NOT invent component names`;
+}
+
+// ---------------------------------------------------------------------------
+//  STEP 3 — COMPONENT SELECTOR
 // ---------------------------------------------------------------------------
 
 function buildPlannerPrompt() {
-  const allowed = allowedComponentTypes().join(', ');
-  const summary = registrySummaryForPrompt();
-  return `You are the COMPONENT PLANNER for genui_pipeline_v1 step_3.
+  const allowed = allowedSemanticComponentTypes();
+  const list = allowed.join('\n');
+  return `You are a component selector.
 
-Your input is (a) the interpreted scenario, (b) the resolved ui_state. Your job: select components from the REGISTRY VOCABULARY below. You must NOT invent new component_type names.
+You receive a planning packet.
+Your job is to select components ONLY from the allowed vocabulary.
 
-ALLOWED component_type values (ONLY these):
-${allowed}
+You must NOT:
+- reinterpret the scenario
+- invent new components
+- generate layout or styling
 
-REGISTRY SUMMARY (id — category · allowed_contexts · collapse_priority):
-${summary}
+Allowed component types:
+${list}
 
-OUTPUT SCHEMA (return exactly this shape as JSON):
+Return STRICT JSON:
+
 {
   "required_components": [
     {
-      "slot": "string (e.g. primary_info | secondary_info | control | chrome_top | chrome_bottom)",
-      "component_type": "string (MUST be in the ALLOWED list)",
-      "variant_hint": "default | compact | glance",
+      "slot": "",
+      "component_type": "",
+      "variant_hint": "",
       "priority": 1,
-      "content": { "label": "string", "value": "string", "icon": "string | null" },
-      "constraints": ["string"]
+      "content": {
+        "label": "",
+        "value": "",
+        "icon": null
+      },
+      "constraints": []
     }
-  ]
+  ],
+  "planner_notes": {
+    "kept_primary_tasks": [],
+    "collapsed_optional_tasks": [],
+    "selection_reasoning": []
+  }
 }
 
-SELECTION RULES
-- component_type MUST be one of the ALLOWED list. If none fit, pick the closest available and note it in "constraints".
-- If ui_state.attention_mode == "glanceable", prefer components whose allowed_contexts include "glanceable"; avoid long text-heavy components.
-- If ui_state.density_mode == "compressed", prefer "compact" or "glance" variant_hint.
-- If ui_state.interaction_mode == "minimal-touch", avoid dense action clusters; prefer single-primary-action components.
-- If ui_state.base_surface == "app" with overlay_type == "none", do NOT emit lock/home-only components (e.g. now-bar, widget-small).
-- Emit 1–6 components maximum. Fewer is better.
-- Lower priority numbers = more important. Items with priority 3 are the first to collapse.
-- Return JSON only. No prose.`;
+Rules:
+- select components that match slot_requirements
+- respect selection_constraints.prefer / avoid
+- if conflict → preserve primary tasks
+- collapse optional first
+- if glanceable → compact or glance variants
+- if minimal-touch → larger, simpler components
+- content must match content_need`;
+}
+
+// ---------------------------------------------------------------------------
+//  STEP 7 — EXPLANATION LAYER
+// ---------------------------------------------------------------------------
+
+function buildExplanationPrompt() {
+  return `You are the EXPLANATION LAYER.
+
+Your inputs are (a) the original scenario_text, (b) the resolved ui_state, (c) required_components, (d) layout_plan, (e) validation_report, (f) planner_notes. You do NOT make new decisions or invent components. You ONLY explain what the pipeline already decided and what the user should know.
+
+Return STRICT JSON only:
+{
+  "why_this_ui": "string (1–3 sentences, plain language)",
+  "what_was_prioritized": ["string", "..."],
+  "what_was_removed_or_collapsed": ["string", "..."],
+  "what_should_be_fixed": ["string", "..."]
+}
+
+RULES
+- why_this_ui: cite the strongest ui_state signals (attention_mode, density_mode, mobility_mode, interaction_mode, background_policy) and the top-priority component. Max 3 sentences.
+- what_was_prioritized: list component_type + one-line reason for each priority:1 item.
+- what_was_removed_or_collapsed: use planner_notes.collapsed_optional_tasks; also list any priority:3 items flagged by layout_overflow_check.
+- what_should_be_fixed: ONE line per validation.violations entry (include ruleId + message). If no violations, return [].
+- JSON only. No prose. No markdown.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,14 +237,14 @@ SELECTION RULES
 // ---------------------------------------------------------------------------
 
 function validatePlan(plan) {
-  const allowed = new Set(allowedComponentTypes());
+  const allowed = new Set(allowedSemanticComponentTypes());
   const errors = [];
   const components = (plan && plan.required_components) || [];
   components.forEach((c, idx) => {
     if (!c.component_type) {
       errors.push({ index: idx, error: 'missing component_type' });
     } else if (!allowed.has(c.component_type)) {
-      errors.push({ index: idx, component_type: c.component_type, error: 'component_type not in registry vocabulary' });
+      errors.push({ index: idx, component_type: c.component_type, error: 'component_type not in semantic vocabulary' });
     }
     if (c.priority == null || ![1,2,3].includes(c.priority)) {
       errors.push({ index: idx, component_type: c.component_type, error: 'priority must be 1|2|3' });
@@ -130,75 +254,60 @@ function validatePlan(plan) {
 }
 
 // ---------------------------------------------------------------------------
-//  STEP 7 — EXPLANATION LAYER
+//  ORCHESTRATOR — chains STEP 1 → STEP 2 → STEP 3
 // ---------------------------------------------------------------------------
 
-function buildExplanationPrompt() {
-  return `You are the EXPLANATION LAYER for genui_pipeline_v1 step_7.
+async function runPlan({ scenarioText, llmCall }) {
+  if (!llmCall) throw new Error('runPlan requires llmCall(systemPrompt, userMessage)');
 
-Your inputs are (a) the original scenario_text, (b) the resolved ui_state, (c) required_components, (d) layout_plan, (e) validation_report (plan + layout). You do NOT make new decisions or invent components. You ONLY explain what the pipeline already decided and what the user should know.
+  // STEP 1: interpret
+  const interpretation = await llmCall(
+    buildInterpreterPrompt(),
+    `User Scenario:\n${scenarioText}`
+  );
 
-OUTPUT SCHEMA (return exactly this shape as JSON):
-{
-  "why_this_ui": "string (1–3 sentences, plain language, explains the core design choice)",
-  "what_was_prioritized": ["string", "..."],
-  "what_was_removed_or_collapsed": ["string", "..."],
-  "what_should_be_fixed": ["string", "..."]
+  // STEP 2: normalize (handoff packet)
+  const planningPacket = await llmCall(
+    buildNormalizerPrompt(),
+    `Input JSON:\n${JSON.stringify(interpretation)}`
+  );
+
+  // STEP 3: select components from semantic vocabulary
+  const plan = await llmCall(
+    buildPlannerPrompt(),
+    `Planning Packet:\n${JSON.stringify(planningPacket)}`
+  );
+
+  const validation = validatePlan(plan);
+
+  // ui_state bubbles up from step_1 (trusted) but step_2 gets a copy.
+  const uiState = (planningPacket && planningPacket.ui_state) || (interpretation && interpretation.ui_state) || null;
+
+  return { interpretation, planning_packet: planningPacket, ui_state: uiState, plan, validation };
 }
 
-RULES
-- "why_this_ui": cite the strongest ui_state signals (attention_mode, density_mode, mobility_mode, interaction_mode, background_policy) and the top-priority component. Max 3 sentences.
-- "what_was_prioritized": list component_type + one-line reason for each priority:1 item.
-- "what_was_removed_or_collapsed": list anything that would be dropped under fallback_rules OR any priority-3 item that layout_overflow_check flagged.
-- "what_should_be_fixed": ONE line per validation.violations entry (include ruleId + message). If no violations, return [].
-- Return JSON only. No prose. No markdown.`;
-}
-
-async function runExplain({ scenarioText, uiState, plan, layoutPlan, validation, llmCall }) {
+async function runExplain({ scenarioText, uiState, plan, plannerNotes, layoutPlan, validation, llmCall }) {
   if (!llmCall) throw new Error('runExplain requires llmCall(systemPrompt, userMessage)');
   const payload = {
     scenario_text: scenarioText,
     ui_state: uiState,
     required_components: (plan && plan.required_components) || [],
+    planner_notes: plannerNotes || (plan && plan.planner_notes) || null,
     layout_plan: layoutPlan,
     validation_report: validation
   };
   return llmCall(buildExplanationPrompt(), JSON.stringify(payload));
 }
 
-// ---------------------------------------------------------------------------
-//  ORCHESTRATOR — takes an llmCall(systemPrompt, userMessage) and runs
-//  step_1 + step_3 sequentially. uiStateResolver is injected because
-//  ui-state.js is a browser module; server.js passes a Node-compatible
-//  equivalent or pre-resolves the state.
-// ---------------------------------------------------------------------------
-
-async function runPlan({ scenarioText, uiState, llmCall }) {
-  if (!llmCall) throw new Error('runPlan requires llmCall(systemPrompt, userMessage)');
-
-  // Step 1: interpret
-  const interp = await llmCall(
-    buildInterpreterPrompt(),
-    `scenario_text: ${JSON.stringify(scenarioText)}`
-  );
-
-  // Step 3: plan (step 2 = ui_state resolver, supplied by caller)
-  const plan = await llmCall(
-    buildPlannerPrompt(),
-    JSON.stringify({ interpretation: interp, ui_state: uiState })
-  );
-
-  const validation = validatePlan(plan);
-  return { interpretation: interp, ui_state: uiState, plan, validation };
-}
-
 module.exports = {
   buildInterpreterPrompt,
+  buildNormalizerPrompt,
   buildPlannerPrompt,
   buildExplanationPrompt,
   validatePlan,
   runPlan,
   runExplain,
   allowedComponentTypes,
+  allowedSemanticComponentTypes,
   REGISTRY_PATH
 };
