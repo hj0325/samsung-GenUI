@@ -289,11 +289,22 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 }
 .canvas-frame {
   height:min(780px, calc(100vh - 84px)); aspect-ratio:1080/2340; /* Galaxy S26 19.5:9 */
-  width:auto; background:var(--canvas-bg-dark);
-  border-radius:36px; border:3px solid #333; position:relative;
-  overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  width:auto;
+  background-image:url('wallpapers/1.png');
+  background-color:var(--canvas-bg-dark);
+  background-size:cover;
+  background-position:center center;
+  background-repeat:no-repeat;
+  background-clip:border-box; /* wallpaper fills edge-to-edge under the bezel */
+  border-radius:44px; /* Galaxy S26 canonical bezel radius */
+  border:2px solid rgba(60,60,66,0.9);
+  position:relative;
+  overflow:hidden;
+  box-shadow:0 0 0 1px rgba(0,0,0,0.5) inset, 0 20px 60px rgba(0,0,0,0.5);
   transition:all 0.4s cubic-bezier(0.2,0,0,1);
 }
+/* Inner content rounds to match the bezel interior so wallpaper + content share the same outline */
+.canvas-frame .canvas-inner { border-radius:42px; }
 /* Samsung TV: 1920×1080 (16:9) */
 .canvas-frame.tv { width:auto; height:min(720px, calc(100vh - 84px)); aspect-ratio:16/9; border-radius:4px; border-width:2px; max-width:calc(100vw - 440px); }
 /* Galaxy Watch 7 (44mm): 480×480 circular */
@@ -360,6 +371,14 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .canvas-item:hover { outline-color:rgba(3,129,254,0.3); }
 .canvas-item.selected { outline-color:var(--primary); }
 .canvas-item.grouped { outline-color:rgba(100,233,227,0.4); outline-style:dashed; }
+/* App icon images — ensure they render reliably in canvas/scenario contexts */
+.canvas-item img, .canvas-inner img { display:inline-block; object-fit:contain; max-width:100%; }
+/* Inline row: auto-wrap chips/buttons/toggles that are consecutive */
+.canvas-inline-row {
+  display:flex; flex-direction:row; flex-wrap:wrap; gap:8px;
+  align-self:flex-start; align-items:center; width:100%;
+}
+.canvas-inline-row .canvas-item { align-self:center; }
 .canvas-item [contenteditable]:focus { outline:none; cursor:text; }
 .canvas-delete, .canvas-item-delete {
   position:absolute; top:-8px; right:-8px; width:20px; height:20px;
@@ -1242,17 +1261,17 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
             <div class="panel-section">
               <div class="panel-label">Wallpaper</div>
               <div class="wp-grid" style="grid-template-columns:repeat(4,1fr);">
-                <div class="wp-thumb active" onclick="setWallpaper('bubble-warm')" title="Bubble Warm">
+                <div class="wp-thumb active" onclick="setWallpaper('wp-1')" title="Wallpaper 1 (default)">
+                  <div style="width:100%;height:100%;background:url('wallpapers/1.png') center/cover no-repeat;"></div>
+                </div>
+                <div class="wp-thumb" onclick="setWallpaper('wp-2')" title="Wallpaper 2">
+                  <div style="width:100%;height:100%;background:url('wallpapers/2.png') center/cover no-repeat;"></div>
+                </div>
+                <div class="wp-thumb" onclick="setWallpaper('wp-3')" title="Wallpaper 3">
+                  <div style="width:100%;height:100%;background:url('wallpapers/3.png') center/cover no-repeat;"></div>
+                </div>
+                <div class="wp-thumb" onclick="setWallpaper('wp-4')" title="Wallpaper 4">
                   <div style="width:100%;height:100%;background:url('wallpapers/4.png') center/cover no-repeat;"></div>
-                </div>
-                <div class="wp-thumb" onclick="setWallpaper('s-lavender')" title="S Lavender">
-                  <div style="width:100%;height:100%;background:url('wallpapers/Replace Tool_.png') center/cover no-repeat;"></div>
-                </div>
-                <div class="wp-thumb" onclick="setWallpaper('s-blue')" title="S Blue">
-                  <div style="width:100%;height:100%;background:url('wallpapers/Replace Tool.png') center/cover no-repeat;"></div>
-                </div>
-                <div class="wp-thumb" onclick="setWallpaper('s-mint')" title="S Mint">
-                  <div style="width:100%;height:100%;background:url('wallpapers/S25.png') center/cover no-repeat;"></div>
                 </div>
               </div>
               <!-- More wallpapers (collapsed) -->
@@ -2225,6 +2244,8 @@ const templates = {
 
 // === FULL-WIDTH COMPONENT TYPES ===
 const fullWidthTypes = new Set(['card','list-item','appbar','bottomnav','input','search','snackbar','divider','tab-bar','dialog','status-bar','now-bar','qs-grid','media-card','notification-card','widget-small','keyboard']);
+// Small inline types — when consecutive, auto-group into a horizontal wrap row
+const inlineTypes = new Set(['chip','btn-contained','btn-outlined','btn-flat','fab','switch','checkbox','radio','badge']);
 
 // === ADD COMPONENT ===
 function addComp(type) {
@@ -2241,7 +2262,21 @@ function addComp(type) {
   wrapper.addEventListener('click', (e) => toggleSelect(wrapper, e));
   wrapper.setAttribute('draggable', 'true');
   initDrag(wrapper);
-  canvas.appendChild(wrapper);
+
+  // Auto-group consecutive inline components into a horizontal wrap row
+  if (inlineTypes.has(type)) {
+    const last = canvas.lastElementChild;
+    if (last && last.classList.contains('canvas-inline-row')) {
+      last.appendChild(wrapper);
+    } else {
+      const row = document.createElement('div');
+      row.className = 'canvas-inline-row';
+      row.appendChild(wrapper);
+      canvas.appendChild(row);
+    }
+  } else {
+    canvas.appendChild(wrapper);
+  }
 
   // Entrance animation
   wrapper.style.animation = `fadeIn 300ms cubic-bezier(0.2,0,0,1) forwards`;
@@ -2334,7 +2369,90 @@ function toggleSelect(el, e) {
   el.classList.toggle('selected');
   if (el.classList.contains('selected')) selectedItems.add(el.id);
   else selectedItems.delete(el.id);
+  // Auto-prefill refine feedback with variant + component context
+  if (el.classList.contains('selected')) refineAutoPrefill(el);
 }
+
+// === REFINE AUTO-PREFILL ===
+// When Refine panel is active and user clicks a variant canvas or a component,
+// auto-populate the feedback textarea with "Variant X – ComponentName: " context.
+const COMP_LABELS = {
+  'btn-contained':'Contained Button', 'btn-outlined':'Outlined Button', 'btn-flat':'Flat/Text Button',
+  'fab':'FAB', 'switch':'Switch', 'checkbox':'Checkbox', 'radio':'Radio',
+  'input':'Text Input', 'search':'Search Bar', 'chip':'Chip', 'badge':'Badge',
+  'tab-bar':'Tab Bar', 'appbar':'App Bar', 'bottomnav':'Bottom Nav', 'dialog':'Dialog',
+  'snackbar':'Snackbar/Toast', 'divider':'Divider', 'card':'Card', 'list-item':'List Item',
+  'status-bar':'Status Bar', 'now-bar':'Now Bar', 'qs-grid':'Quick Settings Grid',
+  'media-card':'Media Card', 'notification-card':'Notification Card',
+  'widget-small':'Small Widget', 'keyboard':'Keyboard', 'custom':'Custom Element'
+};
+function refineAutoPrefill(el) {
+  const panel7 = document.getElementById('panel-7');
+  if (!panel7 || !panel7.classList.contains('active')) return;
+  const ta = document.getElementById('refineFeedback');
+  if (!ta) return;
+  // Determine variant (A/B) by walking up to nearest canvas-frame
+  const frame = el.closest('.canvas-frame');
+  const variant = (frame && frame.id === 'canvasFrameB') ? 'B' : 'A';
+  // Determine component label
+  const type = el.dataset.compType || '';
+  const label = COMP_LABELS[type] || (type ? type.replace(/-/g,' ') : 'Component');
+  const prefix = `[Variant ${variant} – ${label}] `;
+  const cur = ta.value || '';
+  // Strip any existing [Variant …] prefix then prepend the new one
+  const stripped = cur.replace(/^\[Variant [AB] – [^\]]+\]\s*/, '');
+  ta.value = prefix + stripped;
+  ta.focus();
+  // Place caret at the end so user can keep typing their comment
+  const end = ta.value.length;
+  try { ta.setSelectionRange(end, end); } catch(_) {}
+}
+// Click on variant frame background (not a component) → variant-level context
+function refineFrameClickListener(frame, variant) {
+  frame.addEventListener('click', (e) => {
+    const panel7 = document.getElementById('panel-7');
+    if (!panel7 || !panel7.classList.contains('active')) return;
+    // Only trigger if the click target is the frame itself or the inner canvas wrapper (not a component)
+    if (e.target.closest('.canvas-item')) return;
+    const ta = document.getElementById('refineFeedback');
+    if (!ta) return;
+    const prefix = `[Variant ${variant} – Overall] `;
+    const cur = ta.value || '';
+    const stripped = cur.replace(/^\[Variant [AB] – [^\]]+\]\s*/, '');
+    ta.value = prefix + stripped;
+    ta.focus();
+    const end = ta.value.length;
+    try { ta.setSelectionRange(end, end); } catch(_) {}
+  });
+}
+window.addEventListener('DOMContentLoaded', () => {
+  const fA = document.getElementById('canvasFrame');
+  const fB = document.getElementById('canvasFrameB');
+  if (fA) refineFrameClickListener(fA, 'A');
+  if (fB) refineFrameClickListener(fB, 'B');
+});
+
+// === APP ICON LOAD SAFETY NET ===
+// If any scenario/template img fails to load (path typo, rename, encoding issue),
+// replace with a neutral emoji square so the UI never shows broken-image icons.
+// Also log which URL failed for easier debugging.
+document.addEventListener('error', (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLImageElement)) return;
+  if (!el.src || el.dataset.iconFallback) return;
+  if (!/app-icons\//.test(el.src)) return;
+  console.warn('[app-icon missing]', el.src);
+  el.dataset.iconFallback = '1';
+  // Swap the img for a styled div with an emoji (preserve sizing)
+  const w = el.getAttribute('width') || el.style.width || '32px';
+  const h = el.getAttribute('height') || el.style.height || '32px';
+  const radius = el.style.borderRadius || '8px';
+  const fallback = document.createElement('div');
+  fallback.textContent = '\u25A3'; // ▣
+  fallback.style.cssText = `display:inline-flex;align-items:center;justify-content:center;width:${w};height:${h};border-radius:${radius};background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.5);font-size:calc(${h} * 0.5);flex-shrink:0;`;
+  fallback.title = 'missing: ' + el.src.split('/').pop();
+  if (el.parentNode) el.parentNode.replaceChild(fallback, el);
+}, true); // capture phase so it fires even if child img is inside contenteditable
 function selectAll() { document.querySelectorAll('.canvas-item').forEach(i => { i.classList.add('selected'); selectedItems.add(i.id); }); }
 function deselectAll() { document.querySelectorAll('.canvas-item').forEach(i => { i.classList.remove('selected'); selectedItems.delete(i.id); }); }
 function removeItem(el) { el.remove(); selectedItems.delete(el.id); }
@@ -2343,9 +2461,22 @@ function removeItem(el) { el.remove(); selectedItems.delete(el.id); }
 function switchTab(idx, btn) {
   document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
+  else {
+    const map = {5:0, 6:1, 7:2};
+    const tabs = document.querySelectorAll('.sidebar-tab');
+    if (tabs[map[idx]]) tabs[map[idx]].classList.add('active');
+  }
   document.getElementById('panel-' + idx).classList.add('active');
 }
+
+// Initial tab: default to Generate (panel-5). Deep-link via hash overrides.
+window.addEventListener('DOMContentLoaded', () => {
+  const hash = (location.hash || '').toLowerCase();
+  if (hash === '#design' || hash === '#build') switchTab(6, null);
+  else if (hash === '#refine') switchTab(7, null);
+  else switchTab(5, null); // Force Generate as the landing tab
+});
 
 function toggleDesignSection(id) {
   const section = document.getElementById(id);
@@ -2440,10 +2571,10 @@ function applyColor(color) {
 // === WALLPAPER ===
 const wallpapers = {
   'none': '#171717',
-  'bubble-warm': "url('wallpapers/4.png') center/cover no-repeat",
-  's-lavender': "url('wallpapers/Replace Tool_.png') center/cover no-repeat",
-  's-blue': "url('wallpapers/Replace Tool.png') center/cover no-repeat",
-  's-mint': "url('wallpapers/S25.png') center/cover no-repeat",
+  'wp-1': "url('wallpapers/1.png') center/cover no-repeat",
+  'wp-2': "url('wallpapers/2.png') center/cover no-repeat",
+  'wp-3': "url('wallpapers/3.png') center/cover no-repeat",
+  'wp-4': "url('wallpapers/4.png') center/cover no-repeat",
   'galaxy-blue': 'linear-gradient(160deg,#0a1628 0%,#0d2847 25%,#1a4a7a 50%,#0d3b6e 75%,#081e3d 100%)',
   'galaxy-purple': 'linear-gradient(160deg,#1a0a2e 0%,#2d1b69 30%,#5b2d8e 55%,#3a1d6e 75%,#1a0a3e 100%)',
   'galaxy-green': 'linear-gradient(160deg,#0a1e14 0%,#0d3a28 30%,#1a6b4a 55%,#0d4a32 75%,#081e14 100%)',
@@ -2455,18 +2586,32 @@ const wallpapers = {
 function setWallpaper(name) {
   const frame = document.getElementById('canvasFrame');
   document.querySelectorAll('.wp-thumb').forEach(t => t.classList.remove('active'));
-  event.currentTarget.classList.add('active');
+  if (typeof event !== 'undefined' && event.currentTarget) event.currentTarget.classList.add('active');
   const bg = wallpapers[name];
-  frame.style.background = bg;
-  if (bg.startsWith('linear') || bg.startsWith('radial')) {
-    frame.style.backgroundSize = 'cover';
+  // Use individual properties so size/position/repeat stay correct
+  if (bg.startsWith('url')) {
+    const match = bg.match(/url\(['"]?([^'"\)]+)['"]?\)/);
+    frame.style.backgroundImage = match ? `url('${match[1]}')` : bg;
+    frame.style.backgroundColor = '';
+  } else if (bg.startsWith('linear') || bg.startsWith('radial')) {
+    frame.style.backgroundImage = bg;
+    frame.style.backgroundColor = '';
+  } else {
+    frame.style.backgroundImage = 'none';
+    frame.style.backgroundColor = bg;
   }
+  frame.style.backgroundSize = 'cover';
+  frame.style.backgroundPosition = 'center center';
+  frame.style.backgroundRepeat = 'no-repeat';
 }
 function setWallpaperUrl(url) {
   if (!url) return;
   const frame = document.getElementById('canvasFrame');
   document.querySelectorAll('.wp-thumb').forEach(t => t.classList.remove('active'));
-  frame.style.background = `url('${url}') center/cover no-repeat`;
+  frame.style.backgroundImage = `url('${url}')`;
+  frame.style.backgroundSize = 'cover';
+  frame.style.backgroundPosition = 'center center';
+  frame.style.backgroundRepeat = 'no-repeat';
 }
 function uploadWallpaper(e) {
   const file = e.target.files[0];
@@ -3066,9 +3211,29 @@ const promptMap = {
   'keyboard': 'keyboard', '키보드': 'keyboard', 'type': 'keyboard', '타이핑': 'keyboard',
 };
 
+// Scenarios that happen on the home/launcher surface → keep wallpaper behind.
+// Scenarios that are "inside an app" → plain/opaque surface (no wallpaper bleed).
+const WALLPAPER_SCENARIOS = new Set(['home','lockscreen']);
+
+function applyScenarioBackground(scenarioKey) {
+  const frame = document.getElementById('canvasFrame');
+  if (!frame) return;
+  const showWallpaper = WALLPAPER_SCENARIOS.has(scenarioKey);
+  if (showWallpaper) {
+    // Restore whatever wallpaper is currently selected (CSS default handles it).
+    frame.style.backgroundImage = '';
+    frame.style.backgroundColor = '';
+  } else {
+    // App-internal scene: suppress wallpaper, use plain dark surface.
+    frame.style.backgroundImage = 'none';
+    frame.style.backgroundColor = 'var(--canvas-bg-dark, #010102)';
+  }
+}
+
 function generateScenario(scenarioKey) {
   const scenario = scenarios[scenarioKey];
   if (!scenario) return;
+  applyScenarioBackground(scenarioKey);
   clearCanvas();
   const canvas = document.getElementById('canvas');
   canvas.style.display = 'flex';
@@ -3146,7 +3311,21 @@ function generateScenario(scenarioKey) {
     wrapper.setAttribute('draggable', 'true');
     initDrag(wrapper);
     wrapper.addEventListener('click', (e) => { if (!e.target.classList.contains('canvas-delete')) toggleSelect(wrapper, e); });
-    canvas.appendChild(wrapper);
+
+    // Auto-group consecutive inline components into a horizontal wrap row
+    if (comp.type && inlineTypes.has(comp.type) && !(comp.fullWidth)) {
+      const last = canvas.lastElementChild;
+      if (last && last.classList.contains('canvas-inline-row')) {
+        last.appendChild(wrapper);
+      } else {
+        const row = document.createElement('div');
+        row.className = 'canvas-inline-row';
+        row.appendChild(wrapper);
+        canvas.appendChild(row);
+      }
+    } else {
+      canvas.appendChild(wrapper);
+    }
   });
 }
 

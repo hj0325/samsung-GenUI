@@ -1,6 +1,8 @@
-# Orchestration — Component Composition & Layout Assembly Rules
+# ORCHESTRATION SPEC — Screen Composition & Layout Assembly
 
-> This document defines **how components combine** — the spacing, nesting, anchoring, and z-layer relationships between elements. DESIGN.md specifies individual component specs. This document specifies how those components assemble into complete screens.
+**Layer**: ORCHESTRATION SPEC
+**Lives here**: Screen-level composition rules — stacking order, gaps between components, anchoring, z-layers, grouping, frame rules — describing HOW components combine into screens.
+**Does NOT live here**: Individual component visual specs (see `DESIGN.md`), raw Figma measurements (see `figma-refs/extracted.md`), runtime selection logic (see `GENUI-PRINCIPLES.md`), refinement memory (see `evolve.md`).
 
 ---
 
@@ -14,11 +16,7 @@ Every Samsung One UI 8.5 screen follows a fixed vertical frame:
 ├─────────────────────────────────┤
 │ App Bar (56dp) — optional       │  z:10, static, fixed or scroll-away
 ├─────────────────────────────────┤
-│                                 │
-│                                 │
 │ Content Area (flex: 1)          │  z:0, scrollable
-│                                 │
-│                                 │
 ├─────────────────────────────────┤
 │ Bottom Nav (64dp) — optional    │  z:10, static, fixed bottom
 ├─────────────────────────────────┤
@@ -26,12 +24,12 @@ Every Samsung One UI 8.5 screen follows a fixed vertical frame:
 └─────────────────────────────────┘
 ```
 
-### Frame Measurements (from image analysis)
-- **Total viewport**: 360 × 780dp (standard), 360 × 800dp (tall)
-- **Status bar**: height 24dp. Layout: `time(left, 14dp from edge) | notification-pill(center) | system-icons(right, 14dp from edge)`
-- **App Bar**: height 56dp. Padding: `0 16dp`. Back icon: 24×24dp, left-aligned. Title: 16dp from icon or 16dp from left edge. Overflow icons: right, gap 24dp between icons
-- **Bottom Nav**: height 64dp. Glass pill shape, radius 999px. Horizontal padding: 24dp. Items: 4-5, evenly distributed. Icon: 24×24dp, label below: 10dp font, gap 4dp icon-to-label
-- **Navigation Bar** (gesture): height 20dp. Pill indicator: 134×5dp, centered, radius 999px, bottom 8dp
+### Frame Measurements
+- Total viewport: 360 × 780dp standard, 360 × 800dp tall
+- Status Bar layout: `time(left, 14dp inset) | notification-pill(center) | system-icons(right, 14dp inset)`
+- App Bar: padding 0 16, back icon left, title 16dp from icon-or-edge, overflow icons gap 24
+- Bottom Nav: glass pill, padding 24h, items evenly distributed
+- Navigation Bar gesture: pill 134×5 centered, bottom 8
 
 ---
 
@@ -48,44 +46,14 @@ Every Samsung One UI 8.5 screen follows a fixed vertical frame:
 | Section Title → First Item | 8 | Tight coupling title→content |
 | Card → Card | 12 | Vertical card list |
 | Card → Card (same group) | 8 | Related cards cluster tighter |
-| List Item → List Item | 0 | Divider line provides separation |
-| List Item → Section Header | 16 | New section needs breathing room |
-| Button → Button (vertical) | 8 | Stacked action buttons |
-| Input → Input | 16 | Form fields need scanning room |
-| Input → Helper Text | 4 | Error/hint text hugs field |
+| List Item → List Item | 0 | Divider provides separation |
+| List Item → Section Header | 16 | New section breathing room |
+| Button → Button (vertical) | 8 | Stacked actions |
+| Input → Input | 16 | Form fields |
+| Input → Helper Text | 4 | Error/hint hugs field |
 | Chip Row → Content Below | 16 | Filter chips above list |
-| Content → FAB | N/A | FAB is absolute positioned |
-| Last Content → Bottom Nav | 64dp clear | Ensure content doesn't hide under nav |
-
-### Lock Screen Stacking (from Image 1, 4)
-```
-Status Bar (24dp)
-  ↓ 0dp
-Content Area (centered vertically)
-  - Clock: centered, top ~30% of viewport
-  - Widgets: below clock, gap 16dp
-  ↓ flex space
-Now Bar (64dp height): bottom 20dp above nav bar
-  - Shape: pill (999px radius)
-  - Internal: icon(left 16dp) + content(flex) + action(right 16dp)
-  - Vertical padding: 12dp
-Nav Bar (20dp)
-```
-
-### Dialog Overlay Stacking (from Image 1)
-```
-Dim overlay: rgba(0,0,0,0.65), z:100, full viewport
-Dialog container: 
-  - Position: bottom of screen, 0dp from bottom edge
-  - Width: 100% viewport (full-width bottom sheet style)
-  - Radius: 26dp top-left, 26dp top-right, 0 bottom
-  - Padding: 24dp all sides
-  - Title → Description: gap 8dp
-  - Description → Button row: gap 24dp
-  - Button row: 2 buttons, separated by 1px vertical divider
-  - Each button: flex 1, height 48dp, text centered
-  - Cancel: flat style (left), Apply: flat style (right)
-```
+| Content → FAB | n/a | FAB absolute positioned |
+| Last Content → Bottom Nav | 64 clear | Avoid hide under nav |
 
 ---
 
@@ -96,411 +64,220 @@ Dialog container:
 | Pattern | Usage | Spec |
 |---|---|---|
 | Edge-to-edge | Cards, media, dividers | `margin: 0; width: 100%` |
-| Standard inset | Content with padding | `padding: 0 24dp` (mobile) |
+| Standard inset | Padded content | `padding: 0 24dp` mobile |
 | Card inset | Cards within padded content | `margin: 0 16dp` |
-| Center-aligned | Dialogs, empty states, hero text | `align-items: center; text-align: center` |
-| Split horizontal | Label + value, title + action | `justify-content: space-between` |
+| Center-aligned | Dialogs, empty states, hero | `align-items: center; text-align: center` |
+| Split horizontal | Label+value, title+action | `justify-content: space-between` |
 
 ### Horizontal Component Groups
 
 | Group | Gap | Alignment |
 |---|---|---|
-| Button + Button (horizontal) | 8dp | center-aligned |
-| Icon + Label (inline) | 8dp | vertical center |
-| Avatar + Text Block | 12dp | vertical center, text top-aligned if multi-line |
-| Chip + Chip | 6dp | wrap allowed |
-| Action Icon + Action Icon (AppBar) | 24dp | vertical center |
-| Tab + Tab (Pill Tab Bar) | 0dp | items fill container evenly |
+| Button + Button (horizontal) | 8 | center |
+| Icon + Label (inline) | 8 | vertical center |
+| Avatar + Text Block | 12 | vertical center, text top-aligned if multi-line |
+| Chip + Chip | 6 | wrap allowed |
+| Action Icon + Action Icon (AppBar) | 24 | vertical center |
+| Tab + Tab (Pill Tab Bar) | 0 | items fill container evenly |
 
 ---
 
-## 4. Quick Settings Panel Layout (from Image 2, 3)
+## 4. Quick Settings Panel Assembly
 
-### Full QS Panel Structure
 ```
-┌──────────────────────────────────┐
-│ Status Bar (24dp)                │
-│ Carrier(left) | Icons(right)     │
-├──────────────────────────────────┤
-│ Action Bar (48dp)                │
-│ padding: 0 16dp                  │
-│ [edit] [power] [settings]  right │
-├──────────────────────────────────┤
-│ QS Toggle Grid                   │
-│ Layout: 4 columns × 2 rows      │
-│ Toggle size: 64×64dp (icon 40dp) │
-│ Grid gap: 12dp                   │
-│ Row gap: 16dp                    │
-│ Horizontal padding: 24dp        │
-│ Active: filled circle bg         │
-│ Inactive: surface circle bg      │
-│ Label below: 10dp font, gap 6dp  │
-├──────────────────────────────────┤
-│ Page indicator: 3 dots, gap 6dp  │
-│ Active dot: 6dp, Inactive: 4dp  │
-├──────────────────────────────────┤
-│ Brightness Slider Row            │
-│ Height: 48dp                     │
-│ Layout: [icon] [slider flex] [icon]│
-│ Slider: radius 999px, track 4dp  │
-│ Thumb: 24×24dp circle            │
-│ Horizontal padding: 24dp        │
-├──────────────────────────────────┤
-│ Tile Cards (2-column grid)       │
-│ Gap: 8dp                         │
-│ Card radius: 20dp                │
-│ Card padding: 16dp               │
-│ Card height: auto (content-fit)  │
-│ Structure: [icon left] [title]   │
-│            [subtitle below]      │
-│            [action-icon right]   │
-│ Horizontal padding: 16dp        │
-├──────────────────────────────────┤
-│ Media Control Row                │
-│ Layout: 2 chips, gap 8dp         │
-│ Chip: radius 999px, h:36dp      │
-│ Chip padding: 0 16dp             │
-│ Structure: [dot-icon] [label]    │
-│ Horizontal padding: 16dp        │
-├──────────────────────────────────┤
-│ Bottom Shortcut Row              │
-│ Layout: 2 items, gap 12dp        │
-│ Item: radius 20dp, h:56dp        │
-│ Structure: [icon 32dp] [label]   │
-│ Horizontal padding: 16dp        │
-├──────────────────────────────────┤
-│ Navigation Bar (48dp)            │
-│ [|||]  [○]  [<]  centered       │
-└──────────────────────────────────┘
+[Status Bar — 24, static]                   gap 0
+[Action Bar — 48]   padding 0 16            icons right [edit, power, settings]
+[QS Toggle Grid]    padding 0 24            4 cols × 2 rows (page 1)
+                                            grid-gap 12 H · 16 V
+[Page Indicator — 3 dots, gap 6]            gap 12 above, 16 below
+[Brightness Slider]  padding 0 24, h 48     gap 16
+[Tile Cards — 2-col grid]  padding 0 16, gap 8
+[Media Control] padding 0 16  2 chips gap 8
+[Bottom Shortcuts] padding 0 16  2 items gap 12
+[Navigation Bar — 48 (3-button)]
 ```
 
-### QS Toggle Specs (measured from Image 3)
-- **Icon container**: 64×64dp circle
-- **Active state**: filled with semantic color (e.g., connectivity blue), icon white
-- **Inactive state**: `var(--surface-2)` fill, icon `var(--text-2)`
-- **Label**: 10dp, `var(--text-3)`, max 2 lines, text-align center
-- **Touch target**: 72×72dp minimum (extends beyond visual circle)
-
-### QS Tile Card Composition
-```
-┌────────────────────────────────┐
-│  [Icon 24dp]  Title     [▶]   │  height: auto
-│               Subtitle         │  padding: 16dp
-└────────────────────────────────┘
-Gap between icon and text: 12dp
-Gap between title and subtitle: 2dp
-Action icon: 24×24dp, right-aligned, vertically centered
-```
+### QS Composition Rules
+- 4 columns mobile, 6 columns tablet
+- toggle grid-gap 12 horizontal, 16 vertical
+- tile cards layout: `[icon left] [title] [subtitle below] [action-icon right]`
+- gap icon→text 12; gap title→subtitle 2
 
 ---
 
-## 5. Now Bar Layout (from Image 4)
+## 5. Lock Screen Assembly
 
-### Now Bar — Live Activity Pill
 ```
-┌─────────────────────────────────────────┐
-│ [AppIcon 32dp]  Title          [Icon]   │  height: 48-64dp
-│                 Subtitle                │  radius: 999px
-└─────────────────────────────────────────┘
-
-Position: bottom of lock screen, 20dp above nav bar
-Width: calc(100% - 48dp) → 24dp margin each side
-Padding: 8dp 16dp
-Background: tinted glass (G2), blur 24px
-Border: 1px solid rgba(255,255,255,0.15)
+[Status Bar — 24, transparent]              gap 0
+[Wallpaper — full bleed, z:0]
+[Clock]   position ~25–35% from top         gap 4 → date
+[Widgets] below clock, max 2 compact, gap 8
+[flex spacer]
+[Now Bar Row — bottom anchored]   bottom 72 (20 nav + 52 clear)
+  layout: [quick-action 48] [now-bar flex] [quick-action 48]   gap 8
+[Navigation Bar — 20, gesture]
 ```
 
-### Now Bar Internal Layout
-- **App icon**: 32×32dp, circle, left 16dp
-- **Text block**: flex:1, margin-left 12dp
-  - Title: 14dp, weight 600, `var(--text)`, single line ellipsis
-  - Subtitle: 12dp, weight 400, `var(--text-2)`, single line
-  - Title↔Subtitle gap: 2dp
-- **Action icon**: 24×24dp, right 16dp, vertically centered
-- **Min height**: 48dp (single line), 64dp (two lines)
-
-### Now Bar Adjacent Components (from Image 4)
+### Now Bar Adjacent Row
 ```
 ┌──────────┐  ┌────────────────────────┐  ┌──────────┐
 │  Phone   │  │   Now Bar (pill)       │  │  Camera  │
-│  48×48dp │  │   flex: 1              │  │  48×48dp │
-│  circle  │  │   radius: 999px       │  │  circle  │
+│  48×48   │  │   flex: 1              │  │  48×48   │
 └──────────┘  └────────────────────────┘  └──────────┘
-     gap: 8dp         gap: 8dp
-     
-Layout: horizontal flex, align-items: center
-Quick action circles: 48×48dp, glass G1 background
-Entire row padding: 0 16dp
+     gap 8           gap 8
+Outer row padding 0 16, align-items center
 ```
 
 ---
 
-## 6. Widget Grid Layout (measured from homescreen reference images)
+## 6. Home Screen Assembly
 
-### Widget Size System
-| Size | Dimensions | Grid Cells | Usage |
-|---|---|---|---|
-| Compact | 176×80dp | 2×1 | Single stat, greeting, mini weather, calendar mini |
-| Standard | 176×176dp | 2×2 | Weather full, health rings, photo, alarm, steps |
-| Wide | 368×80dp | 4×1 | Weather bar, timeline strip |
-| Large | 368×160dp | 4×2 | Calendar schedule, energy score, media player |
-| Full | 368×176dp | 4×2 | Full detail widgets |
-
-### Widget Internal Layouts (measured from images)
-
-**Compact Widget (2×1) — Greeting/Brief**
+### Default Home (widgets + apps)
 ```
-┌────────────────────────────┐
-│ [icon 32dp]    08:45 AM    │  height: 80dp, width: 176dp
-│               Good morning │  radius: 26dp, padding: 12dp 16dp
-└────────────────────────────┘
-Background: tinted semi-opaque (warm from wallpaper)
-Icon: 32×32dp, top-left  |  Primary: 14dp/600  |  Secondary: 12dp/400
+[Status Bar — 24]                           gap 0
+[Wallpaper full-bleed]
+[Widget Zone — starts ~140–200 from top]    padding 0 16
+  2-col widget grid, gap 8 H · 8 V          max 3–4 rows visible
+[Search Bar]   full-width minus 32 margin   h 48, radius 999, glass
+[App Icon Grid]  padding 0 24               4 cols, col-gap ~28, row-gap 20
+[Page Indicator — centered]                 dots 6, gap 6
+[Dock — 4 icons]   ~48 above nav            no labels, gap evenly
+[Navigation Bar — 48]
 ```
 
-**Compact Widget (2×1) — Gauge/Stats**
+### Widget-Heavy Home (no app grid)
 ```
-┌────────────────────────────┐
-│  [Gauge 40dp]    Value     │  height: 80dp, width: 176dp
-│                  Unit      │  radius: 26dp, padding: 12dp 16dp
-└────────────────────────────┘
-Gauge: 40×40dp circular progress  |  Value: 20dp/700  |  Unit: 11dp/400
-```
-
-**Compact Widget (2×1) — Multi-Gauge (4 stats)**
-```
-┌────────────────────────────┐
-│  [G1] [G2]    [G3] [G4]   │  height: 80dp, width: 176dp
-│  100   53      56  +50    │  radius: 26dp, padding: 12dp
-└────────────────────────────┘
-Layout: 2×2 mini-gauges  |  Each: 28×28dp  |  Value: 10dp/600  |  Gap: 8dp
+[Status Bar — 24]                           gap 0
+[Widget Area]   padding 0 16
+  Row 1: full-width (4×2)                   gap 8 below
+  Row 2: 2-column mixed (2×2 + 2×1 stacks)  gap 8
+  Row 3: 2-column equal (2×2 + 2×2)
+[Dock — 4 icons]
+[Navigation Bar — 48]
 ```
 
-**Standard Widget (2×2) — Weather Full**
+### App Drawer
 ```
-┌────────────────────────────┐
-│                  ☀️ 48dp   │  height: 176dp, width: 176dp
-│ 24°                        │  radius: 26dp, padding: 16dp
-│ Sunny                      │  bg: semantic color fill
-│ ↑26° / ↓23°               │
-│ Seoul                      │
-└────────────────────────────┘
-Temp: 36dp/700 SamsungSharpSans  |  Condition: 14dp/500  |  Hi/Lo: 12dp/400
-```
-
-**Standard Widget (2×2) — Health Rings**
-```
-┌────────────────────────────┐
-│          ❤️                │  height: 176dp, width: 176dp
-│    [Triple Ring 72dp]      │  radius: 26dp, padding: 16dp
-│  ●4,350  ●76  ●458        │
-└────────────────────────────┘
-Rings: centered 72×72dp  |  Stats: bottom, 3 items  |  Each: [dot 6dp]+value(13dp/600)
+[Status Bar — 24]                           gap 0
+[App Icon Grid — full screen]   padding 24 24 0
+  4 cols × N rows, col-gap ~28, row-gap 24, max ~5 rows visible
+[flex spacer]
+[Page Indicator — 3 dots, centered]         gap 16 below last row
+[Search Bar]    padding 0 16, h 44, radius 999, glass G1
+                margin-bottom 8 above nav
+[Navigation Bar — 48 (3-button)]
 ```
 
-**Standard Widget (2×2) — Steps/Progress**
-```
-┌────────────────────────────┐
-│ Steps                      │  height: 176dp, width: 176dp
-│ 4,350                      │  radius: 26dp, padding: 16dp
-│ /6,000 Steps               │
-│ [████████░░░░] ●           │
-└────────────────────────────┘
-Title: 14dp/500  |  Value: 28dp/700 SamsungSharpSans  |  Progress: h:8dp, r:999px
-```
+---
 
-**Standard Widget (2×2) — Alarm**
-```
-┌────────────────────────────┐
-│ 6:00 AM                    │  height: 176dp, width: 176dp
-│ S M T W T F S              │  radius: 26dp, padding: 16dp
-│ [alarm icon 40dp]          │  bg: solid color (purple)
-└────────────────────────────┘
-Time: 32dp/700 SamsungSharpSans white  |  Days: 11dp row, gap 6dp  |  Icon: 40dp bottom-left
-```
+## 7. Widget Grid Composition Rules
 
-**Standard Widget (2×2) — Photo**
-```
-┌────────────────────────────┐
-│  [Photo fills entire area] │  height: 176dp, width: 176dp
-└────────────────────────────┘
-Radius: 26dp  |  Padding: 0  |  Image: object-fit:cover, clip to radius
-```
-
-**Large Widget (4×2) — Calendar Schedule**
-```
-┌─────────────────────────────────────────┐
-│ Today, Wed, Jan 22                [+]   │  height: 160dp, width: 368dp
-│ │ 9:30AM   Meeting                      │  radius: 26dp, padding: 16dp 20dp
-│ │ 1:00PM   Lunch with Luca             │
-│ │ 5:00PM   Gym                          │
-└─────────────────────────────────────────┘
-Header: 16dp/600  |  Items: h:36dp  |  Color bar: 3×20dp left  |  Time: 12dp/500 w:64dp
-```
-
-**Large Widget (4×2) — Energy Score**
-```
-┌─────────────────────────────────────────┐
-│ Energy score         Well rested        │  height: 160dp, width: 368dp
-│ 92.6       [☁️]     body text...        │  radius: 26dp, padding: 20dp
-│ Excellent            max 3 lines        │  layout: 2-col (40%/60%)
-└─────────────────────────────────────────┘
-Score: 36dp/700 SamsungSharpSans  |  Label: 13dp/500 colored  |  Body: 12dp/400
-```
-
-**Wide Widget (4×1) — Weather Bar**
-```
-┌─────────────────────────────────────────┐
-│ ☀️ 10° San Jose         Wed 22 Jan     │  height: 80dp, width: 368dp
-│                            12:45        │  radius: 26dp, padding: 16dp 20dp
-└─────────────────────────────────────────┘
-Layout: horizontal space-between  |  bg: semantic sky blue
-```
-
-### Widget Grid Composition Rules
 ```
 Grid: 4 columns base (each ~82dp + 8dp gap)
 Container padding: 16dp horizontal (= 360 - 32 = 328dp usable)
 Widget gap: 8dp (both axes)
-2-unit width = ~168-176dp  |  4-unit width = ~344-368dp
+2-unit width = ~168–176dp  |  4-unit width = ~344–368dp
 
 Stacking: widgets snap to grid, sizes from fixed set only
 Mixed heights OK: 2×2 left + two 2×1 stacked right
 Height alignment: top-aligned per row, next row = tallest + 8dp
-Maximum: ~3-4 rows visible above dock
+Maximum: ~3–4 rows visible above dock
 Scroll: vertical if widget area exceeds visible space
 ```
 
 ### Widget Color Behavior
-- **Opaque fill**: weather (sky blue), alarm (purple), calendar (white/surface)
-- **Semi-transparent**: health, greeting — glass G0 or surface with opacity
-- **Image fill**: photo widget — no background, image clips to radius
-- **Tinted**: greeting/AI widgets — wallpaper palette, warm tint
-- **Rule**: no two adjacent widgets should use the same background color
+- Opaque fill: weather (sky blue), alarm (purple), calendar (white/surface)
+- Semi-transparent: health, greeting — glass G0/G1
+- Image fill: photo widget — image clips to radius
+- Tinted: greeting/AI widgets — wallpaper palette, warm tint
+- Rule: no two adjacent widgets share the same background color
 
 ---
 
-## 7. App Icon Grid & Dock Layout (measured from homescreen images)
+## 8. App Icon Grid & Dock
 
-### App Icon Specs
+### Grid Layout
 ```
-Icon container: 60×60dp
-Icon visual: 56×56dp centered in container
-Icon radius: 18dp (squircle, Samsung standard)
-Icon shadow: 0 2dp 8dp rgba(0,0,0,0.15) — 3D floating effect
-Label: 11dp/400, center-aligned, single line, ellipsis if overflow
-Gap icon→label: 6dp
-Touch target: 72×72dp (extends beyond visual)
-```
-
-### Folder Icon
-```
-Container: 60×60dp, radius 18dp
-Background: semi-transparent glass (rgba(255,255,255,0.15) dark / rgba(0,0,0,0.06) light)
-Internal: 2×2 mini-icon grid
-Mini-icon: 20×20dp each, radius 6dp
-Mini-icon gap: 4dp
-Mini-icon padding from folder edge: 8dp
-```
-
-### App Grid Layout
-```
-Columns: 4 (fixed on mobile, 5 on tablet)
-Column gap: evenly distributed → (360 - 48dp padding - 4×60dp) / 3 = ~28dp
-Row gap: 24dp (icon-bottom-to-label-bottom of row above)
+Columns: 4 (mobile) / 5 (tablet)
+Column gap: evenly distributed (≈28dp on 360dp)
+Row gap: 24dp
 Container padding: 0 24dp
-Max visible rows: 4-5 without scroll
+Max visible rows: 4–5 without scroll
 ```
 
 ### Dock Layout
 ```
-Position: fixed, ~48dp above navigation bar
-Items: 4 (always, not configurable without edit mode)
-Icon size: 60×60dp (same as grid icons)
-Background: none (transparent) or glass pill (optional)
-  If glass: radius 999px, padding 8dp 20dp, glass G0
-Gap between icons: evenly distributed → (360 - 40dp padding - 4×60dp) / 3 = ~28dp
-No labels: dock icons have no text labels
-Separator: gap 12dp between dock and page indicator above
+Position: ~48dp above navigation bar
+Items: 4 (always)
+Gap: evenly distributed (≈28dp)
+No labels
+Optional glass pill background: radius 999, padding 8 20, glass G0
+Separator: 12dp gap to page indicator above
 ```
 
-### Page Indicator
-```
-Position: centered horizontally, between app grid and dock
-Dots: 6dp diameter each, gap 6dp
-Active dot: white (dark mode) / dark (light mode), opacity 1
-Inactive dot: same color, opacity 0.35
-Total width: auto (based on page count)
-Vertical margin: 12dp above dock, 12dp below app grid
-```
+### Page Indicator (home)
+- centered horizontally between app grid and dock
+- dots 6dp, gap 6dp; vertical margin 12 above dock, 12 below grid
 
-### Search Bar (App Drawer bottom)
-```
-Position: bottom of app drawer, above navigation bar
-Height: 44dp
-Radius: 999px (pill)
-Background: glass G1
-Padding: 0 16dp
-Placeholder: "Search", 14dp/400, left-aligned, var(--text-3)
-Overflow icon: [⋮] right-aligned, 24×24dp
-Margin: 8dp above navigation bar, 16dp below page indicator
-Full-width minus 32dp (16dp each side)
-```
+### Search Bar (drawer bottom)
+- bottom of drawer above nav bar; height 44, radius 999, glass G1
+- placeholder left, overflow icon right
+- margins: 8 above nav, 16 below page indicator; full-width minus 32
 
 ---
 
-## 8. Container Nesting Rules
+## 9. Container Nesting Rules
 
-### Card Internal Structure
+### Card Internal Order
 ```
-Card (radius: 26dp, padding: 16-20dp)
-├── Header Row (optional)
-│   ├── Icon/Avatar: 40×40dp
-│   ├── gap: 12dp
-│   ├── Title: 15dp/600
-│   └── Subtitle: 13dp/400, color: var(--text-2)
-├── gap: 12dp
+Card (radius 26, padding 16–20)
+├── Header Row (optional)   Icon/Avatar 40 + gap 12 + Title + Subtitle
+├── gap 12
 ├── Content Area
-│   └── (varies by card type)
-├── gap: 16dp (before actions)
-└── Action Row (optional)
-    ├── align: right or space-between
-    └── Button gap: 8dp
+├── gap 16 (before actions)
+└── Action Row (optional)   align right or space-between, button gap 8
 ```
 
-### Dialog Internal Structure (from Image 1)
+### Dialog Internal Order
 ```
-Dialog (radius: 26dp top, padding: 24dp)
-├── Title: 18dp/700, color: var(--text)
-├── gap: 8dp
-├── Description: 14dp/400, color: var(--text-2)
-│   line-height: 1.5
-├── gap: 24dp
+Dialog (radius 26 top, padding 24)
+├── Title 18/700
+├── gap 8
+├── Description 14/400 line-height 1.5
+├── gap 24
 └── Button Row
-    ├── height: 48dp
-    ├── border-top: 1px solid var(--divider)
-    ├── Cancel (flex:1, flat, left)
-    ├── divider: 1px solid var(--divider), vertical
-    └── Apply (flex:1, flat, right)
+    ├── height 48, border-top 1px divider
+    ├── Cancel (flex 1, flat, left)
+    ├── 1px vertical divider
+    └── Apply (flex 1, flat, right)
 ```
 
-### Notification Card Internal Structure
+### Notification Card Internal Order
 ```
-Notification (radius: 999px, padding: 16dp 20dp)
-├── App Icon: 20×20dp, circle
-├── gap: 8dp
-├── App Name: 12dp/500, color: var(--text-3)
+Notification (radius 999, padding 16 20)
+├── App Icon 20, circle
+├── gap 8
+├── App Name 12/500 text-3
 ├── flex spacer
-├── Timestamp: 11dp/400, color: var(--text-3)
-├── (second line, full width)
-├── Title: 14dp/600, color: var(--text)
-├── gap: 2dp
-└── Preview: 13dp/400, color: var(--text-2), max 2 lines
+├── Timestamp 11/400 text-3
+├── (next line, full width)
+├── Title 14/600
+├── gap 2
+└── Preview 13/400 text-2 max 2 lines
 ```
+
+### Radius Stepping (depth)
+Outer → inner: **16 (device) → 40 (hero stack) → 28 (card) → 20 (chip) → pill (control)**.
+Children must never have a larger radius than their parent. The InnerStack (40) within a 16-radius scaffold is a documented "hero wrapper" exception.
+
+### Glass Stacking (depth)
+Outermost `nowbar (0.3α)` floats above `popout (0.6α)` above `solid card #17171A`.
+Glass surfaces only at **top-of-stack floating** layers.
+Never place a solid sibling at the same z-depth as a transparent one.
 
 ---
 
-## 9. Z-Layer & Overlay System
+## 10. Z-Layer & Overlay System
 
 ### Z-Index Stack
 | Layer | Z-Index | Elements | Material |
@@ -511,338 +288,267 @@ Notification (radius: 999px, padding: 16dp 20dp)
 | Panel | 50 | Bottom Sheet, QS Panel | Glass G2 + dim |
 | Overlay | 90 | Bottom Sheet (expanded) | Glass G2 + dim |
 | Modal | 100 | Dialog | Glass G2 + dim(0.65) |
-| System | 200 | Status Bar, Nav Bar | Transparent or glass G0 |
 | Now Bar | 150 | Now Bar (above panels) | Tinted glass G2 |
+| System | 200 | Status Bar, Nav Bar | Transparent or glass G0 |
 
-### Overlay Dim Rules
+### Overlay Dim
 - **Dialog**: `rgba(0,0,0,0.65)` full viewport behind
 - **Bottom Sheet**: `rgba(0,0,0,0.4)` behind, touch-to-dismiss
-- **QS Panel**: none (replaces content, not overlaid)
-- **Snackbar**: no dim, floats above content
-- **Rule**: only ONE overlay layer active at a time (Dialog > Sheet > Snackbar priority)
+- **QS Panel**: none (replaces content)
+- **Snackbar**: no dim
+- **Rule**: only ONE overlay layer active at a time. Priority: Dialog > Sheet > Snackbar.
+
+### Dialog Overlay (full-width bottom sheet style)
+```
+Dim: rgba(0,0,0,0.65), z:100, full viewport
+Container: bottom of screen, 0 from bottom
+  width 100%, radius 26 top-left/right, 0 bottom
+  padding 24 all sides
+  Title → Description gap 8
+  Description → Button row gap 24
+  Button row: 2 buttons, separated 1px vertical divider, each flex:1 h:48
+```
 
 ---
 
-## 10. Scroll Behavior & Anchoring
+## 11. Scroll Behavior & Anchoring
 
 ### Fixed Elements (never scroll)
-- Status Bar: always fixed top
-- Navigation Bar: always fixed bottom
-- Bottom Nav: fixed bottom (above nav bar)
-- FAB: fixed bottom-right, 16dp from edges
-- Now Bar: fixed bottom (lock screen only)
+- Status Bar (top)
+- Navigation Bar (bottom)
+- Bottom Nav (above nav bar)
+- FAB (bottom-right, 16 inset)
+- Now Bar (lock screen only)
 
 ### Scroll-Reactive Elements
-- **App Bar**: fades opacity 1→0 during downward scroll, reappears on upward scroll
-- **Floating Pill Tab**: parallax slight upward shift during scroll (2dp max)
-- **Section headers**: sticky top below AppBar on their respective sections
+- App Bar: opacity 1→0 on downward scroll, returns on upward
+- Floating Pill Tab: 2dp parallax upward shift
+- Section headers: sticky top below AppBar within their section
 
 ### Content Anchoring
 | Anchor | Behavior | Clear Zone |
 |---|---|---|
-| Top | Content starts below AppBar | AppBar height (56dp) |
-| Bottom (BottomNav) | Content ends above nav | 64dp + 20dp nav = 84dp |
-| Bottom (no nav) | Content ends above gesture bar | 20dp |
-| Center-V | Used for lock screen, empty states | Equal top/bottom padding |
-| FAB | Bottom-right corner | 16dp from right, 16dp above BottomNav |
+| Top | Content starts below AppBar | 56 |
+| Bottom (BottomNav) | Above nav | 64 + 20 = 84 |
+| Bottom (no nav) | Above gesture bar | 20 |
+| Center-V | Lock screen, empty states | Equal top/bottom padding |
+| FAB | Bottom-right corner | 16 from right, 16 above BottomNav |
 
 ---
 
-## 11. Touch Target & Clearance
+## 12. Touch Target & Clearance
 
 ### Minimum Touch Targets
-| Element | Min Touch Size | Visual Size |
+| Element | Min Touch | Visual |
 |---|---|---|
-| Button (any) | 48×48dp | 48×height |
-| Icon button | 48×48dp | 24×24dp visual |
-| List item | full-width × 56dp | full-width × 56dp |
-| QS Toggle | 72×72dp | 64×64dp visual |
-| Chip | 48×32dp | auto×32dp |
-| Switch | 52×48dp | 52×32dp visual |
-| Bottom Nav item | 72×64dp | 24×24dp icon + label |
-| Tab | 48×46dp | auto×46dp |
+| Button | 48×48 | 48×height |
+| Icon button | 48×48 | 24×24 visual |
+| List item | full-width × 56 | full-width × 56 |
+| QS Toggle | 72×72 | 64 visual |
+| Chip | 48×32 | auto×32 |
+| Switch | 52×48 | 52×32 visual |
+| Bottom Nav item | 72×64 | 24 icon + label |
+| Tab | 48×46 | auto×46 |
 
-### Touch Clearance Between Interactive Elements
-- **Vertical gap**: minimum 8dp between interactive elements
-- **Horizontal gap**: minimum 8dp between touch targets
-- **FAB clearance**: 16dp from nearest interactive element
-- **Edge clearance**: interactive elements minimum 8dp from screen edge
-- **Bottom safe area**: 20dp from physical bottom (gesture bar zone)
+### Clearance
+- Min 8dp gap between any two interactive elements (vertical or horizontal)
+- FAB clearance 16dp from nearest interactive
+- Edge clearance 8dp minimum
+- Bottom safe area 20dp
 
 ---
 
-## 12. Responsive Breakpoints
+## 13. Responsive Breakpoints (composition)
 
-| Viewport | Columns | Side Padding | Card Width | Behavior |
+| Viewport | Cols | Side Padding | Card Width | Behavior |
 |---|---|---|---|---|
-| < 360dp | 1 | 16dp | full - 32dp | Single column, compact |
-| 360-479dp | 1 | 24dp | full - 48dp | Standard mobile |
-| 480-691dp | 1-2 | 24dp | max 420dp or 2-col | Large phone / small tablet |
-| 692-987dp | 2 | 32dp | (width-72dp)/2 | Tablet |
-| 988dp+ | 2-3 | 40dp | max 400dp per column | Desktop |
+| < 360 | 1 | 16 | full − 32 | compact single column |
+| 360–479 | 1 | 24 | full − 48 | standard mobile |
+| 480–691 | 1–2 | 24 | max 420 or 2-col | large phone / small tablet |
+| 692–987 | 2 | 32 | (w − 72)/2 | tablet |
+| 988+ | 2–3 | 40 | max 400/col | desktop |
 
-### Grid Behavior at Breakpoints
-- **QS Grid**: always 4 columns on mobile, expands to 6 on tablet
-- **Widget Grid**: 4-column base, widget sizes snap to grid
-- **Card Grid**: 1 column mobile, 2 column tablet, 2-3 desktop
-- **Bottom Nav**: pill shape on mobile, expands to side rail on tablet/desktop
+### Breakpoint Grid Behavior
+- QS Grid: 4 cols mobile, 6 cols tablet
+- Widget Grid: 4-col base, sizes snap
+- Card Grid: 1 mobile, 2 tablet, 2–3 desktop
+- Bottom Nav: pill on mobile, side rail on tablet/desktop
 
----
-
-## 13. Screen Composition Templates
-
-### Login Screen Assembly
-```
-[Status Bar — 24dp, static]
-  gap: 0
-[Content — center-v aligned]
-  padding: 0 24dp
-  ├── Logo/Brand: center, 48dp from top-third
-  ├── gap: 32dp
-  ├── Title: 24dp/700, center
-  ├── gap: 8dp
-  ├── Subtitle: 14dp/400, center, var(--text-2)
-  ├── gap: 32dp
-  ├── Input (Email): full-width, h:48dp
-  ├── gap: 16dp
-  ├── Input (Password): full-width, h:48dp
-  ├── gap: 8dp
-  ├── Forgot Password: right-aligned, 13dp, var(--primary)
-  ├── gap: 24dp
-  ├── Button (Sign In): full-width, h:48dp, contained
-  ├── gap: 12dp
-  ├── Divider with text "or"
-  ├── gap: 12dp
-  ├── Social buttons row: gap 12dp, each 48×48dp circle
-  ├── flex spacer
-  └── Sign up link: center, 13dp, bottom 34dp from screen bottom
-[Nav Bar — 20dp]
-```
-
-### Home Screen Assembly (measured from reference images)
-```
-┌────────────────────────────────────────┐
-│ Status Bar (24dp)                      │  time(left) icons(right)
-│ 12:45                    ☰ ▮▮ 📶 [100]│
-├────────────────────────────────────────┤
-│                                        │
-│ Wallpaper — full bleed background      │  z:0
-│ (content floats over wallpaper)        │
-│                                        │
-│ ┌── Widget Zone ──────────────────┐    │  starts ~140-200dp from top
-│ │ 2-column widget grid            │    │  padding: 0 16dp
-│ │ gap: 8dp H, 8dp V              │    │  max 3-4 rows visible
-│ │                                 │    │
-│ │ ┌─ 2×2 ──┐ 8dp ┌─ 2×1 ──┐    │    │  Row 1: mixed sizes OK
-│ │ │Weather  │     │Greeting │    │    │
-│ │ │176×176dp│     │176×80dp │    │    │
-│ │ │         │     ├─────────┤    │    │
-│ │ │         │ 8dp │Health   │    │    │  2×1 widgets stack
-│ │ │         │     │176×80dp │    │    │  in same column
-│ │ └─────────┘     └─────────┘    │    │
-│ └─────────────────────────────────┘    │
-│                                        │
-│ ┌── Search Bar ───────────────────┐    │  full-width - 32dp margin
-│ │ [G] ─────────────── [🎤] [📷]  │    │  h:48dp, radius:999px
-│ └─────────────────────────────────┘    │  padding: 0 16dp, bg: white/glass
-│                                        │  gap: 16dp above/below
-│ ┌── App Icon Grid ────────────────┐    │
-│ │ 4 columns × 1-2 rows           │    │  padding: 0 24dp
-│ │ [icon] [icon] [icon] [icon]     │    │  icon: 60×60dp, radius:18dp
-│ │ Store  Gallery Play   Google    │    │  label: 11dp, gap 6dp below icon
-│ │                                 │    │  col-gap: ~28dp (evenly fills width)
-│ └─────────────────────────────────┘    │  row-gap: 20dp
-│                                        │
-│          ● ○ ○  (page indicators)      │  dot: 6dp, gap: 6dp, centered
-│                                        │  gap: 12dp above dock
-│ ┌── Dock (4 icons) ──────────────┐     │  glass pill bg or no bg
-│ │ [📞] [💬] [🌐] [📷]           │     │  icon: 60×60dp
-│ │ gap: 24dp between icons         │     │  padding: 0 40dp
-│ └─────────────────────────────────┘     │  position: ~48dp above nav
-│                                        │
-│ Navigation Bar (48dp)                  │  [|||] [○] [<] centered
-│           ───────                      │  pill: 134×5dp
-└────────────────────────────────────────┘
-```
-
-### Home Screen — Widget-Heavy Layout (from Image 2, 3)
-When homescreen is widget-focused (no app icon grid visible):
-```
-[Status Bar — 24dp]
-  gap: 0
-[Widget Area — starts immediately below status bar, ~56dp from top]
-  padding: 0 16dp
-  
-  Row 1: Full-width widget (4×2)
-  ┌─────────────────────────────────┐
-  │ Calendar/Schedule Widget        │  368×160dp (4×2)
-  │ "Today, Wed, Jan 22"    [+]    │  radius: 26dp
-  │ ├ 9:30AM  Meeting              │  padding: 16dp 20dp
-  │ ├ 1:00PM  Lunch with Luca     │  list items: h:40dp each
-  │ └ 5:00PM  Gym                  │  divider: left colored bar 3dp
-  └─────────────────────────────────┘
-  gap: 8dp
-  
-  Row 2: 2-column mixed
-  ┌─── 2×2 ───┐ 8dp ┌─── 2×1 ───┐
-  │ Steps      │     │ Weather   │  80dp
-  │ 4,350      │     │ 10° Seoul │
-  │ /6,000     │     ├───────────┤
-  │ [progress] │     │ Calendar  │  80dp
-  │ 176×176dp  │     │ JAN 22   │
-  └────────────┘     └───────────┘
-  gap: 8dp
-  
-  Row 3: 2-column equal
-  ┌─── 2×2 ───┐ 8dp ┌─── 2×2 ───┐
-  │ Photo      │     │ Health    │
-  │ (image)    │     │ Rings     │
-  │ 176×176dp  │     │ 176×176dp │
-  └────────────┘     └───────────┘
-
-[Dock — 4 icons, glass pill or transparent]
-[Navigation Bar — 48dp]
-```
-
-### Home Screen — App Drawer (from Image 5)
-```
-[Status Bar — 24dp]
-  gap: 0
-[App Icon Grid — full screen]
-  padding: 24dp 24dp 0
-  ├── 4 columns × N rows
-  ├── Icon: 60×60dp
-  │   ├── Folder icon: same 60×60dp, radius 18dp
-  │   │   └── Contains 2×2 mini-icons (16×16dp each) inside
-  │   ├── Standard icon: radius 18dp, subtle drop shadow
-  │   └── Label: 11dp/400, center-aligned, gap 6dp below
-  ├── Column gap: ~28dp (evenly distributed across 360dp - 48dp padding)
-  ├── Row gap: 24dp
-  └── Max rows visible: ~5 before scroll
-  
-[flex spacer]
-[Page Indicator — 3 dots, centered]
-  gap: 16dp below last row
-[Search Bar]
-  padding: 0 16dp
-  height: 44dp
-  radius: 999px
-  bg: glass G1
-  ├── Placeholder: "Search", left-aligned, 14dp
-  └── Overflow icon: [⋮] right, 24×24dp
-  margin-bottom: 8dp above nav
-[Navigation Bar — 48dp (3-button)]
-```
-
-### Quick Settings Assembly
-```
-[Status Bar — 24dp, static]
-  gap: 0
-[Action Bar — 48dp]
-  padding: 0 16dp
-  icons: right-aligned [edit, power, settings]
-  gap: 0
-[QS Toggle Grid]
-  padding: 0 24dp
-  4 columns × 2 rows (page 1)
-  toggle: 64dp circle + label below
-  grid-gap: 12dp H, 16dp V
-  gap: 12dp
-[Page Indicator — 3 dots]
-  gap: 16dp
-[Brightness Slider]
-  padding: 0 24dp
-  height: 48dp
-  gap: 16dp
-[Tile Cards — 2 column grid]
-  padding: 0 16dp
-  gap: 8dp
-  cards: [SmartThings, Modes, etc.]
-  gap: 12dp
-[Media Control]
-  padding: 0 16dp
-  2 chips: [Play music, Media output]
-  gap: 12dp
-[Bottom Shortcuts]
-  padding: 0 16dp
-  2 items: [Smart View, Song Search]
-[Navigation Bar — 48dp (3-button)]
-```
-
-### Lock Screen Assembly
-```
-[Status Bar — 24dp, transparent]
-  gap: 0
-[Wallpaper — full bleed, z:0]
-[Clock — centered or adaptive position]
-  position: ~25-35% from top
-  font: 64-96dp, SamsungSharpSans, weight 200-300
-  gap: 4dp
-  date: 16dp, weight 400
-  gap: 16dp
-[Widgets — optional, below clock]
-  max: 2 compact widgets side by side
-  gap: 8dp
-[flex spacer]
-[Now Bar Row — bottom anchored]
-  position: bottom 72dp (20dp nav + 52dp clear)
-  layout: [quick-action] [now-bar flex] [quick-action]
-  gap: 8dp
-  quick actions: 48×48dp circles, glass G1
-[Navigation Bar — 20dp, gesture]
-```
-
----
-
-## 14. Animation Sequencing in Composition
-
-### Entry Stagger Order
-When a screen loads, elements animate in this order:
-
-1. **Static chrome** (0-40ms): Status bar, App bar, Bottom nav — fadeIn
-2. **Primary content** (100-200ms): Main heading, hero image — slideUp
-3. **Secondary content** (200-350ms): Cards, list items — slideUp with stagger 40ms each
-4. **Tertiary** (350-500ms): Chips, badges, metadata — fadeIn
-5. **Floating** (400-600ms): FAB, Now Bar — scaleUp + spring
-
-### Transition Between Density Layers
-- **Lock → Notification Shade**: slideDown 400ms, gen curve
-- **Notification Shade → QS Full**: expand 500ms, gen curve
-- **QS Full → Notification Shade**: collapse 400ms, gen curve
-- **Any → Dialog**: fadeIn 200ms dim + scaleUp 300ms dialog
-
----
-
-## 15. Connected Component Pairs
-
-Components that frequently combine and have specific spatial rules:
-
-| Pair | Rule |
+### Web breakpoints (alternate)
+| Name | Width |
 |---|---|
-| AppBar + SearchBar | Search below AppBar, gap 0, or embedded in AppBar |
-| Card + ActionSheet | Sheet rises from card, shares radius on connected edge |
-| List + FAB | FAB floats over list, last list item has 72dp bottom padding |
-| Input + ErrorText | Error 4dp below input, 12dp font, color: var(--error) |
-| Tabs + TabContent | 0 gap, content swipes horizontally, tabs remain fixed |
-| Now Bar + Lock Shortcuts | Same horizontal row, Now Bar flex:1, shortcuts fixed 48dp |
-| Dialog + Dim | Dim covers everything below z:100, dialog centered or bottom |
-| Notification + Notification | Stack vertically, gap 8dp, same radius/material |
-| QS Toggle + QS Toggle | Grid layout, never free-positioned |
-| Widget + Widget | Grid snapping only, gap 8dp, sizes from fixed set |
+| Mobile | <768 |
+| Tablet | 768–1279 |
+| Desktop | 1280–1920 |
+| Large Desktop | >1920, centered with 1920 max wrapper |
+
+Web container widths: 988 desktop / 692 tablet / 360 mobile (24 padding).
 
 ---
 
-## 16. Anti-Patterns (Do NOT)
+## 14. Composition Templates (Figma-verified trees)
+
+### DialogBlurred
+```
+DialogBlurred(w=328, r=28, pad=20, gap=20, fill=glass.medium, blur=24)
+  ├─ Icon?            (40)
+  ├─ ExtraContent?    (r=28, dashed 4px #848487)
+  ├─ TextGroup
+  │    ├─ Title       (20/SemiBold)
+  │    └─ Description (14/Regular)
+  └─ Buttons          (row, 2 equal, divider 2×32)
+       ├─ Option(Cancel) 20/Bold
+       └─ Option(Apply)  20/Bold
+```
+
+### InternetPopOutMenu
+```
+InternetPopOutMenu(w=473, r=32, pad=16, gap=20, glass.medium)
+  ├─ WebsiteShareHeader
+  │    ├─ Thumbnail(50, r=10)
+  │    ├─ TextBlock{Title 18/SemiBold, Url 14 muted}
+  │    ├─ ShareChip(36, r=14, bg=#17171A)
+  │    └─ Divider(1px)
+  ├─ BrowserTopBar (5× ContainedIconLabel)
+  └─ BrowserIconBox (inner glass r=24)
+       ├─ IconRow(4× IconWithLabel)
+       ├─ IconRow(4× IconWithLabel)
+       └─ PageIndicator(2× dot 6)
+```
+
+### GalleryPopOutMenu
+```
+GalleryPopOutMenu(w=415, r=28, pad=24, gap=20, glass.medium)
+  ├─ TopIconRow (4× IconTile{Chip 48, Label 14})
+  ├─ LongButtonRow1 (2× PillButton{r=28, pad=38×11, bg=#17171A}, one w/ BadgeDot)
+  ├─ LongButtonRow2 (2× PillButton)
+  └─ StudioCard{AppIcon 24, Label 18, Chevron 24} r=28
+```
+
+### Toast
+```
+Toast(w=328, outerPad=10)
+  └─ Content(pill, pad=10×8, gap=10, bg dark=#010102 | light=#F1F1F3)
+       ├─ Icon?            (24)
+       ├─ Text             (14/Regular, flex-1)
+       └─ SnackbarButton   (pill r=20, pad=20×4, inverse bg, Label 14/SemiBold)
+```
+
+### Scaffold (canonical phone frame)
+```
+Container(w=412, r=16, bg=#010102)
+  ├─ StatusBar
+  │    ├─ Time(15/Bold, 0.8α)
+  │    ├─ NotificationIcons (19)
+  │    ├─ LiveActivity{PhoneIcon 12 + Timer 10/SemiBold, bg=#0FCF6E r=10}
+  │    └─ StatusIcons {WiFi, Cellular, Battery}
+  ├─ InnerStack(r=40, pad=10, gap=20)
+  │    ├─ HeaderContainer{AppIcon 74, Title 36/Bold, Info 14, MiniButton pill r=28}
+  │    ├─ Card{Leading 24, TextCol{Title 18, Info 14}, (Switch | Chevron)}
+  │    ├─ TextContainer (body 14)
+  │    ├─ MenuItemCard{Icon 24, Label 18}
+  │    ├─ MenuItemWithBodyCard{Icon 24, TextCol{Title 18, Body 14}}
+  │    └─ SliderCard{Subheading 18, Sliders75{Icon, Track, Fill, Thumb}}
+  └─ NavigationBar{Indicator 144×4 r=2}
+```
+
+### NowBar / Navigation
+```
+NowBar(w=415, r=pill, pad=20, gap=8, glass.liveActivity)
+  ├─ HeaderRow
+  │    ├─ IconBadge(56, pill, bg=#0C8FAE) + Glyph.location 36
+  │    ├─ Title       (19/500 white)
+  │    ├─ Subtitle1   (15/500 white)
+  │    └─ Subtitle2   (15/500 rgba(255,255,255,0.5))
+  ├─ ProgressTrack
+  │    ├─ Track.Base  (1dp white)
+  │    ├─ Track.Fill
+  │    └─ ThumbChip(28, pill, bg=#0C8FAE, ring 3dp #D9E7FC) + Glyph.driving 18
+  └─ ActionBar
+       └─ Button.EndTrip (pill, pad=14×10.5, label 15/500)
+```
+
+### NowBar / Activity
+```
+NowBar(w=415, h=180, r=pill, pad=20, gap=8, glass.liveActivity)
+  ├─ HeaderRow
+  │    ├─ IconBadge(56, pill, bg=#4ED877) + Glyph.samsung_health 36
+  │    ├─ Title "Running - 00:13 / 20:00" (19/500)
+  │    └─ Metrics (15/500 50% α)
+  ├─ ProgressTrack(…, ThumbChip bg=#4ED877 + Glyph.running 18)
+  └─ DialogBlurred (r=28, pad=20, gap=20)
+       └─ Buttons
+            ├─ Button.Pause  (15/500)
+            └─ Button.Finish (15/500)
+```
+
+---
+
+## 15. Composition Rules
+
+| Rule | Application |
+|---|---|
+| Icon **identity** uses 56dp accent pill (IconBadge); icon **action** uses 48dp neutral pill + shadow (IconChip). Never mix. | NowBar/Hero vs menus/bars |
+| Action buttons inside a glass NowBar must wrap in an inner DialogBlurred (r=28) for legibility | NowBar/Activity Pause+Finish |
+| Radius stepping outer→inner: 16 → 40 → 28 → 20 → pill | Scaffold and all popouts |
+| Glass depth: nowbar (0.3α) above popout (0.6α) above solid card (#17171A) | Never solid under transparent sibling |
+| Pop-out menus: 32 (browser/share, wide) or 28 (gallery, tighter) | Width dictates radius choice |
+| Progress thumbs share a single style across NowBar variants (Nav / Activity / Media) | Component spec lives in `DESIGN.md`; rule here is "reuse same thumb across NowBar variants" |
+| LiveActivity status pill is embedded inline within the Status Bar center slot | Status-bar composition only; component visual spec lives in `DESIGN.md` |
+
+---
+
+## 16. Connected Component Pairs
+
+| Pair | Spatial Rule |
+|---|---|
+| AppBar + SearchBar | Search below AppBar gap 0, or embedded in AppBar |
+| Card + ActionSheet | Sheet rises from card; share radius on connected edge |
+| List + FAB | FAB floats over list; last list item has 72dp bottom padding |
+| Input + ErrorText | Error 4dp below input, 12/var(--error) |
+| Tabs + TabContent | Gap 0; content swipes horizontally; tabs fixed |
+| Now Bar + Lock Shortcuts | Same horizontal row; Now Bar flex:1, shortcuts fixed 48 |
+| Dialog + Dim | Dim covers everything below z:100; dialog centered or bottom |
+| Notification + Notification | Stack vertically gap 8, same radius/material |
+| QS Toggle + QS Toggle | Grid layout only — never free-positioned |
+| Widget + Widget | Grid snapping only, gap 8, sizes from fixed set |
+
+---
+
+## 17. Animation Sequencing
+
+### Entry Stagger Order (screen load)
+1. **Static chrome** (0–40ms): Status bar, App bar, Bottom nav — fadeIn
+2. **Primary content** (100–200ms): Main heading, hero image — slideUp
+3. **Secondary content** (200–350ms): Cards, list items — slideUp stagger 40ms
+4. **Tertiary** (350–500ms): Chips, badges, metadata — fadeIn
+5. **Floating** (400–600ms): FAB, Now Bar — scaleUp + spring
+
+### Density Layer Transitions
+- Lock → Notification Shade: slideDown 400ms, gen curve
+- Notification Shade → QS Full: expand 500ms, gen curve
+- QS Full → Notification Shade: collapse 400ms, gen curve
+- Any → Dialog: fadeIn 200ms dim + scaleUp 300ms dialog
+
+---
+
+## 18. Anti-Patterns (Composition)
 
 | Anti-Pattern | Correct Pattern |
 |---|---|
-| Card inside Card | Flat content sections within card, no nested cards |
-| Dialog with more than 2 buttons | Max 2 buttons; use ActionSheet for 3+ options |
-| FAB overlapping Bottom Nav | FAB positioned 16dp above Bottom Nav top edge |
-| Full-width button inside narrow card | Button matches card padding (inset 16-20dp) |
-| Scrollable content inside scrollable content | Nested scroll only for horizontal within vertical |
-| Opaque overlay on glass surface | Always use glass material for floating elements |
+| Card inside Card | Flat content sections within card |
+| Dialog with > 2 buttons | Max 2; use ActionSheet for 3+ |
+| FAB overlapping Bottom Nav | FAB 16dp above Bottom Nav top edge |
+| Full-width button inside narrow card | Button matches card padding (inset 16–20) |
+| Scrollable inside scrollable | Only horizontal-within-vertical permitted |
+| Opaque overlay on glass surface | Use glass material for floating elements |
 | Mixed radius in same container | All children share parent's radius system |
-| Interactive elements under 8dp gap | Minimum 8dp between any two tappable elements |
-| Text directly on wallpaper without scrim | Always use glass container or text shadow for readability |
-| More than 5 items in Bottom Nav | Maximum 5 items; use "More" for overflow |
+| Interactive elements under 8dp gap | Min 8dp between any two tappable |
+| Text directly on wallpaper without scrim | Use glass container or text shadow |
+| > 5 items in Bottom Nav | Max 5; "More" for overflow |
+| IconBadge < 56dp in identity context | Promote to 56dp accent pill |
+| IconChip without shadow inside glass surface | Add `0 4 4 rgba(0,0,0,0.25)` |
+| Button row in glass NowBar not wrapped in DialogBlurred | Wrap in r=28 inner surface |
+| Radius non-stepping (child larger than parent) | Step radii outer→inner |
+| Glass surface with opaque sibling at same z-depth | Promote opaque to solid card layer beneath |
+| Tappable element with hit area < 48dp | Expand hit area via padding |

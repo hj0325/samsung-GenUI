@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 2340">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8e4e0"/>
+      <stop offset="30%" stop-color="#d8dce8"/>
+      <stop offset="70%" stop-color="#c8cee0"/>
+      <stop offset="100%" stop-color="#e0dcd0"/>
+    </linearGradient>
+    <radialGradient id="topGlow" cx="50%" cy="5%" r="50%">
+      <stop offset="0%" stop-color="#f0e8d0" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#f0e8d0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="botGlow" cx="50%" cy="95%" r="50%">
+      <stop offset="0%" stop-color="#e8e0c8" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#e8e0c8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sGrad" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0%" stop-color="#bcc4d4"/>
+      <stop offset="30%" stop-color="#b0b8cc"/>
+      <stop offset="50%" stop-color="#a8b0c4"/>
+      <stop offset="70%" stop-color="#b4bcc8"/>
+      <stop offset="100%" stop-color="#c0c8d0"/>
+    </linearGradient>
+    <filter id="sShadow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="12"/>
+      <feOffset dx="4" dy="8"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.15"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Large background circle -->
+    <radialGradient id="circleGrad" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#c4ccda" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#c4ccda" stop-opacity="0.15"/>
+    </radialGradient>
+  </defs>
+  <rect width="1080" height="2340" fill="url(#bg)"/>
+  <rect width="1080" height="2340" fill="url(#topGlow)"/>
+  <rect width="1080" height="2340" fill="url(#botGlow)"/>
+  <!-- Large background circle -->
+  <ellipse cx="540" cy="1100" rx="520" ry="980" fill="url(#circleGrad)"/>
+  <!-- S-curve shape -->
+  <path d="
+    M 300,280
+    C 300,280 820,200 820,640
+    C 820,900 260,880 260,1140
+    C 260,1140 260,1440 260,1700
+    C 260,2100 780,2060 780,1700
+    C 778,1440 780,1140 780,1140
+    C 780,880 300,900 300,640
+    C 300,640 300,280 300,280 Z
+  " fill="url(#sGrad)" filter="url(#sShadow)" opacity="0.85"/>
+  <!-- Inner highlight on S -->
+  <path d="
+    M 340,320
+    C 340,320 790,250 790,650
+    C 790,880 310,870 310,1120
+    C 310,1120 310,1420 310,1680
+    C 310,2050 750,2020 750,1680
+    C 748,1420 750,1120 750,1120
+    C 750,870 340,880 340,650
+    C 340,650 340,320 340,320 Z
+  " fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
+</svg>

@@ -2,11 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "genui",
+      "name": "oneui-static",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3000", "-d", "/Users/kyuhashim/Design/samsung-oneui-design-system"],
-      "port": 3000,
-      "autoPort": false
+      "runtimeArgs": ["-m", "http.server", "$PORT"],
+      "port": 3005,
+      "autoPort": true
     }
   ]
 }

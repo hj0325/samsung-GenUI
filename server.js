@@ -425,7 +425,14 @@ const CONSTRAINT_FRAGMENTS = {
     folder: { size: 60, radius: 18, bg: 'glass semi-transparent', miniIcons: '2x2 20dp each gap:4dp pad:8dp' },
     grid: { columns: 4, colGap: '~28dp (evenly fill)', rowGap: 24, padding: '0 24dp', label: '11dp/400 center gap:6dp' },
     dock: { items: 4, iconSize: 60, gap: '~28dp even', noLabels: true, position: '48dp above navbar' },
-    pageIndicator: { dotSize: 6, gap: 6, activeOpacity: 1, inactiveOpacity: 0.35 }
+    pageIndicator: { dotSize: 6, gap: 6, activeOpacity: 1, inactiveOpacity: 0.35 },
+    // CRITICAL: always render real PNG icons. NEVER use letter placeholders (e.g. <div>G</div>, <div>Y</div>) or coloured squares with initials.
+    // Use <img src="app-icons/{name}.png" style="width:...;height:...;border-radius:...;"> with one of these canonical filenames (URL-encode Korean automatically in the browser):
+    assets: [
+      '전화.png','메시지.png','카메라.png','갤러리.png','설정.png','인터넷.png','연락처.png','시계.png','계산기.png','날씨.png','헬스.png','빅스비.png','클라우드.png','라디오.png','리마인더.png','스튜디오.png','음성 녹음.png','내 파일.png','데일리 보드.png','디바이스 케어_.png','디지털 웰빙.png','보안 Wi-fi.png','보안 폴더.png',
+      'Find.png','Notes.png','Pass.png','SmartThings.png','Store.png','Wallet.png','Wearable.png'
+    ],
+    rule: 'MANDATORY <img src="app-icons/…"> for every app icon. No letter/emoji fallbacks. If an app has no asset, pick the closest match from the list.'
   },
 
   // Z-layer system (~200 bytes)
@@ -723,7 +730,8 @@ DESIGN RULES:
 - Use proper motion stagger: static elements first (delay 0-40ms), gen elements after (100-400ms)
 - For custom HTML, use inline styles with CSS variables: var(--primary), var(--text), var(--text-2), var(--text-3), var(--surface), var(--surface-2), var(--divider)
 - Create realistic, production-quality screens with proper content (not placeholder text)
-- Include 8-15 components per screen for a complete feel`;
+- Include 8-15 components per screen for a complete feel
+- APP ICONS: every app/shortcut MUST render as <img src="app-icons/{filename}.png" style="width:WIDTHpx;height:HEIGHTpx;border-radius:Rpx;">. NEVER emit letter/initial placeholders like <div>G</div>, coloured squares with a single capital, or emoji glyphs in place of an icon. Valid filenames (Korean filenames are URL-encoded automatically): 전화.png, 메시지.png, 카메라.png, 갤러리.png, 설정.png, 인터넷.png, 연락처.png, 시계.png, 계산기.png, 날씨.png, 헬스.png, 빅스비.png, 클라우드.png, 라디오.png, 리마인더.png, 스튜디오.png, 음성 녹음.png, 내 파일.png, 데일리 보드.png, 디바이스 케어_.png, 디지털 웰빙.png, 보안 Wi-fi.png, 보안 폴더.png, Find.png, Notes.png, Pass.png, SmartThings.png, Store.png, Wallet.png, Wearable.png. If an app has no exact asset, pick the closest match from this list.`;
 }
 
 function buildRefinePrompt(mode) {
