@@ -965,8 +965,18 @@ const server = http.createServer(async (req, res) => {
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
 
-      console.log(`[Pipeline] plan for "${scenarioText.substring(0,50)}" → ${result.plan?.required_components?.length ?? 0} components, validation:${result.validation.ok ? 'ok' : 'FAIL'}`);
-      sendJSON(res, 200, result);
+      const legacyPlan = result.legacy && result.legacy.plan;
+      console.log(`[Pipeline] plan for "${scenarioText.substring(0,50)}" → ${result.plan?.requiredComponents?.length ?? 0} components, validation:${result.validation.ok ? 'ok' : 'FAIL'}`);
+      // Wire-compat: clients still read required_components (snake_case).
+      // Emit legacy plan as `plan`, and include the normalized form alongside.
+      sendJSON(res, 200, {
+        interpretation:   result.interpretation,
+        planning_packet:  result.planningPacket,
+        ui_state:         result.uiState,
+        plan:             legacyPlan,
+        plan_normalized:  result.plan,
+        validation:       result.validation
+      });
     } catch (e) {
       console.error('[Pipeline] error:', e.message);
       sendJSON(res, 500, { error: e.message });
@@ -988,20 +998,23 @@ const server = http.createServer(async (req, res) => {
         scenarioText,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
-      const uiState = planResult.ui_state;
+      const uiState = planResult.uiState;
+      const legacyPlan = planResult.legacy && planResult.legacy.plan;
 
-      // Step 5 + pipeline validators
+      // Step 5 + pipeline validators (composer still reads legacy shape)
       const composeResult = composer.runCompose({
         uiState,
-        requiredComponents: planResult.plan?.required_components || [],
+        requiredComponents: legacyPlan?.required_components || [],
         opts: { viewport }
       });
 
       console.log(`[Pipeline] compose for "${scenarioText.substring(0,50)}" → ${composeResult.layout_plan.children.length} children, layout violations:${composeResult.validation.summary.total}`);
       sendJSON(res, 200, {
         interpretation:    planResult.interpretation,
-        ui_state:          planResult.ui_state,
-        plan:              planResult.plan,
+        planning_packet:   planResult.planningPacket,
+        ui_state:          uiState,
+        plan:              legacyPlan,
+        plan_normalized:   planResult.plan,
         plan_validation:   planResult.validation,
         layout_plan:       composeResult.layout_plan,
         layout_validation: composeResult.validation
@@ -1028,12 +1041,13 @@ const server = http.createServer(async (req, res) => {
         scenarioText,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
       });
-      const uiState = planResult.ui_state;
+      const uiState = planResult.uiState;
+      const legacyPlan = planResult.legacy && planResult.legacy.plan;
 
-      // Step 5 + 6
+      // Step 5 + 6 (composer still reads legacy shape)
       const composeResult = composer.runCompose({
         uiState,
-        requiredComponents: planResult.plan?.required_components || [],
+        requiredComponents: legacyPlan?.required_components || [],
         opts: { viewport }
       });
 
@@ -1043,12 +1057,12 @@ const server = http.createServer(async (req, res) => {
         layout: composeResult.validation
       };
 
-      // Step 7
+      // Step 7 — runExplain accepts normalized plan directly
       const explanation = await pipeline.runExplain({
         scenarioText,
         uiState,
         plan: planResult.plan,
-        plannerNotes: planResult.plan?.planner_notes || null,
+        plannerNotes: planResult.plan?.plannerNotes || null,
         layoutPlan: composeResult.layout_plan,
         validation: combinedValidation,
         llmCall: (sys, user) => callOpenAI(sys, user, 0.4)
@@ -1057,8 +1071,10 @@ const server = http.createServer(async (req, res) => {
       console.log(`[Pipeline] full for "${scenarioText.substring(0,50)}" → components:${composeResult.layout_plan.children.length} layout_violations:${composeResult.validation.summary.total} explained:${!!explanation}`);
       sendJSON(res, 200, {
         interpretation:    planResult.interpretation,
-        ui_state:          planResult.ui_state,
-        plan:              planResult.plan,
+        planning_packet:   planResult.planningPacket,
+        ui_state:          uiState,
+        plan:              legacyPlan,
+        plan_normalized:   planResult.plan,
         plan_validation:   planResult.validation,
         layout_plan:       composeResult.layout_plan,
         layout_validation: composeResult.validation,

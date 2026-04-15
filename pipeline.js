@@ -17,6 +17,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const {
+  normalizeInterpreterOutput,
+  normalizeNormalizerOutput,
+  normalizeSelectorOutput,
+  toLegacySelectorOutput
+} = require('./schema_normalizer');
 
 const REGISTRY_PATH = path.join(__dirname, 'figma-refs', 'component_registry.json');
 let REGISTRY = null;
@@ -236,18 +242,25 @@ RULES
 //  VALIDATION — enforce the hard rule "no invented components"
 // ---------------------------------------------------------------------------
 
+// Accepts either a NormalizedSelectorOutput (camelCase) or the legacy
+// snake_case shape. After schema normalization this runs on the
+// NormalizedSelectorOutput; the legacy branch exists for outside callers.
 function validatePlan(plan) {
   const allowed = new Set(allowedSemanticComponentTypes());
   const errors = [];
-  const components = (plan && plan.required_components) || [];
+  const isNormalized = plan && Array.isArray(plan.requiredComponents);
+  const components = isNormalized
+    ? plan.requiredComponents
+    : ((plan && plan.required_components) || []);
   components.forEach((c, idx) => {
-    if (!c.component_type) {
+    const type = isNormalized ? c.componentType : c.component_type;
+    if (!type) {
       errors.push({ index: idx, error: 'missing component_type' });
-    } else if (!allowed.has(c.component_type)) {
-      errors.push({ index: idx, component_type: c.component_type, error: 'component_type not in semantic vocabulary' });
+    } else if (!allowed.has(type)) {
+      errors.push({ index: idx, component_type: type, error: 'component_type not in semantic vocabulary' });
     }
     if (c.priority == null || ![1,2,3].includes(c.priority)) {
-      errors.push({ index: idx, component_type: c.component_type, error: 'priority must be 1|2|3' });
+      errors.push({ index: idx, component_type: type, error: 'priority must be 1|2|3' });
     }
   });
   return { ok: errors.length === 0, errors };
@@ -260,41 +273,70 @@ function validatePlan(plan) {
 async function runPlan({ scenarioText, llmCall }) {
   if (!llmCall) throw new Error('runPlan requires llmCall(systemPrompt, userMessage)');
 
-  // STEP 1: interpret
-  const interpretation = await llmCall(
+  // STEP 1: interpret → normalize
+  const interpretationRaw = await llmCall(
     buildInterpreterPrompt(),
     `User Scenario:\n${scenarioText}`
   );
+  const interpretation = normalizeInterpreterOutput(interpretationRaw);
 
-  // STEP 2: normalize (handoff packet)
-  const planningPacket = await llmCall(
+  // STEP 2: handoff packet → normalize
+  // (Downstream normalizer receives the normalized camelCase, but the LLM
+  //  prompt itself speaks in snake_case per spec — so we hand it the raw
+  //  step-1 output verbatim when available, otherwise the normalized one.)
+  const planningPacketRaw = await llmCall(
     buildNormalizerPrompt(),
-    `Input JSON:\n${JSON.stringify(interpretation)}`
+    `Input JSON:\n${JSON.stringify(interpretationRaw || interpretation)}`
   );
+  const planningPacket = normalizeNormalizerOutput(planningPacketRaw);
 
-  // STEP 3: select components from semantic vocabulary
-  const plan = await llmCall(
+  // STEP 3: component selection → normalize
+  const planRaw = await llmCall(
     buildPlannerPrompt(),
-    `Planning Packet:\n${JSON.stringify(planningPacket)}`
+    `Planning Packet:\n${JSON.stringify(planningPacketRaw || planningPacket)}`
   );
+  const plan = normalizeSelectorOutput(planRaw);
 
   const validation = validatePlan(plan);
 
-  // ui_state bubbles up from step_1 (trusted) but step_2 gets a copy.
-  const uiState = (planningPacket && planningPacket.ui_state) || (interpretation && interpretation.ui_state) || null;
+  // ui_state is LLM-authoritative from step_1; step_2 carries a copy.
+  const uiState = planningPacket.uiState || interpretation.uiState;
 
-  return { interpretation, planning_packet: planningPacket, ui_state: uiState, plan, validation };
+  // Legacy snake_case view for consumers not yet migrated (composer, server
+  // response shape, client renderer). To be removed after Step 4 + validator
+  // rewiring lands on the normalized contract.
+  const legacyPlan = toLegacySelectorOutput(plan);
+
+  return {
+    // normalized (canonical, camelCase)
+    interpretation,
+    planningPacket,
+    plan,
+    uiState,
+    validation,
+    // back-compat aliases (snake_case)
+    planning_packet: planningPacket,
+    ui_state:        uiState,
+    legacy: { plan: legacyPlan }
+  };
 }
 
 async function runExplain({ scenarioText, uiState, plan, plannerNotes, layoutPlan, validation, llmCall }) {
   if (!llmCall) throw new Error('runExplain requires llmCall(systemPrompt, userMessage)');
+  // `plan` may arrive normalized (camelCase) or legacy (snake_case); accept both.
+  const requiredComponents = plan
+    ? (plan.requiredComponents || plan.required_components || [])
+    : [];
+  const notes = plannerNotes
+    || (plan && (plan.plannerNotes || plan.planner_notes))
+    || null;
   const payload = {
-    scenario_text: scenarioText,
-    ui_state: uiState,
-    required_components: (plan && plan.required_components) || [],
-    planner_notes: plannerNotes || (plan && plan.planner_notes) || null,
-    layout_plan: layoutPlan,
-    validation_report: validation
+    scenario_text:       scenarioText,
+    ui_state:            uiState,
+    required_components: requiredComponents,
+    planner_notes:       notes,
+    layout_plan:         layoutPlan,
+    validation_report:   validation
   };
   return llmCall(buildExplanationPrompt(), JSON.stringify(payload));
 }
@@ -309,5 +351,10 @@ module.exports = {
   runExplain,
   allowedComponentTypes,
   allowedSemanticComponentTypes,
-  REGISTRY_PATH
+  REGISTRY_PATH,
+  // schema-normalizer re-exports for consumers that want the raw primitives
+  normalizeInterpreterOutput,
+  normalizeNormalizerOutput,
+  normalizeSelectorOutput,
+  toLegacySelectorOutput
 };
