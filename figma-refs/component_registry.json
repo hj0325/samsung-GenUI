@@ -1,0 +1,388 @@
+{
+  "version": "0.1.0",
+  "description": "Executable component registry for genui_pipeline_v1 step_4. Each entry is a JSON spec (NOT markdown). Only component_type names listed here are valid for the component_planner — LLM must not invent new ones. Vocabulary aligned with figma-refs/orchestration_rules.json (fromType/toType).",
+  "source_note": "v0 extracted from genui.html `templates` object. layout_spec/tokens are best-effort defaults; tokens map to DESIGN.md semantic tokens (to be reconciled).",
+
+  "categories": {
+    "action":       "User-triggered operations (buttons, FABs).",
+    "selection":    "Toggleable/choice inputs (switch, checkbox, radio, chip).",
+    "input":        "Text entry and search.",
+    "chrome":       "Persistent system chrome (status bar, app bar, bottom nav, tab bar).",
+    "container":    "Surface that wraps content (card, list-item, dialog, snackbar).",
+    "info-card":    "Glanceable single-purpose card (eta_card, message_summary_card).",
+    "media":        "Playback / preview surfaces (media-card, media_control_bar).",
+    "notification": "Transient messages from apps/system.",
+    "widget":       "Home/lock-surface micro apps.",
+    "overlay":      "Quick Settings, notification shade, system dialog.",
+    "navigation":   "Pill tab, bottom nav, tab bar.",
+    "primitive":    "Divider, badge, decoration."
+  },
+
+  "components": {
+    "btn-contained": {
+      "id": "btn-contained",
+      "category": "action",
+      "orchestration_type": "button",
+      "allowed_contexts": ["app","home","lock","driving","glanceable","focused"],
+      "states": ["default","pressed","disabled"],
+      "slots": { "label": "text" },
+      "layout_spec": { "min_width": 64, "min_height": 48, "padding": { "top": 12, "right": 16, "bottom": 12, "left": 16 }, "gap": 0 },
+      "tokens": { "radius": "16", "background": "primary", "text_style_title": "label-md" },
+      "behavior": { "interactive": true, "collapse_priority": 1 }
+    },
+    "btn-outlined": {
+      "id": "btn-outlined",
+      "category": "action",
+      "orchestration_type": "button",
+      "allowed_contexts": ["app","home","focused"],
+      "states": ["default","pressed","disabled"],
+      "slots": { "label": "text" },
+      "layout_spec": { "min_width": 64, "min_height": 48, "padding": { "top": 12, "right": 16, "bottom": 12, "left": 16 }, "gap": 0 },
+      "tokens": { "radius": "16", "background": "transparent", "text_style_title": "label-md" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "btn-flat": {
+      "id": "btn-flat",
+      "category": "action",
+      "orchestration_type": "button",
+      "allowed_contexts": ["app","dialog","focused"],
+      "states": ["default","pressed","disabled"],
+      "slots": { "label": "text" },
+      "layout_spec": { "min_width": 48, "min_height": 48, "padding": { "top": 12, "right": 12, "bottom": 12, "left": 12 }, "gap": 0 },
+      "tokens": { "radius": "12", "background": "transparent", "text_style_title": "label-md" },
+      "behavior": { "interactive": true, "collapse_priority": 3 }
+    },
+    "fab": {
+      "id": "fab",
+      "category": "action",
+      "orchestration_type": "fab",
+      "allowed_contexts": ["app","glanceable","minimal-touch"],
+      "states": ["default","pressed"],
+      "slots": { "icon": "icon" },
+      "layout_spec": { "min_width": 56, "min_height": 56, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 0 },
+      "tokens": { "radius": "pill", "background": "primary" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+
+    "switch": {
+      "id": "switch",
+      "category": "selection",
+      "orchestration_type": "button",
+      "allowed_contexts": ["app","focused"],
+      "states": ["off","on","disabled"],
+      "slots": {},
+      "layout_spec": { "min_width": 48, "min_height": 48, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 0 },
+      "tokens": { "radius": "pill", "background": "surface-2" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "checkbox": {
+      "id": "checkbox",
+      "category": "selection",
+      "orchestration_type": "button",
+      "allowed_contexts": ["app","focused"],
+      "states": ["off","on","indeterminate","disabled"],
+      "slots": { "label": "text | optional" },
+      "layout_spec": { "min_width": 48, "min_height": 48, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 8 },
+      "tokens": { "radius": "4", "background": "transparent" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "radio": {
+      "id": "radio",
+      "category": "selection",
+      "orchestration_type": "button",
+      "allowed_contexts": ["app","focused"],
+      "states": ["off","on","disabled"],
+      "slots": { "label": "text | optional" },
+      "layout_spec": { "min_width": 48, "min_height": 48, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 8 },
+      "tokens": { "radius": "pill", "background": "transparent" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "chip": {
+      "id": "chip",
+      "category": "selection",
+      "orchestration_type": "chip",
+      "allowed_contexts": ["app","home","focused","glanceable"],
+      "states": ["default","selected","disabled"],
+      "slots": { "label": "text", "icon": "icon | optional" },
+      "layout_spec": { "min_width": 56, "min_height": 32, "padding": { "top": 6, "right": 12, "bottom": 6, "left": 12 }, "gap": 4 },
+      "tokens": { "radius": "pill", "background": "surface-2", "text_style_title": "label-sm" },
+      "behavior": { "interactive": true, "collapse_priority": 3 }
+    },
+
+    "input": {
+      "id": "input",
+      "category": "input",
+      "orchestration_type": "input",
+      "allowed_contexts": ["app","focused"],
+      "states": ["default","focused","error","disabled"],
+      "slots": { "label": "text | optional", "value": "text", "icon": "icon | optional" },
+      "layout_spec": { "min_width": 200, "min_height": 48, "padding": { "top": 10, "right": 16, "bottom": 10, "left": 16 }, "gap": 4 },
+      "tokens": { "radius": "12", "background": "surface-2", "text_style_value": "body-md" },
+      "behavior": { "interactive": true, "collapse_priority": 1 }
+    },
+    "search": {
+      "id": "search",
+      "category": "input",
+      "orchestration_type": "search-bar",
+      "allowed_contexts": ["app","home","focused"],
+      "states": ["default","focused"],
+      "slots": { "value": "text", "icon": "icon" },
+      "layout_spec": { "min_width": 240, "min_height": 48, "padding": { "top": 10, "right": 16, "bottom": 10, "left": 16 }, "gap": 8 },
+      "tokens": { "radius": "pill", "background": "surface-2", "text_style_value": "body-md" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+
+    "status-bar": {
+      "id": "status-bar",
+      "category": "chrome",
+      "orchestration_type": "status-bar",
+      "allowed_contexts": ["lock","home","app"],
+      "states": ["default","live-activity"],
+      "slots": { "value": "text" },
+      "layout_spec": { "min_width": 360, "min_height": 28, "padding": { "top": 8, "right": 16, "bottom": 8, "left": 16 }, "gap": 4 },
+      "tokens": { "background": "transparent", "text_style_value": "label-xs" },
+      "behavior": { "interactive": false, "collapse_priority": 1 }
+    },
+    "appbar": {
+      "id": "appbar",
+      "category": "chrome",
+      "orchestration_type": "appbar",
+      "allowed_contexts": ["app"],
+      "states": ["default","scrolled"],
+      "slots": { "title": "text", "icon": "icon | optional", "actions": "action-group | optional" },
+      "layout_spec": { "min_width": 360, "min_height": 56, "padding": { "top": 12, "right": 16, "bottom": 12, "left": 16 }, "gap": 12 },
+      "tokens": { "background": "transparent", "text_style_title": "title-md" },
+      "behavior": { "interactive": true, "collapse_priority": 1 }
+    },
+    "bottomnav": {
+      "id": "bottomnav",
+      "category": "chrome",
+      "orchestration_type": "bottomnav",
+      "allowed_contexts": ["app"],
+      "states": ["default"],
+      "slots": { "actions": "action-group" },
+      "layout_spec": { "min_width": 360, "min_height": 56, "padding": { "top": 8, "right": 12, "bottom": 8, "left": 12 }, "gap": 4 },
+      "tokens": { "background": "surface-2", "text_style_title": "label-xs" },
+      "behavior": { "interactive": true, "collapse_priority": 1 }
+    },
+    "pill-tab": {
+      "id": "pill-tab",
+      "category": "navigation",
+      "orchestration_type": "bottomnav",
+      "allowed_contexts": ["app","home","minimal-touch"],
+      "states": ["default"],
+      "slots": { "actions": "action-group" },
+      "layout_spec": { "min_width": 220, "min_height": 56, "padding": { "top": 6, "right": 10, "bottom": 6, "left": 10 }, "gap": 4 },
+      "tokens": { "radius": "pill", "background": "surface-2" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "tab-bar": {
+      "id": "tab-bar",
+      "category": "navigation",
+      "orchestration_type": "tab-bar",
+      "allowed_contexts": ["app"],
+      "states": ["default"],
+      "slots": { "actions": "action-group" },
+      "layout_spec": { "min_width": 240, "min_height": 48, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 0 },
+      "tokens": { "background": "transparent", "text_style_title": "label-md" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+
+    "card": {
+      "id": "card",
+      "category": "container",
+      "orchestration_type": "card",
+      "allowed_contexts": ["app","home","focused"],
+      "states": ["default","hover","pressed"],
+      "slots": { "title": "text", "value": "text | optional", "icon": "icon | optional", "actions": "action-group | optional" },
+      "layout_spec": { "min_width": 160, "min_height": 72, "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 }, "gap": 8 },
+      "tokens": { "radius": "22", "background": "surface-2", "text_style_title": "title-sm", "text_style_value": "body-sm" },
+      "behavior": { "interactive": false, "collapse_priority": 2 }
+    },
+    "list-item": {
+      "id": "list-item",
+      "category": "container",
+      "orchestration_type": "list-item",
+      "allowed_contexts": ["app","focused"],
+      "states": ["default","pressed","selected"],
+      "slots": { "title": "text", "value": "text | optional", "icon": "icon | optional", "actions": "action-group | optional" },
+      "layout_spec": { "min_width": 320, "min_height": 56, "padding": { "top": 12, "right": 16, "bottom": 12, "left": 16 }, "gap": 12 },
+      "tokens": { "background": "transparent", "text_style_title": "body-md", "text_style_value": "label-sm" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "dialog": {
+      "id": "dialog",
+      "category": "overlay",
+      "orchestration_type": "dialog",
+      "allowed_contexts": ["system-dialog"],
+      "states": ["default"],
+      "slots": { "title": "text", "value": "text", "actions": "action-group" },
+      "layout_spec": { "min_width": 280, "min_height": 120, "padding": { "top": 24, "right": 24, "bottom": 16, "left": 24 }, "gap": 8 },
+      "tokens": { "radius": "28", "background": "dialog-surface", "text_style_title": "title-md", "text_style_value": "body-md" },
+      "behavior": { "interactive": true, "collapse_priority": 1 }
+    },
+    "snackbar": {
+      "id": "snackbar",
+      "category": "notification",
+      "orchestration_type": "card",
+      "allowed_contexts": ["app"],
+      "states": ["default"],
+      "slots": { "value": "text", "actions": "action-group | optional" },
+      "layout_spec": { "min_width": 288, "min_height": 48, "padding": { "top": 10, "right": 12, "bottom": 10, "left": 16 }, "gap": 12 },
+      "tokens": { "radius": "16", "background": "surface-3", "text_style_value": "body-sm" },
+      "behavior": { "interactive": true, "collapse_priority": 3 }
+    },
+
+    "divider": {
+      "id": "divider",
+      "category": "primitive",
+      "orchestration_type": "content",
+      "allowed_contexts": ["app","home","lock"],
+      "states": ["default"],
+      "slots": {},
+      "layout_spec": { "min_width": 0, "min_height": 1, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 0 },
+      "tokens": { "background": "divider" },
+      "behavior": { "interactive": false, "collapse_priority": 3 }
+    },
+    "badge": {
+      "id": "badge",
+      "category": "primitive",
+      "orchestration_type": "content",
+      "allowed_contexts": ["app","home","lock"],
+      "states": ["default"],
+      "slots": { "value": "text" },
+      "layout_spec": { "min_width": 16, "min_height": 16, "padding": { "top": 2, "right": 6, "bottom": 2, "left": 6 }, "gap": 0 },
+      "tokens": { "radius": "pill", "background": "error", "text_style_value": "label-xs" },
+      "behavior": { "interactive": false, "collapse_priority": 3 }
+    },
+
+    "now-bar": {
+      "id": "now-bar",
+      "category": "widget",
+      "orchestration_type": "now-bar",
+      "allowed_contexts": ["lock","home","glanceable","driving","minimal-touch"],
+      "states": ["default","compact","glance"],
+      "slots": { "title": "text", "value": "text | optional", "icon": "icon", "actions": "action-group | optional" },
+      "layout_spec": { "min_width": 280, "min_height": 56, "padding": { "top": 8, "right": 12, "bottom": 8, "left": 12 }, "gap": 10 },
+      "tokens": { "radius": "pill", "background": "glass-bg", "text_style_title": "label-md" },
+      "behavior": { "interactive": true, "collapse_priority": 1 }
+    },
+    "qs-toggle": {
+      "id": "qs-toggle",
+      "category": "overlay",
+      "orchestration_type": "qs-toggle",
+      "allowed_contexts": ["quick-settings"],
+      "states": ["off","on"],
+      "slots": { "label": "text", "icon": "icon" },
+      "layout_spec": { "min_width": 64, "min_height": 64, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 4 },
+      "tokens": { "radius": "14", "background": "surface-2", "text_style_title": "label-xs" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "qs-grid": {
+      "id": "qs-grid",
+      "category": "overlay",
+      "orchestration_type": "qs-toggle",
+      "allowed_contexts": ["quick-settings"],
+      "states": ["default"],
+      "slots": { "actions": "action-group" },
+      "layout_spec": { "min_width": 360, "min_height": 220, "padding": { "top": 8, "right": 12, "bottom": 8, "left": 12 }, "gap": 12 },
+      "tokens": { "background": "transparent" },
+      "behavior": { "interactive": true, "collapse_priority": 1 }
+    },
+    "media-card": {
+      "id": "media-card",
+      "category": "media",
+      "orchestration_type": "media-card",
+      "allowed_contexts": ["app","quick-settings","glanceable"],
+      "states": ["default","compact"],
+      "slots": { "title": "text", "value": "text | optional", "icon": "icon", "actions": "action-group" },
+      "layout_spec": { "min_width": 280, "min_height": 140, "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 }, "gap": 12 },
+      "tokens": { "radius": "22", "background": "surface-2", "text_style_title": "title-sm", "text_style_value": "label-sm" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "notification-card": {
+      "id": "notification-card",
+      "category": "notification",
+      "orchestration_type": "notification-card",
+      "allowed_contexts": ["notification-shade","lock","glanceable"],
+      "states": ["default","expanded","compact"],
+      "slots": { "title": "text", "value": "text", "icon": "icon", "actions": "action-group | optional" },
+      "layout_spec": { "min_width": 320, "min_height": 64, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 10 },
+      "tokens": { "radius": "18", "background": "glass-bg", "text_style_title": "label-md", "text_style_value": "body-sm" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "widget-small": {
+      "id": "widget-small",
+      "category": "widget",
+      "orchestration_type": "widget",
+      "allowed_contexts": ["home","lock","glanceable"],
+      "states": ["default"],
+      "slots": { "title": "text | optional", "value": "text", "icon": "icon | optional" },
+      "layout_spec": { "min_width": 96, "min_height": 96, "padding": { "top": 10, "right": 10, "bottom": 10, "left": 10 }, "gap": 4 },
+      "tokens": { "radius": "16", "background": "glass-bg", "text_style_value": "title-sm" },
+      "behavior": { "interactive": true, "collapse_priority": 2 }
+    },
+    "keyboard": {
+      "id": "keyboard",
+      "category": "chrome",
+      "orchestration_type": "content",
+      "allowed_contexts": ["app"],
+      "states": ["default"],
+      "slots": {},
+      "layout_spec": { "min_width": 360, "min_height": 260, "padding": { "top": 6, "right": 3, "bottom": 12, "left": 3 }, "gap": 4 },
+      "tokens": { "background": "surface-3" },
+      "behavior": { "interactive": true, "collapse_priority": 1 }
+    },
+
+    "eta_card": {
+      "id": "eta_card",
+      "category": "info-card",
+      "orchestration_type": "card",
+      "allowed_contexts": ["driving","glanceable","quick-view"],
+      "states": ["default","compact","glance"],
+      "slots": { "title": "text", "value": "text", "icon": "icon" },
+      "layout_spec": { "min_width": 160, "min_height": 72, "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 }, "gap": 8 },
+      "tokens": { "radius": "medium", "background": "surface-primary", "text_style_title": "label-sm", "text_style_value": "headline-md" },
+      "behavior": { "interactive": false, "collapse_priority": 1 },
+      "_status": "planned — not yet rendered by genui.html"
+    },
+    "message_summary_card": {
+      "id": "message_summary_card",
+      "category": "info-card",
+      "orchestration_type": "card",
+      "allowed_contexts": ["driving","glanceable","quick-view"],
+      "states": ["default","compact","glance"],
+      "slots": { "title": "text", "value": "text", "icon": "icon" },
+      "layout_spec": { "min_width": 200, "min_height": 64, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
+      "tokens": { "radius": "medium", "background": "surface-primary", "text_style_title": "label-sm", "text_style_value": "body-md" },
+      "behavior": { "interactive": true, "collapse_priority": 2 },
+      "_status": "planned — not yet rendered by genui.html"
+    },
+    "media_control_bar": {
+      "id": "media_control_bar",
+      "category": "media",
+      "orchestration_type": "card",
+      "allowed_contexts": ["driving","glanceable","minimal-touch","quick-view"],
+      "states": ["default","compact"],
+      "slots": { "title": "text", "value": "text | optional", "icon": "icon", "actions": "action-group" },
+      "layout_spec": { "min_width": 240, "min_height": 64, "padding": { "top": 10, "right": 12, "bottom": 10, "left": 12 }, "gap": 12 },
+      "tokens": { "radius": "pill", "background": "surface-primary", "text_style_title": "label-md" },
+      "behavior": { "interactive": true, "collapse_priority": 3 },
+      "_status": "planned — not yet rendered by genui.html"
+    }
+  },
+
+  "vocabulary": {
+    "note": "component_planner (step_3) must select component_type ONLY from this list.",
+    "allowed_types": [
+      "btn-contained","btn-outlined","btn-flat","fab",
+      "switch","checkbox","radio","chip",
+      "input","search",
+      "status-bar","appbar","bottomnav","pill-tab","tab-bar",
+      "card","list-item","dialog","snackbar",
+      "divider","badge",
+      "now-bar","qs-toggle","qs-grid","media-card","notification-card","widget-small","keyboard",
+      "eta_card","message_summary_card","media_control_bar"
+    ]
+  }
+}

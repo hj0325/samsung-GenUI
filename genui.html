@@ -1042,7 +1042,9 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
               <input id="genPrompt" type="text" style="width:100%;height:40px;border-radius:12px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:13px;padding:0 12px;" placeholder="Describe a screen to generate...">
             </div>
             <button class="topbar-btn primary" style="height:40px;padding:0 18px;font-size:13px;white-space:nowrap;" onclick="generateFromPrompt()">&#10024; Generate</button>
+            <button class="topbar-btn" style="height:40px;padding:0 14px;font-size:12px;white-space:nowrap;" title="Run genui_pipeline_v1 (interpret → ui_state → plan → compose → validate → explain)" onclick="pipelineGenerate()">&#9881; Pipeline</button>
           </div>
+          <div id="pipelineOutput" style="display:none;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--divider);font-size:11px;line-height:1.5;color:var(--text-2);max-height:240px;overflow:auto;"></div>
         </div>
 
         <!-- Hidden options for backward compat -->
@@ -1557,6 +1559,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
   </div>
 </div>
 
+<script src="ui-state.js"></script>
 <script>
 // === STATE ===
 let selectedItems = new Set();
@@ -2571,6 +2574,7 @@ function applyColor(color) {
 // === WALLPAPER ===
 const wallpapers = {
   'none': '#171717',
+  'dialog-surface': '#1c1c1e',
   'wp-1': "url('wallpapers/1.png') center/cover no-repeat",
   'wp-2': "url('wallpapers/2.png') center/cover no-repeat",
   'wp-3': "url('wallpapers/3.png') center/cover no-repeat",
@@ -2583,10 +2587,23 @@ const wallpapers = {
   'galaxy-night': 'linear-gradient(180deg,#020810 0%,#0a1428 40%,#0d1e3a 60%,#060e1e 100%)',
   'galaxy-abstract': 'linear-gradient(135deg,#0a0a1e 0%,#1428a0 30%,#0381fe 50%,#64e9e3 70%,#0a1428 100%)',
 };
-function setWallpaper(name) {
+// Tracks the user's last deliberately-chosen wallpaper, so that when a scenario
+// swaps in 'solid-dark' / 'dialog-surface' we can restore the real pick on
+// home/lockscreen scenarios.
+let userWallpaperChoice = 'wp-1';
+// 'dialog-surface' is a system-only entry; 'galaxy-night' is user-selectable
+// too, so we rely on the `system:true` flag (not the name) to decide whether
+// a swap should update userWallpaperChoice.
+const SYSTEM_WALLPAPERS = new Set(['dialog-surface']);
+
+function setWallpaper(name, opts) {
   const frame = document.getElementById('canvasFrame');
   document.querySelectorAll('.wp-thumb').forEach(t => t.classList.remove('active'));
   if (typeof event !== 'undefined' && event.currentTarget) event.currentTarget.classList.add('active');
+  // Remember user-driven picks; ignore system swaps triggered by the resolver.
+  if (!(opts && opts.system) && !SYSTEM_WALLPAPERS.has(name)) {
+    userWallpaperChoice = name;
+  }
   const bg = wallpapers[name];
   // Use individual properties so size/position/repeat stay correct
   if (bg.startsWith('url')) {
@@ -2761,6 +2778,161 @@ function previewMotion() {
 }
 
 // === CLEAR ===
+// ============================================================================
+//  GENUI PIPELINE v1 — client-side renderer (step_F)
+//  ---------------------------------------------------------------------------
+//  Takes the response of POST /api/pipeline/full and renders it onto the
+//  canvas using the existing `templates` object + substitutes content slots.
+//  Also applies the resolved ui_state background via UIState.
+// ============================================================================
+
+// Fallback templates for registry entries that don't yet have a render in `templates`.
+// These are the "planned" ids from component_registry.json.
+const PIPELINE_FALLBACK_TEMPLATES = {
+  'eta_card': (content) => `<div class="oui-card" style="display:flex;align-items:center;gap:12px;">
+    <div style="font-size:28px;">&#128663;</div>
+    <div style="flex:1;">
+      <div class="oui-card-title" style="font-size:12px;color:var(--text-3);" contenteditable="true">${content.label || 'ETA'}</div>
+      <div style="font-size:28px;font-weight:700;color:#fff;" contenteditable="true">${content.value || '--'}</div>
+    </div></div>`,
+  'message_summary_card': (content) => `<div class="oui-card" style="display:flex;align-items:center;gap:12px;">
+    <div style="font-size:22px;">&#128172;</div>
+    <div style="flex:1;min-width:0;">
+      <div class="oui-card-title" style="font-size:11px;color:var(--text-3);" contenteditable="true">${content.label || 'Message'}</div>
+      <div class="oui-card-desc" style="font-size:15px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" contenteditable="true">${content.value || '...'}</div>
+    </div></div>`,
+  'media_control_bar': (content) => `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:999px;background:var(--surface-2);border:1px solid rgba(255,255,255,0.06);">
+    <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#1a0a3e,#5a2a8e);display:flex;align-items:center;justify-content:center;font-size:18px;">&#127925;</div>
+    <div style="flex:1;min-width:0;font-size:13px;" contenteditable="true">${content.value || content.label || 'Now Playing'}</div>
+    <span style="font-size:16px;color:var(--text-2);cursor:pointer;">&#9198;</span>
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;">&#9654;</div>
+    <span style="font-size:16px;color:var(--text-2);cursor:pointer;">&#9197;</span></div>`
+};
+
+function pipelineRenderChild(child) {
+  const type = child.component_id;
+  const content = child.content || {};
+  let html;
+  if (templates[type]) {
+    html = templates[type]();
+  } else if (PIPELINE_FALLBACK_TEMPLATES[type]) {
+    html = PIPELINE_FALLBACK_TEMPLATES[type](content);
+    // Substitution for non-fallback templates is best-effort (they use hard-coded sample text).
+  } else {
+    html = `<div class="oui-card"><div class="oui-card-title">${type}</div><div class="oui-card-desc">(no template registered)</div></div>`;
+  }
+  // Best-effort content injection for core templates (title/value)
+  if (templates[type] && content && (content.label || content.value)) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const title = tmp.querySelector('.oui-card-title, .oui-appbar-title, .oui-list-title, .oui-dialog-title');
+    const body  = tmp.querySelector('.oui-card-desc, .oui-list-sub, .oui-dialog-body');
+    if (title && content.label) title.textContent = content.label;
+    if (body  && content.value) body.textContent  = content.value;
+    html = tmp.innerHTML;
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'canvas-item full-width';
+  wrapper.id = 'pipeline-item-' + (++itemCounter);
+  wrapper.dataset.compType = type;
+  wrapper.dataset.pipelineSlot    = child.slot || '';
+  wrapper.dataset.pipelineVariant = child.variant || '';
+  wrapper.dataset.pipelinePriority = String(child.priority || 2);
+  wrapper.innerHTML = html;
+  wrapper.setAttribute('draggable','true');
+  wrapper.addEventListener('click', (e) => toggleSelect(wrapper, e));
+  initDrag(wrapper);
+  return wrapper;
+}
+
+function renderPipelineResponse(resp) {
+  const canvas = document.getElementById('canvas');
+  const frame  = document.getElementById('canvasFrame');
+  const output = document.getElementById('pipelineOutput');
+
+  // (1) Background: apply resolved ui_state → decision → frame
+  if (window.UIState && resp.ui_state) {
+    const decision = {
+      showWallpaper: (resp.ui_state.backgroundPolicy === 'wallpaper' ||
+                      resp.ui_state.backgroundPolicy === 'scrim-over-wallpaper'),
+      backgroundPolicy: resp.ui_state.backgroundPolicy
+    };
+    window.UIState.applyDecisionToFrame(frame, decision, resp.ui_state);
+    // Also swap the wallpaper visual per the policy (reuse existing swap logic)
+    const target = (decision.backgroundPolicy === 'dialog-surface') ? 'dialog-surface'
+                 : decision.showWallpaper ? userWallpaperChoice
+                 : 'galaxy-night';
+    if (typeof setWallpaper === 'function') setWallpaper(target, { system: true });
+  }
+
+  // (2) Canvas: clear + apply layout_plan padding/gap + render children
+  clearCanvas();
+  canvas.style.display = 'flex';
+  canvas.style.flexDirection = 'column';
+  canvas.style.alignItems = 'stretch';
+  const lp = resp.layout_plan || {};
+  canvas.style.gap = (lp.gap ?? 12) + 'px';
+  const pad = lp.padding || { top:16, right:16, bottom:16, left:16 };
+  canvas.style.padding = `${pad.top}px ${pad.right}px ${pad.bottom}px ${pad.left}px`;
+
+  (lp.children || []).forEach((child, i) => {
+    const el = pipelineRenderChild(child);
+    el.style.animation = `fadeIn 300ms cubic-bezier(0.2,0,0,1) ${i * 40}ms backwards`;
+    canvas.appendChild(el);
+  });
+
+  // (3) Output panel: ui_state chip + explanation + violations
+  if (output) {
+    const st = resp.ui_state || {};
+    const ex = resp.explanation || {};
+    const pv = resp.plan_validation || {};
+    const lv = resp.layout_validation || {};
+    const chips = [
+      st.baseSurface && `surface:${st.baseSurface}`,
+      st.overlayType && st.overlayType !== 'none' && `overlay:${st.overlayType}`,
+      st.attentionMode && `attn:${st.attentionMode}`,
+      st.densityMode && `density:${st.densityMode}`,
+      st.interactionMode && `int:${st.interactionMode}`,
+      st.backgroundPolicy && `bg:${st.backgroundPolicy}`
+    ].filter(Boolean).map(t => `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(3,129,254,0.15);color:#3E91FF;font-size:10px;margin:0 4px 4px 0;">${t}</span>`).join('');
+    const bullet = arr => (arr && arr.length) ? arr.map(s => `<li>${s}</li>`).join('') : '<li style="color:var(--text-3);">—</li>';
+    const violationsCount = (pv.errors?.length || 0) + (lv.summary?.total || 0);
+    output.innerHTML = `
+      <div style="margin-bottom:6px;">${chips}</div>
+      <div style="color:#fff;font-weight:600;margin-bottom:4px;">Why this UI</div>
+      <div style="margin-bottom:8px;">${ex.why_this_ui || '—'}</div>
+      <div style="color:#fff;font-weight:600;margin-top:8px;">Prioritized</div>
+      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(ex.what_was_prioritized)}</ul>
+      <div style="color:#fff;font-weight:600;margin-top:8px;">Collapsed / removed</div>
+      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(ex.what_was_removed_or_collapsed)}</ul>
+      <div style="color:#fff;font-weight:600;margin-top:8px;">Should fix (${violationsCount})</div>
+      <ul style="margin:4px 0 0 16px;padding:0;">${bullet(ex.what_should_be_fixed)}</ul>`;
+    output.style.display = 'block';
+  }
+}
+
+async function pipelineGenerate() {
+  const prompt = document.getElementById('genPrompt').value.trim();
+  if (!prompt) { alert('Enter a scenario first.'); return; }
+  const output = document.getElementById('pipelineOutput');
+  if (output) { output.style.display='block'; output.innerHTML = '<div style="color:var(--text-3);">Running pipeline… (interpret → ui_state → plan → compose → validate → explain)</div>'; }
+  try {
+    const resp = await fetch('/api/pipeline/full', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario_text: prompt })
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    renderPipelineResponse(data);
+  } catch (e) {
+    console.error('[pipeline]', e);
+    if (output) output.innerHTML = `<div style="color:#ff6b6b;">Pipeline failed: ${e.message}</div>`;
+  }
+}
+
 function clearCanvas() {
   const canvas = document.getElementById('canvas');
   canvas.innerHTML = '';
@@ -3211,23 +3383,32 @@ const promptMap = {
   'keyboard': 'keyboard', '키보드': 'keyboard', 'type': 'keyboard', '타이핑': 'keyboard',
 };
 
-// Scenarios that happen on the home/launcher surface → keep wallpaper behind.
-// Scenarios that are "inside an app" → plain/opaque surface (no wallpaper bleed).
-const WALLPAPER_SCENARIOS = new Set(['home','lockscreen']);
-
+// Background policy is resolved by window.UIState (see ui-state.js) and then
+// realised by *swapping the active wallpaper*:
+//   - lock / home surfaces   → user's chosen wallpaper
+//   - app surfaces           → 'galaxy-night' wallpaper
+//   - shades over app        → 'galaxy-night' + scrim handled elsewhere
+//   - shades over lock/home  → user's wallpaper + scrim
+//   - system-dialog          → 'dialog-surface' wallpaper
 function applyScenarioBackground(scenarioKey) {
   const frame = document.getElementById('canvasFrame');
   if (!frame) return;
-  const showWallpaper = WALLPAPER_SCENARIOS.has(scenarioKey);
-  if (showWallpaper) {
-    // Restore whatever wallpaper is currently selected (CSS default handles it).
-    frame.style.backgroundImage = '';
-    frame.style.backgroundColor = '';
-  } else {
-    // App-internal scene: suppress wallpaper, use plain dark surface.
-    frame.style.backgroundImage = 'none';
-    frame.style.backgroundColor = 'var(--canvas-bg-dark, #010102)';
-  }
+  const decision = (window.UIState && window.UIState.decisionForScenario)
+    ? window.UIState.decisionForScenario(scenarioKey)
+    : { showWallpaper: (scenarioKey === 'home' || scenarioKey === 'lockscreen'),
+        backgroundPolicy: (scenarioKey === 'home' || scenarioKey === 'lockscreen') ? 'wallpaper' : 'solid-dark' };
+
+  // Mirror decision onto the frame as data-attrs (for any CSS hooks).
+  frame.dataset.bgPolicy      = decision.backgroundPolicy;
+  frame.dataset.showWallpaper = decision.showWallpaper ? 'true' : 'false';
+
+  // Pick the wallpaper that represents this decision.
+  let target;
+  if (decision.backgroundPolicy === 'dialog-surface') target = 'dialog-surface';
+  else if (decision.showWallpaper)                    target = userWallpaperChoice;
+  else                                                target = 'galaxy-night';
+
+  setWallpaper(target, { system: true });
 }
 
 function generateScenario(scenarioKey) {

@@ -1,6 +1,9 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const pipeline = require('./pipeline');           // genui_pipeline_v1 step_1 + step_3
+const UIState = require('./ui-state.js') || (global.UIState);  // step_2 resolver (Node CJS export)
+const composer = require('./layout_composer');    // genui_pipeline_v1 step_5 + pipeline validators
 
 // --- Load .env ---
 const envPath = path.join(__dirname, '.env');
@@ -946,6 +949,169 @@ const server = http.createServer(async (req, res) => {
   }
 
   const url = req.url.split('?')[0];
+
+  // ── genui_pipeline_v1 endpoint ──────────────────────────────────────────
+  // POST /api/pipeline/plan
+  // body: { scenario_text: string, user_context?: {...}, scenario_key?: string }
+  // returns: { interpretation, ui_state, plan, validation }
+  if (url === '/api/pipeline/plan' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const scenarioText = body.scenario_text || body.prompt || '';
+      const userContext  = body.user_context || {};
+      const scenarioKey  = body.scenario_key || null;
+
+      // Step 2: resolve ui_state via ui-state.js (Node CJS export)
+      let uiState;
+      if (scenarioKey && UIState && UIState.resolveForScenario) {
+        uiState = UIState.resolveForScenario(scenarioKey, userContext);
+      } else if (UIState && UIState.resolveUIState) {
+        // Fallback: assume app surface if no scenario_key provided
+        uiState = UIState.resolveUIState(
+          { baseSurface: 'app', homeSubstate: 'none', overlayType: 'none', overlayCoverage: 'none', windowMode: 'single' },
+          userContext
+        );
+      } else {
+        throw new Error('UIState resolver unavailable');
+      }
+
+      // Step 1 + Step 3: interpret + plan (driven by OpenAI)
+      const result = await pipeline.runPlan({
+        scenarioText,
+        uiState,
+        llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
+      });
+
+      console.log(`[Pipeline] plan for "${scenarioText.substring(0,50)}" → ${result.plan?.required_components?.length ?? 0} components, validation:${result.validation.ok ? 'ok' : 'FAIL'}`);
+      sendJSON(res, 200, result);
+    } catch (e) {
+      console.error('[Pipeline] error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // POST /api/pipeline/compose
+  // End-to-end: steps 1 → 3 → 5 + pipeline validators. Same body as /plan.
+  // returns: { interpretation, ui_state, plan, plan_validation, layout_plan, layout_validation }
+  if (url === '/api/pipeline/compose' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const scenarioText = body.scenario_text || body.prompt || '';
+      const userContext  = body.user_context || {};
+      const scenarioKey  = body.scenario_key || null;
+      const viewport     = body.viewport || null;
+
+      // Step 2
+      let uiState;
+      if (scenarioKey && UIState && UIState.resolveForScenario) {
+        uiState = UIState.resolveForScenario(scenarioKey, userContext);
+      } else {
+        uiState = UIState.resolveUIState(
+          { baseSurface: 'app', homeSubstate: 'none', overlayType: 'none', overlayCoverage: 'none', windowMode: 'single' },
+          userContext
+        );
+      }
+
+      // Step 1 + Step 3
+      const planResult = await pipeline.runPlan({
+        scenarioText,
+        uiState,
+        llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
+      });
+
+      // Step 5 + pipeline validators
+      const composeResult = composer.runCompose({
+        uiState,
+        requiredComponents: planResult.plan?.required_components || [],
+        opts: { viewport }
+      });
+
+      console.log(`[Pipeline] compose for "${scenarioText.substring(0,50)}" → ${composeResult.layout_plan.children.length} children, layout violations:${composeResult.validation.summary.total}`);
+      sendJSON(res, 200, {
+        interpretation:    planResult.interpretation,
+        ui_state:          planResult.ui_state,
+        plan:              planResult.plan,
+        plan_validation:   planResult.validation,
+        layout_plan:       composeResult.layout_plan,
+        layout_validation: composeResult.validation
+      });
+    } catch (e) {
+      console.error('[Pipeline] compose error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // POST /api/pipeline/full
+  // End-to-end including explanation layer (step_7).
+  // returns: { interpretation, ui_state, plan, plan_validation,
+  //            layout_plan, layout_validation, explanation }
+  if (url === '/api/pipeline/full' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const scenarioText = body.scenario_text || body.prompt || '';
+      const userContext  = body.user_context || {};
+      const scenarioKey  = body.scenario_key || null;
+      const viewport     = body.viewport || null;
+
+      // Step 2
+      let uiState;
+      if (scenarioKey && UIState && UIState.resolveForScenario) {
+        uiState = UIState.resolveForScenario(scenarioKey, userContext);
+      } else {
+        uiState = UIState.resolveUIState(
+          { baseSurface: 'app', homeSubstate: 'none', overlayType: 'none', overlayCoverage: 'none', windowMode: 'single' },
+          userContext
+        );
+      }
+
+      // Steps 1 + 3
+      const planResult = await pipeline.runPlan({
+        scenarioText,
+        uiState,
+        llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
+      });
+
+      // Step 5 + 6
+      const composeResult = composer.runCompose({
+        uiState,
+        requiredComponents: planResult.plan?.required_components || [],
+        opts: { viewport }
+      });
+
+      // Merge plan + layout validation for the explanation input
+      const combinedValidation = {
+        plan: planResult.validation,
+        layout: composeResult.validation
+      };
+
+      // Step 7
+      const explanation = await pipeline.runExplain({
+        scenarioText,
+        uiState,
+        plan: planResult.plan,
+        layoutPlan: composeResult.layout_plan,
+        validation: combinedValidation,
+        llmCall: (sys, user) => callOpenAI(sys, user, 0.4)
+      });
+
+      console.log(`[Pipeline] full for "${scenarioText.substring(0,50)}" → components:${composeResult.layout_plan.children.length} layout_violations:${composeResult.validation.summary.total} explained:${!!explanation}`);
+      sendJSON(res, 200, {
+        interpretation:    planResult.interpretation,
+        ui_state:          planResult.ui_state,
+        plan:              planResult.plan,
+        plan_validation:   planResult.validation,
+        layout_plan:       composeResult.layout_plan,
+        layout_validation: composeResult.validation,
+        explanation
+      });
+    } catch (e) {
+      console.error('[Pipeline] full error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
 
   // API routes
   if (url === '/api/agent/generate' && req.method === 'POST') {
