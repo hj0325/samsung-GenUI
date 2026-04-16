@@ -419,7 +419,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .oui-list-sub { font-size:12px; color:var(--text-3); }
 .oui-appbar { width:100%; height:56px; display:flex; align-items:center; padding:0 12px; gap:8px; background:rgba(255,255,255,0.03); border-radius:0; }
 .oui-appbar-title { font-size:18px; font-weight:600; flex:1; }
-.oui-bottomnav { width:100%; height:56px; display:flex; align-items:center; justify-content:space-around; background:rgba(255,255,255,0.03); border-top:0.5px solid rgba(255,255,255,0.06); border-radius:0; }
+.oui-bottomnav { width:100%; height:56px; display:flex; align-items:center; justify-content:space-around; background:rgba(255,255,255,0.03); border-top:0.5px solid rgba(255,255,255,0.06); border-radius:0; margin-top:auto; flex-shrink:0; }
 .oui-bottomnav-item { display:flex; flex-direction:column; align-items:center; gap:2px; font-size:10px; color:var(--text-3); }
 .oui-bottomnav-item.active { color:var(--primary); }
 .oui-pill-tab { display:inline-flex; align-items:center; gap:4px; background:rgba(255,255,255,0.08); backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,0.12); border-radius:999px; padding:6px 8px; }
@@ -1560,6 +1560,8 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 </div>
 
 <script src="ui-state.js"></script>
+<script src="generator.js"></script>
+<script src="design_memory.js"></script>
 <script>
 // === STATE ===
 let selectedItems = new Set();
@@ -1869,6 +1871,12 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
   showVariantBar();
   const v = activeVariant; // only generate for the active variant
   const payload = StateManager.getGeneratePayload(scenarioHint, prompt);
+
+  // Apply scenario-driven background BEFORE LLM call so the frame doesn't
+  // retain the previous scenario's wallpaper while the user waits.
+  if (scenarioHint && typeof applyScenarioBackground === 'function') {
+    applyScenarioBackground(scenarioHint);
+  }
 
   showAgentLoading(`Generating Variant ${v}...`);
 
@@ -2910,7 +2918,8 @@ function renderPipelineResponse(resp) {
   const validation = resp.validation || { summary: {}, violations: [] };
   const explanation = resp.explanation || {};
 
-  // (1) Background from canonical uiState
+  // (1) Background from canonical uiState — Generator resolves 3-layer model
+  //     (wallpaper / app-bg / focus-block) per One UI 4+ guidelines.
   if (window.UIState && uiState.backgroundPolicy) {
     const decision = {
       showWallpaper: (uiState.backgroundPolicy === 'wallpaper' ||
@@ -2918,10 +2927,12 @@ function renderPipelineResponse(resp) {
       backgroundPolicy: uiState.backgroundPolicy
     };
     window.UIState.applyDecisionToFrame(frame, decision, uiState);
-    const target = (decision.backgroundPolicy === 'dialog-surface') ? 'dialog-surface'
-                 : decision.showWallpaper ? userWallpaperChoice
-                 : 'galaxy-night';
-    if (typeof setWallpaper === 'function') setWallpaper(target, { system: true });
+
+    const layers = window.Generator
+      ? window.Generator.resolveLayers(uiState, { theme: 'dark' })
+      : null;
+    // Force wallpaper=none for all generated scenarios (flat dark canvas)
+    if (typeof setWallpaper === 'function') setWallpaper('none', { system: true });
   }
 
   // (2) Canvas: walk canonical groups[].children[]
@@ -2959,6 +2970,12 @@ function renderPipelineResponse(resp) {
       groupEl.appendChild(el);
       renderedIndex++;
     });
+
+    // One UI guideline: bottom navigation must always anchor to screen bottom
+    if (groupEl.querySelector('.oui-bottomnav')) {
+      groupEl.style.marginTop = 'auto';
+      groupEl.style.flexShrink = '0';
+    }
 
     if (groupEl.children.length > 0) canvas.appendChild(groupEl);
   });
@@ -3483,13 +3500,20 @@ function applyScenarioBackground(scenarioKey) {
   frame.dataset.bgPolicy      = decision.backgroundPolicy;
   frame.dataset.showWallpaper = decision.showWallpaper ? 'true' : 'false';
 
-  // Pick the wallpaper that represents this decision.
-  let target;
-  if (decision.backgroundPolicy === 'dialog-surface') target = 'dialog-surface';
-  else if (decision.showWallpaper)                    target = userWallpaperChoice;
-  else                                                target = 'galaxy-night';
+  // Generator picks the wallpaper asset from the resolved 3-layer model.
+  // Layer ① (wallpaper) → user's pick; Layer ② (app-bg) → galaxy-night;
+  // dialog-surface is an isolated system surface.
+  const resolved = (window.UIState && window.UIState.resolveForScenario)
+    ? window.UIState.resolveForScenario(scenarioKey)
+    : { baseSurface: (scenarioKey === 'lockscreen') ? 'lock'
+                   : (scenarioKey === 'home')       ? 'home' : 'app',
+        overlayType: 'none', backgroundPolicy: decision.backgroundPolicy };
+  const layers = window.Generator
+    ? window.Generator.resolveLayers(resolved, { theme: 'dark' })
+    : null;
 
-  setWallpaper(target, { system: true });
+  // Force wallpaper=none for all generated scenarios (flat dark canvas)
+  setWallpaper('none', { system: true });
 }
 
 function generateScenario(scenarioKey) {
@@ -3569,6 +3593,12 @@ function generateScenario(scenarioKey) {
     // Full-width for appropriate types
     if (comp.type && fullWidthTypes.has(comp.type)) wrapper.classList.add('full-width');
     if (comp.type === 'custom') wrapper.classList.add('full-width');
+
+    // One UI guideline: bottom navigation must always anchor to the bottom
+    if (wrapper.querySelector('.oui-bottomnav') || comp.type === 'bottomnav') {
+      wrapper.style.marginTop = 'auto';
+      wrapper.style.flexShrink = '0';
+    }
 
     wrapper.setAttribute('draggable', 'true');
     initDrag(wrapper);
@@ -3801,7 +3831,7 @@ function setBrand(brand, btn) {
     el.style.cssText = theme.navStyle + 'border-radius:999px;display:inline-flex;align-items:center;gap:4px;padding:6px 8px;';
   });
   canvas.querySelectorAll('.oui-bottomnav').forEach(el => {
-    el.style.cssText = theme.navStyle + 'width:100%;height:56px;display:flex;align-items:center;justify-content:space-around;border-radius:0;';
+    el.style.cssText = theme.navStyle + 'width:100%;height:56px;display:flex;align-items:center;justify-content:space-around;border-radius:0;margin-top:auto;flex-shrink:0;';
   });
   canvas.querySelectorAll('.oui-appbar').forEach(el => {
     el.style.cssText = theme.navStyle.replace('border-top','border-bottom') + 'width:100%;height:56px;display:flex;align-items:center;padding:0 12px;gap:8px;border-radius:0;';

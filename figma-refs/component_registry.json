@@ -2,461 +2,3636 @@
   "version": "0.1.0",
   "description": "Executable component registry for genui_pipeline_v1 step_4. Each entry is a JSON spec (NOT markdown). Only component_type names listed here are valid for the component_planner — LLM must not invent new ones. Vocabulary aligned with figma-refs/orchestration_rules.json (fromType/toType).",
   "source_note": "v0 extracted from genui.html `templates` object. layout_spec/tokens are best-effort defaults; tokens map to DESIGN.md semantic tokens (to be reconciled).",
-
   "categories": {
-    "action":       "User-triggered operations (buttons, FABs).",
-    "selection":    "Toggleable/choice inputs (switch, checkbox, radio, chip).",
-    "input":        "Text entry and search.",
-    "chrome":       "Persistent system chrome (status bar, app bar, bottom nav, tab bar).",
-    "container":    "Surface that wraps content (card, list-item, dialog, snackbar).",
-    "info-card":    "Glanceable single-purpose card (eta_card, message_summary_card).",
-    "media":        "Playback / preview surfaces (media-card, media_control_bar).",
+    "action": "User-triggered operations (buttons, FABs).",
+    "selection": "Toggleable/choice inputs (switch, checkbox, radio, chip).",
+    "input": "Text entry and search.",
+    "chrome": "Persistent system chrome (status bar, app bar, bottom nav, tab bar).",
+    "container": "Surface that wraps content (card, list-item, dialog, snackbar).",
+    "info-card": "Glanceable single-purpose card (eta_card, message_summary_card).",
+    "media": "Playback / preview surfaces (media-card, media_control_bar).",
     "notification": "Transient messages from apps/system.",
-    "widget":       "Home/lock-surface micro apps.",
-    "overlay":      "Quick Settings, notification shade, system dialog.",
-    "navigation":   "Pill tab, bottom nav, tab bar.",
-    "primitive":    "Divider, badge, decoration."
+    "widget": "Home/lock-surface micro apps.",
+    "overlay": "Quick Settings, notification shade, system dialog.",
+    "navigation": "Pill tab, bottom nav, tab bar.",
+    "primitive": "Divider, badge, decoration."
   },
-
   "components": {
     "btn-contained": {
       "id": "btn-contained",
       "category": "action",
       "orchestration_type": "button",
-      "allowed_contexts": ["app","home","lock","driving","glanceable","focused"],
-      "states": ["default","pressed","disabled"],
-      "slots": { "label": "text" },
-      "layout_spec": { "min_width": 64, "min_height": 48, "padding": { "top": 12, "right": 16, "bottom": 12, "left": 16 }, "gap": 0 },
-      "tokens": { "radius": "16", "background": "primary", "text_style_title": "label-md" },
-      "behavior": { "interactive": true, "collapse_priority": 1 }
+      "allowed_contexts": [
+        "app",
+        "home",
+        "lock",
+        "driving",
+        "glanceable",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "pressed",
+        "disabled"
+      ],
+      "slots": {
+        "label": "text"
+      },
+      "layout_spec": {
+        "min_width": 64,
+        "min_height": 48,
+        "padding": {
+          "top": 12,
+          "right": 16,
+          "bottom": 12,
+          "left": 16
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "16",
+        "background": "primary",
+        "text_style_title": "label-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
     },
     "btn-outlined": {
       "id": "btn-outlined",
       "category": "action",
       "orchestration_type": "button",
-      "allowed_contexts": ["app","home","focused"],
-      "states": ["default","pressed","disabled"],
-      "slots": { "label": "text" },
-      "layout_spec": { "min_width": 64, "min_height": 48, "padding": { "top": 12, "right": 16, "bottom": 12, "left": 16 }, "gap": 0 },
-      "tokens": { "radius": "16", "background": "transparent", "text_style_title": "label-md" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "home",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "pressed",
+        "disabled"
+      ],
+      "slots": {
+        "label": "text"
+      },
+      "layout_spec": {
+        "min_width": 64,
+        "min_height": 48,
+        "padding": {
+          "top": 12,
+          "right": 16,
+          "bottom": 12,
+          "left": 16
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "16",
+        "background": "transparent",
+        "text_style_title": "label-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "btn-flat": {
       "id": "btn-flat",
       "category": "action",
       "orchestration_type": "button",
-      "allowed_contexts": ["app","dialog","focused"],
-      "states": ["default","pressed","disabled"],
-      "slots": { "label": "text" },
-      "layout_spec": { "min_width": 48, "min_height": 48, "padding": { "top": 12, "right": 12, "bottom": 12, "left": 12 }, "gap": 0 },
-      "tokens": { "radius": "12", "background": "transparent", "text_style_title": "label-md" },
-      "behavior": { "interactive": true, "collapse_priority": 3 }
+      "allowed_contexts": [
+        "app",
+        "dialog",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "pressed",
+        "disabled"
+      ],
+      "slots": {
+        "label": "text"
+      },
+      "layout_spec": {
+        "min_width": 48,
+        "min_height": 48,
+        "padding": {
+          "top": 12,
+          "right": 12,
+          "bottom": 12,
+          "left": 12
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "12",
+        "background": "transparent",
+        "text_style_title": "label-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
     },
     "fab": {
       "id": "fab",
       "category": "action",
       "orchestration_type": "fab",
-      "allowed_contexts": ["app","glanceable","minimal-touch"],
-      "states": ["default","pressed"],
-      "slots": { "icon": "icon" },
-      "layout_spec": { "min_width": 56, "min_height": 56, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 0 },
-      "tokens": { "radius": "pill", "background": "primary" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "glanceable",
+        "minimal-touch"
+      ],
+      "states": [
+        "default",
+        "pressed"
+      ],
+      "slots": {
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 56,
+        "min_height": 56,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "primary"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
-
     "switch": {
       "id": "switch",
       "category": "selection",
       "orchestration_type": "button",
-      "allowed_contexts": ["app","focused"],
-      "states": ["off","on","disabled"],
+      "allowed_contexts": [
+        "app",
+        "focused"
+      ],
+      "states": [
+        "off",
+        "on",
+        "disabled"
+      ],
       "slots": {},
-      "layout_spec": { "min_width": 48, "min_height": 48, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 0 },
-      "tokens": { "radius": "pill", "background": "surface-2" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "layout_spec": {
+        "min_width": 48,
+        "min_height": 48,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "surface-2"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "checkbox": {
       "id": "checkbox",
       "category": "selection",
       "orchestration_type": "button",
-      "allowed_contexts": ["app","focused"],
-      "states": ["off","on","indeterminate","disabled"],
-      "slots": { "label": "text | optional" },
-      "layout_spec": { "min_width": 48, "min_height": 48, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 8 },
-      "tokens": { "radius": "4", "background": "transparent" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "focused"
+      ],
+      "states": [
+        "off",
+        "on",
+        "indeterminate",
+        "disabled"
+      ],
+      "slots": {
+        "label": "text | optional"
+      },
+      "layout_spec": {
+        "min_width": 48,
+        "min_height": 48,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "4",
+        "background": "transparent"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "radio": {
       "id": "radio",
       "category": "selection",
       "orchestration_type": "button",
-      "allowed_contexts": ["app","focused"],
-      "states": ["off","on","disabled"],
-      "slots": { "label": "text | optional" },
-      "layout_spec": { "min_width": 48, "min_height": 48, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 8 },
-      "tokens": { "radius": "pill", "background": "transparent" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "focused"
+      ],
+      "states": [
+        "off",
+        "on",
+        "disabled"
+      ],
+      "slots": {
+        "label": "text | optional"
+      },
+      "layout_spec": {
+        "min_width": 48,
+        "min_height": 48,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "transparent"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "chip": {
       "id": "chip",
       "category": "selection",
       "orchestration_type": "chip",
-      "allowed_contexts": ["app","home","focused","glanceable"],
-      "states": ["default","selected","disabled"],
-      "slots": { "label": "text", "icon": "icon | optional" },
-      "layout_spec": { "min_width": 56, "min_height": 32, "padding": { "top": 6, "right": 12, "bottom": 6, "left": 12 }, "gap": 4 },
-      "tokens": { "radius": "pill", "background": "surface-2", "text_style_title": "label-sm" },
-      "behavior": { "interactive": true, "collapse_priority": 3 }
+      "allowed_contexts": [
+        "app",
+        "home",
+        "focused",
+        "glanceable"
+      ],
+      "states": [
+        "default",
+        "selected",
+        "disabled"
+      ],
+      "slots": {
+        "label": "text",
+        "icon": "icon | optional"
+      },
+      "layout_spec": {
+        "min_width": 56,
+        "min_height": 32,
+        "padding": {
+          "top": 6,
+          "right": 12,
+          "bottom": 6,
+          "left": 12
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "surface-2",
+        "text_style_title": "label-sm"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
     },
-
     "input": {
       "id": "input",
       "category": "input",
       "orchestration_type": "input",
-      "allowed_contexts": ["app","focused"],
-      "states": ["default","focused","error","disabled"],
-      "slots": { "label": "text | optional", "value": "text", "icon": "icon | optional" },
-      "layout_spec": { "min_width": 200, "min_height": 48, "padding": { "top": 10, "right": 16, "bottom": 10, "left": 16 }, "gap": 4 },
-      "tokens": { "radius": "12", "background": "surface-2", "text_style_value": "body-md" },
-      "behavior": { "interactive": true, "collapse_priority": 1 }
+      "allowed_contexts": [
+        "app",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "focused",
+        "error",
+        "disabled"
+      ],
+      "slots": {
+        "label": "text | optional",
+        "value": "text",
+        "icon": "icon | optional"
+      },
+      "layout_spec": {
+        "min_width": 200,
+        "min_height": 48,
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "radius": "12",
+        "background": "surface-2",
+        "text_style_value": "body-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
     },
     "search": {
       "id": "search",
       "category": "input",
       "orchestration_type": "search-bar",
-      "allowed_contexts": ["app","home","focused"],
-      "states": ["default","focused"],
-      "slots": { "value": "text", "icon": "icon" },
-      "layout_spec": { "min_width": 240, "min_height": 48, "padding": { "top": 10, "right": 16, "bottom": 10, "left": 16 }, "gap": 8 },
-      "tokens": { "radius": "pill", "background": "surface-2", "text_style_value": "body-md" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "home",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "focused"
+      ],
+      "slots": {
+        "value": "text",
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 240,
+        "min_height": 48,
+        "padding": {
+          "top": 10,
+          "right": 16,
+          "bottom": 10,
+          "left": 16
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "surface-2",
+        "text_style_value": "body-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
-
     "status-bar": {
       "id": "status-bar",
       "category": "chrome",
       "orchestration_type": "status-bar",
-      "allowed_contexts": ["lock","home","app"],
-      "states": ["default","live-activity"],
-      "slots": { "value": "text" },
-      "layout_spec": { "min_width": 360, "min_height": 28, "padding": { "top": 8, "right": 16, "bottom": 8, "left": 16 }, "gap": 4 },
-      "tokens": { "background": "transparent", "text_style_value": "label-xs" },
-      "behavior": { "interactive": false, "collapse_priority": 1 }
+      "allowed_contexts": [
+        "lock",
+        "home",
+        "app"
+      ],
+      "states": [
+        "default",
+        "live-activity"
+      ],
+      "slots": {
+        "value": "text"
+      },
+      "layout_spec": {
+        "min_width": 360,
+        "min_height": 28,
+        "padding": {
+          "top": 8,
+          "right": 16,
+          "bottom": 8,
+          "left": 16
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "background": "transparent",
+        "text_style_value": "label-xs"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 1
+      }
     },
     "appbar": {
       "id": "appbar",
       "category": "chrome",
       "orchestration_type": "appbar",
-      "allowed_contexts": ["app"],
-      "states": ["default","scrolled"],
-      "slots": { "title": "text", "icon": "icon | optional", "actions": "action-group | optional" },
-      "layout_spec": { "min_width": 360, "min_height": 56, "padding": { "top": 12, "right": 16, "bottom": 12, "left": 16 }, "gap": 12 },
-      "tokens": { "background": "transparent", "text_style_title": "title-md" },
-      "behavior": { "interactive": true, "collapse_priority": 1 }
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default",
+        "scrolled"
+      ],
+      "slots": {
+        "title": "text",
+        "icon": "icon | optional",
+        "actions": "action-group | optional"
+      },
+      "layout_spec": {
+        "min_width": 360,
+        "min_height": 56,
+        "padding": {
+          "top": 12,
+          "right": 16,
+          "bottom": 12,
+          "left": 16
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "background": "transparent",
+        "text_style_title": "title-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
     },
     "bottomnav": {
       "id": "bottomnav",
       "category": "chrome",
       "orchestration_type": "bottomnav",
-      "allowed_contexts": ["app"],
-      "states": ["default"],
-      "slots": { "actions": "action-group" },
-      "layout_spec": { "min_width": 360, "min_height": 56, "padding": { "top": 8, "right": 12, "bottom": 8, "left": 12 }, "gap": 4 },
-      "tokens": { "background": "surface-2", "text_style_title": "label-xs" },
-      "behavior": { "interactive": true, "collapse_priority": 1 }
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 360,
+        "min_height": 56,
+        "padding": {
+          "top": 8,
+          "right": 12,
+          "bottom": 8,
+          "left": 12
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "background": "surface-2",
+        "text_style_title": "label-xs"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
     },
     "pill-tab": {
       "id": "pill-tab",
       "category": "navigation",
       "orchestration_type": "bottomnav",
-      "allowed_contexts": ["app","home","minimal-touch"],
-      "states": ["default"],
-      "slots": { "actions": "action-group" },
-      "layout_spec": { "min_width": 220, "min_height": 56, "padding": { "top": 6, "right": 10, "bottom": 6, "left": 10 }, "gap": 4 },
-      "tokens": { "radius": "pill", "background": "surface-2" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "home",
+        "minimal-touch"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 220,
+        "min_height": 56,
+        "padding": {
+          "top": 6,
+          "right": 10,
+          "bottom": 6,
+          "left": 10
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "surface-2"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "tab-bar": {
       "id": "tab-bar",
       "category": "navigation",
       "orchestration_type": "tab-bar",
-      "allowed_contexts": ["app"],
-      "states": ["default"],
-      "slots": { "actions": "action-group" },
-      "layout_spec": { "min_width": 240, "min_height": 48, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 0 },
-      "tokens": { "background": "transparent", "text_style_title": "label-md" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 240,
+        "min_height": 48,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "background": "transparent",
+        "text_style_title": "label-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
-
     "card": {
       "id": "card",
       "category": "container",
       "orchestration_type": "card",
-      "allowed_contexts": ["app","home","focused"],
-      "states": ["default","hover","pressed"],
-      "slots": { "title": "text", "value": "text | optional", "icon": "icon | optional", "actions": "action-group | optional" },
-      "layout_spec": { "min_width": 160, "min_height": 72, "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 }, "gap": 8 },
-      "tokens": { "radius": "22", "background": "surface-2", "text_style_title": "title-sm", "text_style_value": "body-sm" },
-      "behavior": { "interactive": false, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "home",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "hover",
+        "pressed"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text | optional",
+        "icon": "icon | optional",
+        "actions": "action-group | optional"
+      },
+      "layout_spec": {
+        "min_width": 160,
+        "min_height": 72,
+        "padding": {
+          "top": 16,
+          "right": 16,
+          "bottom": 16,
+          "left": 16
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "22",
+        "background": "surface-2",
+        "text_style_title": "title-sm",
+        "text_style_value": "body-sm"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 2
+      }
     },
     "list-item": {
       "id": "list-item",
       "category": "container",
       "orchestration_type": "list-item",
-      "allowed_contexts": ["app","focused"],
-      "states": ["default","pressed","selected"],
-      "slots": { "title": "text", "value": "text | optional", "icon": "icon | optional", "actions": "action-group | optional" },
-      "layout_spec": { "min_width": 320, "min_height": 56, "padding": { "top": 12, "right": 16, "bottom": 12, "left": 16 }, "gap": 12 },
-      "tokens": { "background": "transparent", "text_style_title": "body-md", "text_style_value": "label-sm" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "pressed",
+        "selected"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text | optional",
+        "icon": "icon | optional",
+        "actions": "action-group | optional"
+      },
+      "layout_spec": {
+        "min_width": 320,
+        "min_height": 56,
+        "padding": {
+          "top": 12,
+          "right": 16,
+          "bottom": 12,
+          "left": 16
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "background": "transparent",
+        "text_style_title": "body-md",
+        "text_style_value": "label-sm"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "dialog": {
       "id": "dialog",
       "category": "overlay",
       "orchestration_type": "dialog",
-      "allowed_contexts": ["system-dialog"],
-      "states": ["default"],
-      "slots": { "title": "text", "value": "text", "actions": "action-group" },
-      "layout_spec": { "min_width": 280, "min_height": 120, "padding": { "top": 24, "right": 24, "bottom": 16, "left": 24 }, "gap": 8 },
-      "tokens": { "radius": "28", "background": "dialog-surface", "text_style_title": "title-md", "text_style_value": "body-md" },
-      "behavior": { "interactive": true, "collapse_priority": 1 }
+      "allowed_contexts": [
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 280,
+        "min_height": 120,
+        "padding": {
+          "top": 24,
+          "right": 24,
+          "bottom": 16,
+          "left": 24
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "dialog-surface",
+        "text_style_title": "title-md",
+        "text_style_value": "body-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
     },
     "snackbar": {
       "id": "snackbar",
       "category": "notification",
       "orchestration_type": "card",
-      "allowed_contexts": ["app"],
-      "states": ["default"],
-      "slots": { "value": "text", "actions": "action-group | optional" },
-      "layout_spec": { "min_width": 288, "min_height": 48, "padding": { "top": 10, "right": 12, "bottom": 10, "left": 16 }, "gap": 12 },
-      "tokens": { "radius": "16", "background": "surface-3", "text_style_value": "body-sm" },
-      "behavior": { "interactive": true, "collapse_priority": 3 }
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {
+        "value": "text",
+        "actions": "action-group | optional"
+      },
+      "layout_spec": {
+        "min_width": 288,
+        "min_height": 48,
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 16
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "radius": "16",
+        "background": "surface-3",
+        "text_style_value": "body-sm"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
     },
-
     "divider": {
       "id": "divider",
       "category": "primitive",
       "orchestration_type": "content",
-      "allowed_contexts": ["app","home","lock"],
-      "states": ["default"],
+      "allowed_contexts": [
+        "app",
+        "home",
+        "lock"
+      ],
+      "states": [
+        "default"
+      ],
       "slots": {},
-      "layout_spec": { "min_width": 0, "min_height": 1, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 0 },
-      "tokens": { "background": "divider" },
-      "behavior": { "interactive": false, "collapse_priority": 3 }
+      "layout_spec": {
+        "min_width": 0,
+        "min_height": 1,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "background": "divider"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 3
+      }
     },
     "badge": {
       "id": "badge",
       "category": "primitive",
       "orchestration_type": "content",
-      "allowed_contexts": ["app","home","lock"],
-      "states": ["default"],
-      "slots": { "value": "text" },
-      "layout_spec": { "min_width": 16, "min_height": 16, "padding": { "top": 2, "right": 6, "bottom": 2, "left": 6 }, "gap": 0 },
-      "tokens": { "radius": "pill", "background": "error", "text_style_value": "label-xs" },
-      "behavior": { "interactive": false, "collapse_priority": 3 }
+      "allowed_contexts": [
+        "app",
+        "home",
+        "lock"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {
+        "value": "text"
+      },
+      "layout_spec": {
+        "min_width": 16,
+        "min_height": 16,
+        "padding": {
+          "top": 2,
+          "right": 6,
+          "bottom": 2,
+          "left": 6
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "error",
+        "text_style_value": "label-xs"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 3
+      }
     },
-
     "now-bar": {
       "id": "now-bar",
       "category": "widget",
       "orchestration_type": "now-bar",
-      "allowed_contexts": ["lock","home","glanceable","driving","minimal-touch"],
-      "states": ["default","compact","glance"],
-      "slots": { "title": "text", "value": "text | optional", "icon": "icon", "actions": "action-group | optional" },
-      "layout_spec": { "min_width": 280, "min_height": 56, "padding": { "top": 8, "right": 12, "bottom": 8, "left": 12 }, "gap": 10 },
-      "tokens": { "radius": "pill", "background": "glass-bg", "text_style_title": "label-md" },
-      "behavior": { "interactive": true, "collapse_priority": 1 }
+      "allowed_contexts": [
+        "lock",
+        "home",
+        "glanceable",
+        "driving",
+        "minimal-touch"
+      ],
+      "states": [
+        "default",
+        "compact",
+        "glance"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text | optional",
+        "icon": "icon",
+        "actions": "action-group | optional"
+      },
+      "layout_spec": {
+        "min_width": 280,
+        "min_height": 56,
+        "padding": {
+          "top": 8,
+          "right": 12,
+          "bottom": 8,
+          "left": 12
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "glass-bg",
+        "text_style_title": "label-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
     },
     "qs-toggle": {
       "id": "qs-toggle",
       "category": "overlay",
       "orchestration_type": "qs-toggle",
-      "allowed_contexts": ["quick-settings"],
-      "states": ["off","on"],
-      "slots": { "label": "text", "icon": "icon" },
-      "layout_spec": { "min_width": 64, "min_height": 64, "padding": { "top": 0, "right": 0, "bottom": 0, "left": 0 }, "gap": 4 },
-      "tokens": { "radius": "14", "background": "surface-2", "text_style_title": "label-xs" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "quick-settings"
+      ],
+      "states": [
+        "off",
+        "on"
+      ],
+      "slots": {
+        "label": "text",
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 64,
+        "min_height": 64,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "radius": "14",
+        "background": "surface-2",
+        "text_style_title": "label-xs"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "qs-grid": {
       "id": "qs-grid",
       "category": "overlay",
       "orchestration_type": "qs-toggle",
-      "allowed_contexts": ["quick-settings"],
-      "states": ["default"],
-      "slots": { "actions": "action-group" },
-      "layout_spec": { "min_width": 360, "min_height": 220, "padding": { "top": 8, "right": 12, "bottom": 8, "left": 12 }, "gap": 12 },
-      "tokens": { "background": "transparent" },
-      "behavior": { "interactive": true, "collapse_priority": 1 }
+      "allowed_contexts": [
+        "quick-settings"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 360,
+        "min_height": 220,
+        "padding": {
+          "top": 8,
+          "right": 12,
+          "bottom": 8,
+          "left": 12
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "background": "transparent"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
     },
     "media-card": {
       "id": "media-card",
       "category": "media",
       "orchestration_type": "media-card",
-      "allowed_contexts": ["app","quick-settings","glanceable"],
-      "states": ["default","compact"],
-      "slots": { "title": "text", "value": "text | optional", "icon": "icon", "actions": "action-group" },
-      "layout_spec": { "min_width": 280, "min_height": 140, "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 }, "gap": 12 },
-      "tokens": { "radius": "22", "background": "surface-2", "text_style_title": "title-sm", "text_style_value": "label-sm" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "app",
+        "quick-settings",
+        "glanceable"
+      ],
+      "states": [
+        "default",
+        "compact"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text | optional",
+        "icon": "icon",
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 280,
+        "min_height": 140,
+        "padding": {
+          "top": 16,
+          "right": 16,
+          "bottom": 16,
+          "left": 16
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "radius": "22",
+        "background": "surface-2",
+        "text_style_title": "title-sm",
+        "text_style_value": "label-sm"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "notification-card": {
       "id": "notification-card",
       "category": "notification",
       "orchestration_type": "notification-card",
-      "allowed_contexts": ["notification-shade","lock","glanceable"],
-      "states": ["default","expanded","compact"],
-      "slots": { "title": "text", "value": "text", "icon": "icon", "actions": "action-group | optional" },
-      "layout_spec": { "min_width": 320, "min_height": 64, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 10 },
-      "tokens": { "radius": "18", "background": "glass-bg", "text_style_title": "label-md", "text_style_value": "body-sm" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "notification-shade",
+        "lock",
+        "glanceable"
+      ],
+      "states": [
+        "default",
+        "expanded",
+        "compact"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "icon": "icon",
+        "actions": "action-group | optional"
+      },
+      "layout_spec": {
+        "min_width": 320,
+        "min_height": 64,
+        "padding": {
+          "top": 12,
+          "right": 14,
+          "bottom": 12,
+          "left": 14
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "18",
+        "background": "glass-bg",
+        "text_style_title": "label-md",
+        "text_style_value": "body-sm"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "widget-small": {
       "id": "widget-small",
       "category": "widget",
       "orchestration_type": "widget",
-      "allowed_contexts": ["home","lock","glanceable"],
-      "states": ["default"],
-      "slots": { "title": "text | optional", "value": "text", "icon": "icon | optional" },
-      "layout_spec": { "min_width": 96, "min_height": 96, "padding": { "top": 10, "right": 10, "bottom": 10, "left": 10 }, "gap": 4 },
-      "tokens": { "radius": "16", "background": "glass-bg", "text_style_value": "title-sm" },
-      "behavior": { "interactive": true, "collapse_priority": 2 }
+      "allowed_contexts": [
+        "home",
+        "lock",
+        "glanceable"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {
+        "title": "text | optional",
+        "value": "text",
+        "icon": "icon | optional"
+      },
+      "layout_spec": {
+        "min_width": 96,
+        "min_height": 96,
+        "padding": {
+          "top": 10,
+          "right": 10,
+          "bottom": 10,
+          "left": 10
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "radius": "16",
+        "background": "glass-bg",
+        "text_style_value": "title-sm"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
     },
     "keyboard": {
       "id": "keyboard",
       "category": "chrome",
       "orchestration_type": "content",
-      "allowed_contexts": ["app"],
-      "states": ["default"],
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
       "slots": {},
-      "layout_spec": { "min_width": 360, "min_height": 260, "padding": { "top": 6, "right": 3, "bottom": 12, "left": 3 }, "gap": 4 },
-      "tokens": { "background": "surface-3" },
-      "behavior": { "interactive": true, "collapse_priority": 1 }
+      "layout_spec": {
+        "min_width": 360,
+        "min_height": 260,
+        "padding": {
+          "top": 6,
+          "right": 3,
+          "bottom": 12,
+          "left": 3
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "background": "surface-3"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
     },
-
     "eta_card": {
       "id": "eta_card",
       "category": "info-card",
       "orchestration_type": "card",
-      "allowed_contexts": ["driving","glanceable","quick-view"],
-      "states": ["default","compact","glance"],
-      "slots": { "title": "text", "value": "text", "icon": "icon" },
-      "layout_spec": { "min_width": 160, "min_height": 72, "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 }, "gap": 8 },
-      "tokens": { "radius": "medium", "background": "surface-primary", "text_style_title": "label-sm", "text_style_value": "headline-md" },
-      "behavior": { "interactive": false, "collapse_priority": 1 },
+      "allowed_contexts": [
+        "driving",
+        "glanceable",
+        "quick-view"
+      ],
+      "states": [
+        "default",
+        "compact",
+        "glance"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 160,
+        "min_height": 72,
+        "padding": {
+          "top": 16,
+          "right": 16,
+          "bottom": 16,
+          "left": 16
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "medium",
+        "background": "surface-primary",
+        "text_style_title": "label-sm",
+        "text_style_value": "headline-md"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 1
+      },
       "_status": "planned — not yet rendered by genui.html"
     },
     "message_summary_card": {
       "id": "message_summary_card",
       "category": "info-card",
       "orchestration_type": "card",
-      "allowed_contexts": ["driving","glanceable","quick-view"],
-      "states": ["default","compact","glance"],
-      "slots": { "title": "text", "value": "text", "icon": "icon" },
-      "layout_spec": { "min_width": 200, "min_height": 64, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
-      "tokens": { "radius": "medium", "background": "surface-primary", "text_style_title": "label-sm", "text_style_value": "body-md" },
-      "behavior": { "interactive": true, "collapse_priority": 2 },
+      "allowed_contexts": [
+        "driving",
+        "glanceable",
+        "quick-view"
+      ],
+      "states": [
+        "default",
+        "compact",
+        "glance"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 200,
+        "min_height": 64,
+        "padding": {
+          "top": 12,
+          "right": 14,
+          "bottom": 12,
+          "left": 14
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "medium",
+        "background": "surface-primary",
+        "text_style_title": "label-sm",
+        "text_style_value": "body-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      },
       "_status": "planned — not yet rendered by genui.html"
     },
     "media_control_bar": {
       "id": "media_control_bar",
       "category": "media",
       "orchestration_type": "card",
-      "allowed_contexts": ["driving","glanceable","minimal-touch","quick-view"],
-      "states": ["default","compact"],
-      "slots": { "title": "text", "value": "text | optional", "icon": "icon", "actions": "action-group" },
-      "layout_spec": { "min_width": 240, "min_height": 64, "padding": { "top": 10, "right": 12, "bottom": 10, "left": 12 }, "gap": 12 },
-      "tokens": { "radius": "pill", "background": "surface-primary", "text_style_title": "label-md" },
-      "behavior": { "interactive": true, "collapse_priority": 3 },
+      "allowed_contexts": [
+        "driving",
+        "glanceable",
+        "minimal-touch",
+        "quick-view"
+      ],
+      "states": [
+        "default",
+        "compact"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text | optional",
+        "icon": "icon",
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 240,
+        "min_height": 64,
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "surface-primary",
+        "text_style_title": "label-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      },
       "_status": "semantic — rendered via fallback template"
     },
-
     "action_chip_row": {
       "id": "action_chip_row",
       "category": "selection",
       "orchestration_type": "chip",
-      "allowed_contexts": ["app","home","focused","glanceable","minimal-touch"],
-      "states": ["default","compact"],
-      "slots": { "actions": "action-group" },
-      "layout_spec": { "min_width": 240, "min_height": 44, "padding": { "top": 6, "right": 8, "bottom": 6, "left": 8 }, "gap": 6 },
-      "tokens": { "radius": "pill", "background": "surface-2", "text_style_title": "label-sm" },
-      "behavior": { "interactive": true, "collapse_priority": 3 },
+      "allowed_contexts": [
+        "app",
+        "home",
+        "focused",
+        "glanceable",
+        "minimal-touch"
+      ],
+      "states": [
+        "default",
+        "compact"
+      ],
+      "slots": {
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 240,
+        "min_height": 44,
+        "padding": {
+          "top": 6,
+          "right": 8,
+          "bottom": 6,
+          "left": 8
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "pill",
+        "background": "surface-2",
+        "text_style_title": "label-sm"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      },
       "_status": "semantic — rendered via fallback template"
     },
     "calendar_summary_card": {
       "id": "calendar_summary_card",
       "category": "info-card",
       "orchestration_type": "card",
-      "allowed_contexts": ["glanceable","home","lock","quick-view"],
-      "states": ["default","compact","glance"],
-      "slots": { "title": "text", "value": "text", "icon": "icon" },
-      "layout_spec": { "min_width": 200, "min_height": 72, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
-      "tokens": { "radius": "medium", "background": "surface-2", "text_style_title": "label-sm", "text_style_value": "title-md" },
-      "behavior": { "interactive": false, "collapse_priority": 2 },
+      "allowed_contexts": [
+        "glanceable",
+        "home",
+        "lock",
+        "quick-view"
+      ],
+      "states": [
+        "default",
+        "compact",
+        "glance"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 200,
+        "min_height": 72,
+        "padding": {
+          "top": 12,
+          "right": 14,
+          "bottom": 12,
+          "left": 14
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "medium",
+        "background": "surface-2",
+        "text_style_title": "label-sm",
+        "text_style_value": "title-md"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 2
+      },
       "_status": "semantic — rendered via fallback template"
     },
     "weather_glance_card": {
       "id": "weather_glance_card",
       "category": "info-card",
       "orchestration_type": "card",
-      "allowed_contexts": ["glanceable","home","lock","quick-view"],
-      "states": ["default","compact","glance"],
-      "slots": { "title": "text", "value": "text", "icon": "icon" },
-      "layout_spec": { "min_width": 160, "min_height": 72, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
-      "tokens": { "radius": "medium", "background": "surface-2", "text_style_title": "label-sm", "text_style_value": "headline-md" },
-      "behavior": { "interactive": false, "collapse_priority": 2 },
+      "allowed_contexts": [
+        "glanceable",
+        "home",
+        "lock",
+        "quick-view"
+      ],
+      "states": [
+        "default",
+        "compact",
+        "glance"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 160,
+        "min_height": 72,
+        "padding": {
+          "top": 12,
+          "right": 14,
+          "bottom": 12,
+          "left": 14
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "medium",
+        "background": "surface-2",
+        "text_style_title": "label-sm",
+        "text_style_value": "headline-md"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 2
+      },
       "_status": "semantic — rendered via fallback template"
     },
     "navigation_turn_card": {
       "id": "navigation_turn_card",
       "category": "info-card",
       "orchestration_type": "card",
-      "allowed_contexts": ["driving","glanceable","minimal-touch","quick-view"],
-      "states": ["default","compact","glance"],
-      "slots": { "title": "text", "value": "text", "icon": "icon" },
-      "layout_spec": { "min_width": 200, "min_height": 80, "padding": { "top": 14, "right": 14, "bottom": 14, "left": 14 }, "gap": 8 },
-      "tokens": { "radius": "medium", "background": "primary", "text_style_title": "label-sm", "text_style_value": "headline-md" },
-      "behavior": { "interactive": false, "collapse_priority": 1 },
+      "allowed_contexts": [
+        "driving",
+        "glanceable",
+        "minimal-touch",
+        "quick-view"
+      ],
+      "states": [
+        "default",
+        "compact",
+        "glance"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 200,
+        "min_height": 80,
+        "padding": {
+          "top": 14,
+          "right": 14,
+          "bottom": 14,
+          "left": 14
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "medium",
+        "background": "primary",
+        "text_style_title": "label-sm",
+        "text_style_value": "headline-md"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 1
+      },
       "_status": "semantic — rendered via fallback template"
     },
     "reminder_card": {
       "id": "reminder_card",
       "category": "info-card",
       "orchestration_type": "card",
-      "allowed_contexts": ["app","home","lock","glanceable"],
-      "states": ["default","compact","glance"],
-      "slots": { "title": "text", "value": "text", "icon": "icon" },
-      "layout_spec": { "min_width": 200, "min_height": 64, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
-      "tokens": { "radius": "medium", "background": "surface-2", "text_style_title": "label-sm", "text_style_value": "body-md" },
-      "behavior": { "interactive": true, "collapse_priority": 2 },
+      "allowed_contexts": [
+        "app",
+        "home",
+        "lock",
+        "glanceable"
+      ],
+      "states": [
+        "default",
+        "compact",
+        "glance"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "icon": "icon"
+      },
+      "layout_spec": {
+        "min_width": 200,
+        "min_height": 64,
+        "padding": {
+          "top": 12,
+          "right": 14,
+          "bottom": 12,
+          "left": 14
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "medium",
+        "background": "surface-2",
+        "text_style_title": "label-sm",
+        "text_style_value": "body-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      },
       "_status": "semantic — rendered via fallback template"
     },
     "quick_toggle_row": {
       "id": "quick_toggle_row",
       "category": "selection",
       "orchestration_type": "qs-toggle",
-      "allowed_contexts": ["app","quick-settings","focused"],
-      "states": ["default","compact"],
-      "slots": { "actions": "action-group" },
-      "layout_spec": { "min_width": 280, "min_height": 56, "padding": { "top": 8, "right": 10, "bottom": 8, "left": 10 }, "gap": 8 },
-      "tokens": { "radius": "16", "background": "surface-2", "text_style_title": "label-xs" },
-      "behavior": { "interactive": true, "collapse_priority": 2 },
+      "allowed_contexts": [
+        "app",
+        "quick-settings",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "compact"
+      ],
+      "slots": {
+        "actions": "action-group"
+      },
+      "layout_spec": {
+        "min_width": 280,
+        "min_height": 56,
+        "padding": {
+          "top": 8,
+          "right": 10,
+          "bottom": 8,
+          "left": 10
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "16",
+        "background": "surface-2",
+        "text_style_title": "label-xs"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      },
       "_status": "semantic — rendered via fallback template"
     },
     "input_summary_card": {
       "id": "input_summary_card",
       "category": "input",
       "orchestration_type": "card",
-      "allowed_contexts": ["app","focused"],
-      "states": ["default","compact"],
-      "slots": { "title": "text", "value": "text", "icon": "icon | optional" },
-      "layout_spec": { "min_width": 240, "min_height": 64, "padding": { "top": 12, "right": 14, "bottom": 12, "left": 14 }, "gap": 6 },
-      "tokens": { "radius": "12", "background": "surface-2", "text_style_title": "label-sm", "text_style_value": "body-md" },
-      "behavior": { "interactive": true, "collapse_priority": 2 },
+      "allowed_contexts": [
+        "app",
+        "focused"
+      ],
+      "states": [
+        "default",
+        "compact"
+      ],
+      "slots": {
+        "title": "text",
+        "value": "text",
+        "icon": "icon | optional"
+      },
+      "layout_spec": {
+        "min_width": 240,
+        "min_height": 64,
+        "padding": {
+          "top": 12,
+          "right": 14,
+          "bottom": 12,
+          "left": 14
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "12",
+        "background": "surface-2",
+        "text_style_title": "label-sm",
+        "text_style_value": "body-md"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      },
       "_status": "semantic — rendered via fallback template"
+    },
+    "status-bar.default": {
+      "id": "status-bar.default",
+      "category": "chrome",
+      "orchestration_type": "system-status",
+      "_figma_node": "3010:2142",
+      "allowed_contexts": [
+        "lock",
+        "home",
+        "app",
+        "quick-settings",
+        "notification-shade",
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 411,
+        "min_height": 35,
+        "padding": {
+          "top": 0,
+          "right": 14,
+          "bottom": 0,
+          "left": 18
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 14,
+          "lineHeight": 16
+        }
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 0
+      }
+    },
+    "status-bar.live-activity-chip": {
+      "id": "status-bar.live-activity-chip",
+      "category": "primitive",
+      "orchestration_type": "inline-live-activity",
+      "_figma_node": "3010:2144",
+      "allowed_contexts": [
+        "app",
+        "system-dialog",
+        "quick-settings",
+        "notification-shade"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 76,
+        "min_height": 24,
+        "padding": {
+          "top": 4,
+          "right": 10,
+          "bottom": 4,
+          "left": 8
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "12",
+        "background": "rgba(23,23,26,0.3)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 500,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "quick-settings.icons-row": {
+      "id": "quick-settings.icons-row",
+      "category": "chrome",
+      "orchestration_type": "quick-settings-header",
+      "_figma_node": "3010:2142",
+      "allowed_contexts": [
+        "quick-settings"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 408,
+        "min_height": 40,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 16
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "single-toggle.half-toggle": {
+      "id": "single-toggle.half-toggle",
+      "category": "selection",
+      "orchestration_type": "quick-toggle-half",
+      "_figma_node": "3010:2142",
+      "allowed_contexts": [
+        "quick-settings"
+      ],
+      "states": [
+        "default",
+        "active",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 199,
+        "min_height": 88,
+        "padding": {
+          "top": 16,
+          "right": 16,
+          "bottom": 16,
+          "left": 16
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "50",
+        "background": "rgba(180,180,180,0.2)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "single-toggle.single-toggle": {
+      "id": "single-toggle.single-toggle",
+      "category": "selection",
+      "orchestration_type": "quick-toggle-single",
+      "_figma_node": "3010:2142",
+      "allowed_contexts": [
+        "quick-settings"
+      ],
+      "states": [
+        "default",
+        "active",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 88,
+        "min_height": 88,
+        "padding": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "50",
+        "background": "rgba(180,180,180,0.2)"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "single-toggle.half-shortcut": {
+      "id": "single-toggle.half-shortcut",
+      "category": "selection",
+      "orchestration_type": "quick-shortcut-half",
+      "_figma_node": "3010:2142",
+      "allowed_contexts": [
+        "quick-settings"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 199,
+        "min_height": 88,
+        "padding": {
+          "top": 16,
+          "right": 16,
+          "bottom": 16,
+          "left": 16
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "radius": "50",
+        "background": "rgba(180,180,180,0.2)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "quick-settings.slider-vertical": {
+      "id": "quick-settings.slider-vertical",
+      "category": "input",
+      "orchestration_type": "vertical-slider",
+      "_figma_node": "3010:2142",
+      "allowed_contexts": [
+        "quick-settings"
+      ],
+      "states": [
+        "default",
+        "active"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 88,
+        "min_height": 300,
+        "padding": {
+          "top": 20,
+          "right": 0,
+          "bottom": 20,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "44",
+        "background": "rgba(180,180,180,0.2)"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 4
+      }
+    },
+    "quick-settings.smartthings-card": {
+      "id": "quick-settings.smartthings-card",
+      "category": "container",
+      "orchestration_type": "smartthings-rollup",
+      "_figma_node": "3010:2142",
+      "allowed_contexts": [
+        "quick-settings"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 408,
+        "min_height": 86,
+        "padding": {
+          "top": 14,
+          "right": 18,
+          "bottom": 14,
+          "left": 18
+        },
+        "gap": 14
+      },
+      "tokens": {
+        "radius": "50",
+        "background": "rgba(180,180,180,0.2)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 5
+      }
+    },
+    "now-bar.media-player": {
+      "id": "now-bar.media-player",
+      "category": "widget",
+      "orchestration_type": "now-bar",
+      "_figma_node": "744:3582",
+      "allowed_contexts": [
+        "lock",
+        "home"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 248,
+        "min_height": 64,
+        "padding": {
+          "top": 12,
+          "right": 18,
+          "bottom": 12,
+          "left": 12
+        },
+        "gap": 14
+      },
+      "tokens": {
+        "radius": "53",
+        "background": "rgba(23,23,26,0.3)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 500,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "now-bar.dual-line": {
+      "id": "now-bar.dual-line",
+      "category": "widget",
+      "orchestration_type": "now-bar",
+      "_figma_node": "744:3582",
+      "allowed_contexts": [
+        "lock",
+        "home"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 248,
+        "min_height": 64,
+        "padding": {
+          "top": 12,
+          "right": 18,
+          "bottom": 12,
+          "left": 12
+        },
+        "gap": 14
+      },
+      "tokens": {
+        "radius": "53",
+        "background": "rgba(23,23,26,0.3)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 500,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "now-bar.single-line": {
+      "id": "now-bar.single-line",
+      "category": "widget",
+      "orchestration_type": "now-bar",
+      "_figma_node": "744:3582",
+      "allowed_contexts": [
+        "lock",
+        "home"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 248,
+        "min_height": 64,
+        "padding": {
+          "top": 12,
+          "right": 18,
+          "bottom": 12,
+          "left": 12
+        },
+        "gap": 14
+      },
+      "tokens": {
+        "radius": "53",
+        "background": "rgba(23,23,26,0.3)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 26,
+          "lineHeight": 30
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "now-bar.charging": {
+      "id": "now-bar.charging",
+      "category": "widget",
+      "orchestration_type": "now-bar-alert",
+      "_figma_node": "744:3582",
+      "allowed_contexts": [
+        "lock",
+        "home"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 248,
+        "min_height": 64,
+        "padding": {
+          "top": 12,
+          "right": 18,
+          "bottom": 12,
+          "left": 12
+        },
+        "gap": 14
+      },
+      "tokens": {
+        "radius": "53",
+        "background": "rgba(3,78,110,0.8)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 500,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "lock-screen.clock": {
+      "id": "lock-screen.clock",
+      "category": "widget",
+      "orchestration_type": "lock-clock",
+      "_figma_node": "3010:2143",
+      "allowed_contexts": [
+        "lock"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 164,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent",
+        "text_style_title": {
+          "family": "SamsungNrDefault-V6",
+          "weight": 400,
+          "size": 112,
+          "lineHeight": 82
+        }
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 0
+      }
+    },
+    "lock-screen.weather-date": {
+      "id": "lock-screen.weather-date",
+      "category": "widget",
+      "orchestration_type": "lock-weather-date",
+      "_figma_node": "3010:2143",
+      "allowed_contexts": [
+        "lock"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 24,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 500,
+          "size": 14,
+          "lineHeight": 18
+        }
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 1
+      }
+    },
+    "lock-screen.widget-battery": {
+      "id": "lock-screen.widget-battery",
+      "category": "widget",
+      "orchestration_type": "lock-widget",
+      "_figma_node": "3010:2143",
+      "allowed_contexts": [
+        "lock"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 138,
+        "min_height": 62,
+        "padding": {
+          "top": 10,
+          "right": 14,
+          "bottom": 10,
+          "left": 14
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "20",
+        "background": "rgba(23,23,26,0.3)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 11,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "lock-screen.widget-activity": {
+      "id": "lock-screen.widget-activity",
+      "category": "widget",
+      "orchestration_type": "lock-widget",
+      "_figma_node": "3010:2143",
+      "allowed_contexts": [
+        "lock"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 138,
+        "min_height": 62,
+        "padding": {
+          "top": 10,
+          "right": 14,
+          "bottom": 10,
+          "left": 14
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "20",
+        "background": "rgba(23,23,26,0.3)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 11,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "lock-screen.shortcut-circle": {
+      "id": "lock-screen.shortcut-circle",
+      "category": "action",
+      "orchestration_type": "lock-shortcut",
+      "_figma_node": "3010:2143",
+      "allowed_contexts": [
+        "lock"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 47,
+        "min_height": 47,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "61",
+        "background": "rgba(23,23,26,0.3)"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "notification.ai-regular": {
+      "id": "notification.ai-regular",
+      "category": "notification",
+      "orchestration_type": "ai-notification",
+      "_figma_node": "989:22754",
+      "allowed_contexts": [
+        "notification-shade"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 415,
+        "min_height": 86,
+        "padding": {
+          "top": 14,
+          "right": 18,
+          "bottom": 14,
+          "left": 18
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "32",
+        "background": "linear-gradient(135deg,#3E7DFF 0%,#6EE5C7 100%)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "notification.live": {
+      "id": "notification.live",
+      "category": "notification",
+      "orchestration_type": "live-notification",
+      "_figma_node": "989:22754",
+      "allowed_contexts": [
+        "notification-shade"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 415,
+        "min_height": 86,
+        "padding": {
+          "top": 14,
+          "right": 18,
+          "bottom": 14,
+          "left": 18
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "32",
+        "background": "rgba(23,23,26,0.3)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "notification.stack": {
+      "id": "notification.stack",
+      "category": "notification",
+      "orchestration_type": "stacked-notification",
+      "_figma_node": "989:22754",
+      "allowed_contexts": [
+        "notification-shade"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 415,
+        "min_height": 91,
+        "padding": {
+          "top": 14,
+          "right": 18,
+          "bottom": 14,
+          "left": 18
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "32",
+        "background": "rgba(23,23,26,0.3)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "media-player.tile": {
+      "id": "media-player.tile",
+      "category": "media",
+      "orchestration_type": "media-player-tile",
+      "_figma_node": "1003:13034",
+      "allowed_contexts": [
+        "notification-shade",
+        "quick-settings",
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 400,
+        "min_height": 180,
+        "padding": {
+          "top": 14,
+          "right": 29,
+          "bottom": 14,
+          "left": 29
+        },
+        "gap": 2
+      },
+      "tokens": {
+        "radius": "36",
+        "background": "image-backed",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 500,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "notifications.section-label": {
+      "id": "notifications.section-label",
+      "category": "primitive",
+      "orchestration_type": "section-label",
+      "_figma_node": "989:22754",
+      "allowed_contexts": [
+        "notification-shade",
+        "quick-settings"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 200,
+        "min_height": 34,
+        "padding": {
+          "top": 10,
+          "right": 0,
+          "bottom": 10,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 14,
+          "lineHeight": 18
+        }
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 5
+      }
+    },
+    "dialog.website-share-header": {
+      "id": "dialog.website-share-header",
+      "category": "container",
+      "orchestration_type": "dialog-header",
+      "_figma_node": "3010:2144",
+      "allowed_contexts": [
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 380,
+        "min_height": 78,
+        "padding": {
+          "top": 14,
+          "right": 16,
+          "bottom": 14,
+          "left": 16
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "radius": "24",
+        "background": "rgba(23,23,26,0.6)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "dialog.browser-top-bar": {
+      "id": "dialog.browser-top-bar",
+      "category": "chrome",
+      "orchestration_type": "browser-top-bar",
+      "_figma_node": "3010:2144",
+      "allowed_contexts": [
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 380,
+        "min_height": 80,
+        "padding": {
+          "top": 12,
+          "right": 14,
+          "bottom": 12,
+          "left": 14
+        },
+        "gap": 12
+      },
+      "tokens": {
+        "radius": "48",
+        "background": "rgba(23,23,26,0.6)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 500,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "dialog.icon-grid-box": {
+      "id": "dialog.icon-grid-box",
+      "category": "container",
+      "orchestration_type": "icon-picker-grid",
+      "_figma_node": "3010:2144",
+      "allowed_contexts": [
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 380,
+        "min_height": 280,
+        "padding": {
+          "top": 16,
+          "right": 14,
+          "bottom": 16,
+          "left": 14
+        },
+        "gap": 14
+      },
+      "tokens": {
+        "radius": "24",
+        "background": "rgba(23,23,26,0.6)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 500,
+          "size": 12,
+          "lineHeight": 14
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "dialog.page-indicator": {
+      "id": "dialog.page-indicator",
+      "category": "primitive",
+      "orchestration_type": "page-indicator",
+      "_figma_node": "3010:2144",
+      "allowed_contexts": [
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 40,
+        "min_height": 6,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "radius": "3",
+        "background": "rgba(255,255,255,0.3)"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 6
+      }
+    },
+    "dialog.nav-gesture-bar": {
+      "id": "dialog.nav-gesture-bar",
+      "category": "primitive",
+      "orchestration_type": "home-gesture-bar",
+      "_figma_node": "3010:2144",
+      "allowed_contexts": [
+        "lock",
+        "home",
+        "app",
+        "system-dialog",
+        "quick-settings",
+        "notification-shade"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 144,
+        "min_height": 4,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "2",
+        "background": "rgba(255,255,255,0.6)"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 6
+      }
+    },
+    "system.dim-overlay": {
+      "id": "system.dim-overlay",
+      "category": "overlay",
+      "orchestration_type": "modal-dim",
+      "_figma_node": "3010:2144",
+      "allowed_contexts": [
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 451,
+        "min_height": 978,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "40",
+        "background": "rgba(0,0,0,0.2)"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 6
+      }
+    },
+    "search.dark": {
+      "id": "search.dark",
+      "category": "input",
+      "orchestration_type": "search-bar",
+      "_figma_node": "47:221",
+      "allowed_contexts": [
+        "app",
+        "home"
+      ],
+      "states": [
+        "default",
+        "focus"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 58,
+        "padding": {
+          "top": 17,
+          "right": 20,
+          "bottom": 17,
+          "left": 20
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "30",
+        "background": "#17171A",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "search.light": {
+      "id": "search.light",
+      "category": "input",
+      "orchestration_type": "search-bar",
+      "_figma_node": "547:9639",
+      "allowed_contexts": [
+        "app",
+        "home"
+      ],
+      "states": [
+        "default",
+        "focus"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 58,
+        "padding": {
+          "top": 17,
+          "right": 20,
+          "bottom": 17,
+          "left": 20
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "30",
+        "background": "#FCFCFF",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "search.galaxy-ai": {
+      "id": "search.galaxy-ai",
+      "category": "input",
+      "orchestration_type": "search-bar-ai",
+      "_figma_node": "47:228",
+      "allowed_contexts": [
+        "app",
+        "home"
+      ],
+      "states": [
+        "default",
+        "focus"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 58,
+        "padding": {
+          "top": 17,
+          "right": 20,
+          "bottom": 17,
+          "left": 20
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "30",
+        "background": "linear-gradient(90deg,#364B6F 0%,#384247 64.807%,#2D2D30 87.168%)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20,
+          "fill": "linear-gradient(90deg,#66A1F3,#22C9A6)"
+        },
+        "shadow": "-1px 0 4px 1px rgba(78,102,139,0.58)"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "search.galaxy-ai-light": {
+      "id": "search.galaxy-ai-light",
+      "category": "input",
+      "orchestration_type": "search-bar-ai",
+      "_figma_node": "547:9646",
+      "allowed_contexts": [
+        "app",
+        "home"
+      ],
+      "states": [
+        "default",
+        "focus"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 58,
+        "padding": {
+          "top": 17,
+          "right": 20,
+          "bottom": 17,
+          "left": 20
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "30",
+        "background": "linear-gradient(90deg,#364B6F 0%,#91B0BF 64.807%,#CFCFCF 87.168%)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 16,
+          "lineHeight": 20,
+          "fill": "linear-gradient(90deg,#66A1F3,#22C9A6)"
+        },
+        "shadow": "-1px 0 4px 1px rgba(78,102,139,0.58)"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "button.dark": {
+      "id": "button.dark",
+      "category": "action",
+      "orchestration_type": "button",
+      "_figma_node": "452:1381",
+      "allowed_contexts": [
+        "app",
+        "home",
+        "system-dialog"
+      ],
+      "states": [
+        "default",
+        "pressed",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 406,
+        "min_height": 74,
+        "padding": {
+          "top": 18,
+          "right": 24,
+          "bottom": 18,
+          "left": 24
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "#17171A",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 20,
+          "lineHeight": 12
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "button.light": {
+      "id": "button.light",
+      "category": "action",
+      "orchestration_type": "button",
+      "_figma_node": "452:1383",
+      "allowed_contexts": [
+        "app",
+        "home",
+        "system-dialog"
+      ],
+      "states": [
+        "default",
+        "pressed",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 406,
+        "min_height": 74,
+        "padding": {
+          "top": 18,
+          "right": 24,
+          "bottom": 18,
+          "left": 24
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "#FCFCFF",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 20,
+          "lineHeight": 12
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "button.accent": {
+      "id": "button.accent",
+      "category": "action",
+      "orchestration_type": "button-primary",
+      "_figma_node": "452:1392",
+      "allowed_contexts": [
+        "app",
+        "home",
+        "system-dialog"
+      ],
+      "states": [
+        "default",
+        "pressed",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 406,
+        "min_height": 74,
+        "padding": {
+          "top": 18,
+          "right": 24,
+          "bottom": 18,
+          "left": 24
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "#387AFF",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 20,
+          "lineHeight": 12
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "button.galaxy-ai": {
+      "id": "button.galaxy-ai",
+      "category": "action",
+      "orchestration_type": "button-ai",
+      "_figma_node": "452:1395",
+      "allowed_contexts": [
+        "app",
+        "home",
+        "system-dialog"
+      ],
+      "states": [
+        "default",
+        "pressed",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 406,
+        "min_height": 74,
+        "padding": {
+          "top": 18,
+          "right": 24,
+          "bottom": 18,
+          "left": 24
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "linear-gradient(86.3deg,#66A1F3 3.4%,#22C9A6 99.3%)",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 20,
+          "lineHeight": 12
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 1
+      }
+    },
+    "button.header-small": {
+      "id": "button.header-small",
+      "category": "action",
+      "orchestration_type": "button-inline",
+      "_figma_node": "444:529",
+      "allowed_contexts": [
+        "app",
+        "home",
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 90,
+        "min_height": 36,
+        "padding": {
+          "top": 10,
+          "right": 12,
+          "bottom": 10,
+          "left": 12
+        },
+        "gap": 8
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "#17171A",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 14,
+          "lineHeight": 18
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "container.app-shell-dark": {
+      "id": "container.app-shell-dark",
+      "category": "container",
+      "orchestration_type": "app-shell",
+      "_figma_node": "390:427",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 900,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "16",
+        "background": "#010102"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 0
+      }
+    },
+    "container.app-shell-light": {
+      "id": "container.app-shell-light",
+      "category": "container",
+      "orchestration_type": "app-shell",
+      "_figma_node": "390:426",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 900,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 4
+      },
+      "tokens": {
+        "radius": "32",
+        "background": "#F1F1F3"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 0
+      }
+    },
+    "container.content-area": {
+      "id": "container.content-area",
+      "category": "container",
+      "orchestration_type": "content-area",
+      "_figma_node": "247:548",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 400,
+        "padding": {
+          "top": 10,
+          "right": 10,
+          "bottom": 10,
+          "left": 10
+        },
+        "gap": 20
+      },
+      "tokens": {
+        "radius": "38",
+        "background": "inherit-from-app-shell"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 0
+      }
+    },
+    "container.header": {
+      "id": "container.header",
+      "category": "container",
+      "orchestration_type": "app-header",
+      "_figma_node": "384:403",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 438,
+        "min_height": 240,
+        "padding": {
+          "top": 0,
+          "right": 19,
+          "bottom": 0,
+          "left": 19
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 36,
+          "lineHeight": 40
+        },
+        "text_style_value": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 14,
+          "lineHeight": 18
+        }
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 1
+      }
+    },
+    "container.status-bar-app": {
+      "id": "container.status-bar-app",
+      "category": "chrome",
+      "orchestration_type": "app-status-bar",
+      "_figma_node": "247:460",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 44,
+        "padding": {
+          "top": 16,
+          "right": 24,
+          "bottom": 16,
+          "left": 24
+        },
+        "gap": 6
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 15,
+          "lineHeight": 12
+        }
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 0
+      }
+    },
+    "container.nav-gestures-dark": {
+      "id": "container.nav-gestures-dark",
+      "category": "chrome",
+      "orchestration_type": "nav-bar-gestures",
+      "_figma_node": "247:476",
+      "allowed_contexts": [
+        "app",
+        "home"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 24,
+        "padding": {
+          "top": 10,
+          "right": 134,
+          "bottom": 10,
+          "left": 134
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 6
+      }
+    },
+    "container.nav-buttons-light": {
+      "id": "container.nav-buttons-light",
+      "category": "chrome",
+      "orchestration_type": "nav-bar-buttons",
+      "_figma_node": "53:779",
+      "allowed_contexts": [
+        "app",
+        "home"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 56,
+        "padding": {
+          "top": 19,
+          "right": 0,
+          "bottom": 19,
+          "left": 0
+        },
+        "gap": 90.5
+      },
+      "tokens": {
+        "radius": "0",
+        "background": "transparent"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 6
+      }
+    },
+    "card.toggle-row": {
+      "id": "card.toggle-row",
+      "category": "container",
+      "orchestration_type": "card-toggle",
+      "_figma_node": "245:400",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default",
+        "on",
+        "off",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 78,
+        "padding": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "gap": 20
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "#17171A",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 18,
+          "lineHeight": 22
+        },
+        "text_style_value": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "separator_color": "#5F5F61"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "card.toggle-row-light": {
+      "id": "card.toggle-row-light",
+      "category": "container",
+      "orchestration_type": "card-toggle",
+      "_figma_node": "245:432",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default",
+        "on",
+        "off",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 78,
+        "padding": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "gap": 20
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "#FCFCFF",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 18,
+          "lineHeight": 22
+        },
+        "text_style_value": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 14,
+          "lineHeight": 18
+        },
+        "separator_color": "#EAEAEA"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "card.menu-item": {
+      "id": "card.menu-item",
+      "category": "container",
+      "orchestration_type": "card-menu",
+      "_figma_node": "247:562",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 391,
+        "min_height": 64,
+        "padding": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "gap": 20
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "inherit-from-theme-container",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 18,
+          "lineHeight": 22
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "card.menu-item-body": {
+      "id": "card.menu-item-body",
+      "category": "container",
+      "orchestration_type": "card-menu-body",
+      "_figma_node": "247:568",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 391,
+        "min_height": 90,
+        "padding": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "gap": 10
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "inherit-from-theme-container",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 18,
+          "lineHeight": 22
+        },
+        "text_style_value": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 14,
+          "lineHeight": 18
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "card.subheading": {
+      "id": "card.subheading",
+      "category": "container",
+      "orchestration_type": "card-subheading",
+      "_figma_node": "247:575",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 391,
+        "min_height": 110,
+        "padding": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "gap": 24
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "inherit-from-theme-container",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 18,
+          "lineHeight": 22
+        },
+        "text_style_value": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 14,
+          "lineHeight": 18
+        }
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 4
+      }
+    },
+    "card.chevron-nav": {
+      "id": "card.chevron-nav",
+      "category": "container",
+      "orchestration_type": "card-navigation",
+      "_figma_node": "547:9294",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default",
+        "pressed"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 64,
+        "padding": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "gap": 20
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "inherit-from-theme-container",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 18,
+          "lineHeight": 22
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "card.radio": {
+      "id": "card.radio",
+      "category": "selection",
+      "orchestration_type": "card-radio",
+      "_figma_node": "547:9295",
+      "allowed_contexts": [
+        "app",
+        "system-dialog"
+      ],
+      "states": [
+        "default",
+        "selected"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 64,
+        "padding": {
+          "top": 20,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "gap": 20
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "inherit-from-theme-container",
+        "text_style_title": {
+          "family": "ABeeZee",
+          "weight": 400,
+          "size": 18,
+          "lineHeight": 22
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 3
+      }
+    },
+    "card.stacked-group": {
+      "id": "card.stacked-group",
+      "category": "container",
+      "orchestration_type": "card-stacked-group",
+      "_figma_node": "547:7197",
+      "allowed_contexts": [
+        "app"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 412,
+        "min_height": 200,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "28",
+        "background": "inherit-from-theme-container",
+        "separator_color": "#EAEAEA",
+        "inner_radius_policy": "first-last-only"
+      },
+      "behavior": {
+        "interactive": false,
+        "collapse_priority": 4
+      }
+    },
+    "switch.modern": {
+      "id": "switch.modern",
+      "category": "selection",
+      "orchestration_type": "switch",
+      "_figma_node": "242:531",
+      "allowed_contexts": [
+        "app",
+        "system-dialog",
+        "quick-settings"
+      ],
+      "states": [
+        "on",
+        "off",
+        "disabled"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 40,
+        "min_height": 22,
+        "padding": {
+          "top": 0,
+          "right": 0,
+          "bottom": 0,
+          "left": 0
+        },
+        "gap": 0
+      },
+      "tokens": {
+        "radius": "22.5",
+        "background": "#0381FE",
+        "background_off": "#9A999E"
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 2
+      }
+    },
+    "system.dialog-surface": {
+      "id": "system.dialog-surface",
+      "category": "overlay",
+      "orchestration_type": "modal-dialog-surface",
+      "_figma_node": "3010:2144",
+      "allowed_contexts": [
+        "system-dialog"
+      ],
+      "states": [
+        "default"
+      ],
+      "slots": {},
+      "layout_spec": {
+        "min_width": 415,
+        "min_height": 500,
+        "padding": {
+          "top": 20,
+          "right": 18,
+          "bottom": 20,
+          "left": 18
+        },
+        "gap": 20
+      },
+      "tokens": {
+        "radius": "32",
+        "background": "rgba(23,23,26,0.6)",
+        "text_style_title": {
+          "family": "One UI Sans APP VF",
+          "weight": 600,
+          "size": 18,
+          "lineHeight": 24
+        },
+        "text_style_value": {
+          "family": "One UI Sans APP VF",
+          "weight": 400,
+          "size": 14,
+          "lineHeight": 18
+        }
+      },
+      "behavior": {
+        "interactive": true,
+        "collapse_priority": 0
+      }
     }
   },
-
   "vocabulary": {
     "note": "STEP 3 (component_selector) must select component_type ONLY from semantic_allowed_types. The broader allowed_types list includes UI primitives used by the composer/renderer but is NOT exposed to the planner.",
     "semantic_allowed_types": [
@@ -472,16 +3647,98 @@
       "input_summary_card"
     ],
     "allowed_types": [
-      "btn-contained","btn-outlined","btn-flat","fab",
-      "switch","checkbox","radio","chip",
-      "input","search",
-      "status-bar","appbar","bottomnav","pill-tab","tab-bar",
-      "card","list-item","dialog","snackbar",
-      "divider","badge",
-      "now-bar","qs-toggle","qs-grid","media-card","notification-card","widget-small","keyboard",
-      "eta_card","message_summary_card","media_control_bar",
-      "action_chip_row","calendar_summary_card","weather_glance_card",
-      "navigation_turn_card","reminder_card","quick_toggle_row","input_summary_card"
+      "btn-contained",
+      "btn-outlined",
+      "btn-flat",
+      "fab",
+      "switch",
+      "checkbox",
+      "radio",
+      "chip",
+      "input",
+      "search",
+      "status-bar",
+      "appbar",
+      "bottomnav",
+      "pill-tab",
+      "tab-bar",
+      "card",
+      "list-item",
+      "dialog",
+      "snackbar",
+      "divider",
+      "badge",
+      "now-bar",
+      "qs-toggle",
+      "qs-grid",
+      "media-card",
+      "notification-card",
+      "widget-small",
+      "keyboard",
+      "eta_card",
+      "message_summary_card",
+      "media_control_bar",
+      "action_chip_row",
+      "calendar_summary_card",
+      "weather_glance_card",
+      "navigation_turn_card",
+      "reminder_card",
+      "quick_toggle_row",
+      "input_summary_card",
+      "status-bar.default",
+      "status-bar.live-activity-chip",
+      "quick-settings.icons-row",
+      "single-toggle.half-toggle",
+      "single-toggle.single-toggle",
+      "single-toggle.half-shortcut",
+      "quick-settings.slider-vertical",
+      "quick-settings.smartthings-card",
+      "now-bar.media-player",
+      "now-bar.dual-line",
+      "now-bar.single-line",
+      "now-bar.charging",
+      "lock-screen.clock",
+      "lock-screen.weather-date",
+      "lock-screen.widget-battery",
+      "lock-screen.widget-activity",
+      "lock-screen.shortcut-circle",
+      "notification.ai-regular",
+      "notification.live",
+      "notification.stack",
+      "media-player.tile",
+      "notifications.section-label",
+      "dialog.website-share-header",
+      "dialog.browser-top-bar",
+      "dialog.icon-grid-box",
+      "dialog.page-indicator",
+      "dialog.nav-gesture-bar",
+      "system.dim-overlay",
+      "search.dark",
+      "search.light",
+      "search.galaxy-ai",
+      "search.galaxy-ai-light",
+      "button.dark",
+      "button.light",
+      "button.accent",
+      "button.galaxy-ai",
+      "button.header-small",
+      "container.app-shell-dark",
+      "container.app-shell-light",
+      "container.content-area",
+      "container.header",
+      "container.status-bar-app",
+      "container.nav-gestures-dark",
+      "container.nav-buttons-light",
+      "card.toggle-row",
+      "card.toggle-row-light",
+      "card.menu-item",
+      "card.menu-item-body",
+      "card.subheading",
+      "card.chevron-nav",
+      "card.radio",
+      "card.stacked-group",
+      "switch.modern",
+      "system.dialog-surface"
     ]
   }
 }

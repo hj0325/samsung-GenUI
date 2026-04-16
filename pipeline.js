@@ -29,11 +29,23 @@ const {
   buildViolation:  buildLayoutViolation,
   flattenGroups:   _flattenGroups
 } = require('./layout_composer');
+const Generator = require('./generator');
+const DesignMemory = require('./design_memory');
 
 const REGISTRY_PATH = path.join(__dirname, 'figma-refs', 'component_registry.json');
 let REGISTRY = null;
 try { REGISTRY = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8')); }
 catch (e) { console.warn('[pipeline] component_registry.json not found or invalid:', e.message); }
+
+// ---------------------------------------------------------------------------
+//  Pre-filter: single entry point for allowed-component filtering.
+//  Called once before Step 4 (layout composer). Uses Generator's surfaceRules
+//  + registry.allowedContexts from DesignMemory. Returns filtered refs array.
+// ---------------------------------------------------------------------------
+function preFilterComponents(componentRefs, uiState) {
+  if (!DesignMemory || !DesignMemory.generatorMemory) return componentRefs;
+  return Generator.filterAllowedComponents(uiState, componentRefs, DesignMemory);
+}
 
 function allowedComponentTypes() {
   if (!REGISTRY) return [];
@@ -406,6 +418,36 @@ Return STRICT JSON with this shape:
   }
 }
 
+## Reference Layout
+
+You will also receive a **Reference Layout** generated deterministically by the
+design system engine (generator.js). It encodes One UI design guidelines:
+  - Component ordering by weight (chrome → widgets → containers → navigation)
+  - Screen-specific anchor positions (clock block, shortcut row, top status)
+  - Mandatory components for the screen type
+  - Pair-gap rules between adjacent component roles
+  - Touch-target minimums and density constraints
+
+**You MUST follow the Reference Layout ordering.** The reference determines:
+  1. Which component comes first, second, third, etc.
+  2. Which components anchor to fixed positions (top, bottom)
+  3. The container strategy and spacing values
+
+You MAY diverge from the reference ONLY when:
+  - You need to group components that the reference lists sequentially
+    (e.g., wrapping 3 chips into a horizontal-stack group is fine)
+  - The reference has no opinion on a component (not listed) — place it
+    by priority relative to its neighbors
+  - attentionMode or densityMode require collapsing — drop from the
+    reference tail first (highest index = lowest priority)
+
+You MUST NOT reorder components against the reference. If the reference says
+[status-bar, app-bar, content-card, bottom-nav], your groups[].children[]
+must emit them in that exact sequence (possibly across groups).
+
+Navigation components (bottom-nav, pill-tab, tab-bar) with placement "bottom"
+in the reference MUST appear in the LAST group with placement: "bottom".
+
 Composition rules:
 - respect uiState.attentionMode
 - respect uiState.densityMode
@@ -420,6 +462,7 @@ Composition rules:
 - if backgroundPolicy is solid-dark, do not imply wallpaper-dependent layout logic
 - componentId MUST match a componentType from the Selected Components list verbatim
 - layoutPlan.backgroundPolicy MUST equal uiState.backgroundPolicy
+- layoutPlan.padding and gap SHOULD match the Reference Layout spacing values
 - output composition decisions, not descriptive prose`;
 }
 
@@ -430,7 +473,7 @@ Composition rules:
 //  Returns canonical violation rows with stage='layout'.
 // ---------------------------------------------------------------------------
 
-function validateLayout(layoutPlan, uiState, plan) {
+function validateLayout(layoutPlan, uiState, plan, referenceLayout) {
   const violations = [];
   const lp     = layoutPlan || {};
   const groups = Array.isArray(lp.groups) ? lp.groups : [];
@@ -631,6 +674,69 @@ function validateLayout(layoutPlan, uiState, plan) {
     }));
   }
 
+  // 9. Reference Layout ordering check
+  //    Verify the LLM's output follows the deterministic reference ordering.
+  //    Emits medium-severity violations for out-of-order components and
+  //    high-severity for navigation components not placed at the bottom.
+  if (referenceLayout && Array.isArray(referenceLayout.orderedComponents)) {
+    const refOrder = referenceLayout.orderedComponents.map(r => r.componentId);
+    // Extract the LLM's actual ordering by walking groups[].children[]
+    const actualOrder = [];
+    groups.forEach(g => {
+      (g.children || []).forEach(ch => {
+        if (ch.visibility !== 'hidden') actualOrder.push(ch.componentId);
+      });
+    });
+
+    // Check pairwise ordering: for any two components A,B where A appears
+    // before B in refOrder, A should also appear before B in actualOrder.
+    const refIdx = {};
+    refOrder.forEach((id, i) => { refIdx[id] = i; });
+    for (let i = 0; i < actualOrder.length - 1; i++) {
+      const a = actualOrder[i], b = actualOrder[i + 1];
+      if (refIdx[a] != null && refIdx[b] != null && refIdx[a] > refIdx[b]) {
+        violations.push(buildViolation({
+          id:       idGen(),
+          stage:    'layout',
+          ruleId:   'reference_order_mismatch',
+          category: 'ordering',
+          severity: 'medium',
+          status:   'review-required',
+          element:  b,
+          property: 'order',
+          actual:   `${a} (ref#${refIdx[a]}) before ${b} (ref#${refIdx[b]})`,
+          expected: `${b} before ${a} per reference`,
+          message:  `"${a}" appears before "${b}" but reference layout expects the opposite order`
+        }));
+      }
+    }
+
+    // Check navigation anchor: nav components must be in the last group
+    const navRefEntries = referenceLayout.orderedComponents.filter(r => r.placement === 'bottom');
+    const navIds = new Set(navRefEntries.map(r => r.componentId));
+    if (navIds.size > 0 && groups.length > 0) {
+      const lastGroup = groups[groups.length - 1];
+      const lastGroupIds = new Set((lastGroup.children || []).map(ch => ch.componentId));
+      navIds.forEach(navId => {
+        if (actualOrder.includes(navId) && !lastGroupIds.has(navId)) {
+          violations.push(buildViolation({
+            id:       idGen(),
+            stage:    'layout',
+            ruleId:   'nav_not_at_bottom',
+            category: 'ordering',
+            severity: 'high',
+            status:   'review-required',
+            element:  navId,
+            property: 'placement',
+            actual:   'not in last group',
+            expected: 'last group (bottom-anchored)',
+            message:  `"${navId}" must be in the last layout group (bottom-anchored per One UI guidelines)`
+          }));
+        }
+      });
+    }
+  }
+
   return { violations };
 }
 
@@ -647,15 +753,68 @@ async function runComposeLayout({ planningPacket, plan, llmCall, viewport }) {
   if (!planningPacket) throw new Error('runComposeLayout requires planningPacket');
   if (!plan)           throw new Error('runComposeLayout requires plan');
 
+  // --- Pre-filter: single-point component filtering via Generator rules ---
+  const uiStatePre = planningPacket.uiState;
+  if (plan && Array.isArray(plan.requiredComponents)) {
+    const ids = plan.requiredComponents.map(c => c.componentType).filter(Boolean);
+    const allowed = preFilterComponents(ids, uiStatePre);
+    const allowedSet = new Set(allowed);
+    plan.requiredComponents = plan.requiredComponents.filter(
+      c => !c.componentType || allowedSet.has(c.componentType)
+    );
+  }
+
+  // --- Reference Layout: deterministic order + positions from generator.js ---
+  // This gives the LLM a design-system-grounded ordering to follow rather than
+  // inventing its own sequence. Generator.resolveOrder applies weight-based
+  // sorting (chrome→widgets→containers→navigation→gesture), mandatory component
+  // injection, collapse rules, and screen-specific anchors.
+  let referenceLayout = null;
+  try {
+    const refIds = (plan.requiredComponents || [])
+      .map(c => c.componentType).filter(Boolean);
+    const uiStateRef = planningPacket.uiState || {};
+    const ordered   = Generator.resolveOrder(uiStateRef, refIds, DesignMemory, { skipCollapse: true });
+    const positions = Generator.resolvePositions(uiStateRef, ordered, DesignMemory);
+    const spacing   = Generator.resolveSpacing(uiStateRef, DesignMemory);
+
+    referenceLayout = {
+      _note: 'Deterministic reference from One UI design system rules. Follow this ordering.',
+      container: spacing ? spacing.container : 'vertical-stack',
+      padding:   spacing ? spacing.outerPadding : { top: 16, right: 18, bottom: 0, left: 18 },
+      gap:       spacing ? spacing.gap : 10,
+      orderedComponents: positions.map(function (pos, idx) {
+        return {
+          index:     idx,
+          componentId: pos.id,
+          role:      pos.role,
+          placement: (pos.top != null && pos.top <= 30) ? 'top'
+                   : (pos.id && (pos.id.includes('nav') || pos.id.includes('pill-tab') || pos.id.includes('gesture'))) ? 'bottom'
+                   : 'middle',
+          anchorFixed: !!(pos.top != null && pos.top <= 30) ||
+                       !!(pos.id && (pos.id.includes('nav') || pos.id.includes('pill-tab') || pos.id.includes('gesture'))),
+          position:  { top: pos.top, left: pos.left, width: pos.width, height: pos.height }
+        };
+      })
+    };
+  } catch (e) {
+    console.warn('[pipeline] Reference layout generation failed (non-fatal):', e.message);
+  }
+
+  const refSection = referenceLayout
+    ? `\n\nReference Layout (from design system rules — follow this ordering):\n${JSON.stringify(referenceLayout, null, 2)}`
+    : '';
+
   const userMessage =
     `Normalized Planning Packet:\n${JSON.stringify(planningPacket)}\n\n` +
-    `Selected Components:\n${JSON.stringify(plan)}`;
+    `Selected Components:\n${JSON.stringify(plan)}` +
+    refSection;
 
   const raw      = await llmCall(buildComposerPrompt(), userMessage);
   const composed = normalizeComposerOutput(raw);
   const uiState  = planningPacket.uiState;
 
-  const hardChecks = validateLayout(composed.layoutPlan, uiState, plan);
+  const hardChecks = validateLayout(composed.layoutPlan, uiState, plan, referenceLayout);
 
   const ctxIdGen  = makeIdGen('layout-c');
   const ovfIdGen  = makeIdGen('layout-o');
@@ -663,7 +822,7 @@ async function runComposeLayout({ planningPacket, plan, llmCall, viewport }) {
   const ovfViolations = validateLayoutOverflow(composed.layoutPlan, uiState, viewport, ovfIdGen);
 
   const violations = [].concat(hardChecks.violations, ctxViolations, ovfViolations);
-  return { composed, violations };
+  return { composed, violations, referenceLayout };
 }
 
 // ---------------------------------------------------------------------------

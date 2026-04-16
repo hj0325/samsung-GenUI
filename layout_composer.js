@@ -140,21 +140,24 @@ function validateContextComponentMatch(layoutPlan, uiState, plan, idGen) {
       }));
       return;
     }
+    // NOTE: allowed_contexts filtering is now handled upstream by
+    // generator.filterAllowedComponents() in the pipeline entry point.
+    // We only emit a low-severity informational note here (not a blocker)
+    // in case components still slip through an unfiltered path.
     const allowed = Array.isArray(spec.allowed_contexts) ? spec.allowed_contexts : [];
-    if (allowed.length === 0) return;
-    if (!allowed.some(tag => ctxSet.has(tag))) {
+    if (allowed.length > 0 && !allowed.some(tag => ctxSet.has(tag))) {
       out.push(buildViolation({
         id:       idGen(),
         stage:    'layout',
         ruleId:   'context_component_match',
         category: 'context',
-        severity: 'medium',
-        status:   'review-required',
+        severity: 'low',
+        status:   'info',
         element:  ch.componentId,
         property: 'allowed_contexts',
         actual:   ctxTags,
         expected: allowed,
-        message:  `"${ch.componentId}" allowed_contexts [${allowed.join(', ')}] do not intersect uiState context [${ctxTags.join(', ')}]`
+        message:  `[info] "${ch.componentId}" allowed_contexts [${allowed.join(', ')}] do not intersect uiState context [${ctxTags.join(', ')}] — upstream filter should have caught this`
       }));
     }
   });
