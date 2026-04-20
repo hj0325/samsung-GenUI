@@ -24,4 +24,26 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof onDurSlider === 'function') onDurSlider(300);
   // Paint AI star icons into all reserved slots
   paintAiStars();
+
+  // Phase 2: prefer the AI Agent server as the default generation mode.
+  // On page load we probe /api/agent/health — if the Node server is up
+  // and OPENAI_API_KEY is configured, flip the session to 'agent' so
+  // the chat Send button routes through the real LLM pipeline instead
+  // of the old keyword-matching local mode. If the server isn't
+  // reachable (dev without `node server.js`), stay in 'local' and the
+  // existing `promptMap` fallback keeps the UI usable.
+  if (typeof AgentAPI !== 'undefined' && AgentAPI && typeof AgentAPI.health === 'function') {
+    AgentAPI.health()
+      .then(function (data) {
+        if (data && (data.ok || data.model)) {
+          if (typeof setAgentMode === 'function') setAgentMode('agent');
+          console.log('[boot] AI agent detected (%s) — default mode = agent',
+            (data.model || 'unknown'));
+        }
+      })
+      .catch(function () {
+        // Silent: user can still toggle manually later if they start the server.
+        console.log('[boot] AI agent unreachable — staying in local mode');
+      });
+  }
 });

@@ -421,8 +421,28 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
     if (canvasErr) canvasErr.classList.remove('skeleton-loading');
     _pipelineError('Agent generation failed: ' +
       ((err && err.message) ? err.message : 'Unknown error'));
-    _showGenerateError('NETWORK / SERVER ERROR',
-      (err && err.message) ? err.message : 'Unknown error. Click Retry to try again, or use a different prompt.');
+
+    // Graceful fallback: auto-run local keyword matching so the user
+    // always sees SOMETHING on Send instead of a broken canvas. The
+    // error banner still shows so they know the AI path failed and can
+    // click Retry once the server recovers.
+    _pipelineInfo('Falling back to Local mode (keyword matching)\u2026');
+    try {
+      const promptLower = (prompt || '').toLowerCase();
+      let matched = scenarioHint;
+      if (!matched) {
+        for (const [keyword, scenario] of Object.entries(promptMap)) {
+          if (promptLower.includes(keyword)) { matched = scenario; break; }
+        }
+      }
+      matched = matched || (promptLower ? 'feed' : 'login');
+      _pipelineSuccess('Local render: ' + matched);
+      generateVariants(matched, prompt);
+    } catch (fbErr) {
+      console.warn('Local fallback also failed:', fbErr.message);
+    }
+    _showGenerateError('AI UNAVAILABLE \u2014 showing Local fallback',
+      (err && err.message) ? err.message : 'Check server / network; click Retry after fixing.');
   }
 }
 

@@ -24,8 +24,11 @@ function setAgentMode(mode) {
   agentSession.mode = mode;
   const indicator = document.getElementById('agentModeIndicator');
   if (indicator) {
-    indicator.textContent = mode === 'agent' ? 'AI Connected' : 'Local Mode';
+    indicator.textContent = mode === 'agent' ? 'AI' : 'Local';
     indicator.className = 'agent-mode-indicator ' + (mode === 'agent' ? 'connected' : 'local');
+    indicator.title = mode === 'agent'
+      ? 'AI mode \u2014 chat prompts call the OpenAI pipeline. Click to switch to Local (keyword matching).'
+      : 'Local mode \u2014 chat prompts match pre-built scenarios via keywords. Click to switch to AI (OpenAI pipeline).';
   }
 }
 
@@ -689,21 +692,32 @@ function hideAgentLoading() {
 function toggleAgentMode() {
   if (agentSession.mode === 'agent') {
     setAgentMode('local');
+    console.log('[mode] Switched to Local \u2014 chat Send will match keywords against promptMap');
     return;
   }
   // Try to connect to Node.js agent server
   const indicator = document.getElementById('agentModeIndicator');
-  indicator.textContent = 'Connecting...';
-  indicator.className = 'agent-mode-indicator local';
+  if (indicator) {
+    indicator.textContent = '\u2026';
+    indicator.className = 'agent-mode-indicator local';
+    indicator.title = 'Connecting to AI server\u2026';
+  }
 
   AgentAPI.health()
     .then(data => {
       setAgentMode('agent');
-      console.log('Agent server connected:', data.model);
+      console.log('[mode] Switched to AI (%s)', (data && data.model) || 'connected');
     })
     .catch(() => {
-      indicator.textContent = 'Local Mode';
-      alert('AI Agent server not running.\\n\\nStart it with:\\n  cd samsung-oneui-design-system\\n  node server.js\\n\\nMake sure .env has your OPENAI_API_KEY.');
+      // Revert indicator and surface a non-blocking toast-style message
+      // in #pipelineOutput (not an alert — alerts break flow).
+      setAgentMode('local');
+      if (typeof _pipelineStart === 'function') {
+        _pipelineStart('AI server not reachable');
+        _pipelineError('Can\'t reach /api/agent/health at the current origin.');
+        _pipelineInfo('Start the Node server: <code>node server.js</code> (requires .env with OPENAI_API_KEY)');
+        _pipelineInfo('Staying in Local mode \u2014 chat Send will keep using keyword matching.');
+      }
     });
 }
 
