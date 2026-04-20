@@ -754,15 +754,28 @@ async function runComposeLayout({ planningPacket, plan, llmCall, viewport }) {
   if (!plan)           throw new Error('runComposeLayout requires plan');
 
   // --- Pre-filter: single-point component filtering via Generator rules ---
+  //
+  // NON-MUTATING: earlier revisions did `plan.requiredComponents = plan...
+  // .filter(...)` which mutated the caller's plan object. When the
+  // streaming endpoint sent `step_done.plan` (still holding the full
+  // list) and then the final `done` event (observing the post-filter
+  // list), the two payloads disagreed — looked like data was being
+  // wiped. We now build a local filtered copy without touching the
+  // shared plan.
   const uiStatePre = planningPacket.uiState;
+  let filteredPlan = plan;
   if (plan && Array.isArray(plan.requiredComponents)) {
     const ids = plan.requiredComponents.map(c => c.componentType).filter(Boolean);
     const allowed = preFilterComponents(ids, uiStatePre);
     const allowedSet = new Set(allowed);
-    plan.requiredComponents = plan.requiredComponents.filter(
-      c => !c.componentType || allowedSet.has(c.componentType)
-    );
+    filteredPlan = Object.assign({}, plan, {
+      requiredComponents: plan.requiredComponents.filter(
+        c => !c.componentType || allowedSet.has(c.componentType)
+      )
+    });
   }
+  // For the rest of this function, use `filteredPlan` instead of `plan`.
+  plan = filteredPlan;
 
   // --- Reference Layout: deterministic order + positions from generator.js ---
   // This gives the LLM a design-system-grounded ordering to follow rather than

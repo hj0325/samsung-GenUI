@@ -435,19 +435,51 @@ function filterAllowedComponents(uiState, refs, memory) {
   const allowed    = new Set(rule.allowedCategories    || []);
   const disallowed = new Set(rule.disallowedCategories || []);
 
+  // The filter is gated by TWO separate authorities:
+  //
+  //  1. surfaceRules.{ctxKey}.allowedCategories / disallowedCategories
+  //     A coarse per-surface categorical whitelist/blacklist authored in
+  //     generator_memory.json. E.g. "home" allows chrome/widget/primitive/
+  //     navigation but NOT info-card/media/selection.
+  //
+  //  2. component.allowedContexts
+  //     Per-component list of contexts where this component fits (drawn
+  //     from design memory — "message_summary_card → ['driving',
+  //     'glanceable','quick-view']").
+  //
+  // The previous logic AND-joined these: both must pass. That was too
+  // strict — semantic cards picked by Step-3 planner (info-card, media,
+  // selection) all had legitimate `allowedContexts` matches for the
+  // active uiState, but got killed by the category whitelist and the
+  // plan emptied out. Now we OR them: a component passes if either
+  //   (a) the surface's category whitelist lets it through, OR
+  //   (b) its own allowedContexts explicitly declares a match with any
+  //       current uiState dimension (surface / attention / mobility /
+  //       interaction / density / scenario).
+  // The disallowedCategories blacklist still hard-rejects regardless.
+  const ctxTokens = [
+    key,
+    uiState.baseSurface,
+    uiState.overlayType,
+    uiState.attentionMode,
+    uiState.mobilityMode,
+    uiState.interactionMode,
+    uiState.densityMode
+  ].filter(Boolean);
+
   return (refs || []).filter(r => {
     const entry = _findRegistryEntry(reg, r, gm);
     if (!entry) return false;
     if (disallowed.has(entry.category)) return false;
-    if (allowed.size > 0 && !allowed.has(entry.category)) return false;
-    // also enforce component's own allowedContexts if provided
-    if (Array.isArray(entry.allowedContexts) &&
-        entry.allowedContexts.length > 0 &&
-        !entry.allowedContexts.includes(key) &&
-        !entry.allowedContexts.includes(uiState.baseSurface)) {
-      return false;
-    }
-    return true;
+
+    const categoryOK = allowed.size === 0 || allowed.has(entry.category);
+    const contexts = Array.isArray(entry.allowedContexts) ? entry.allowedContexts : [];
+    const contextOK = contexts.length === 0 ||
+      ctxTokens.some(t => contexts.includes(t));
+
+    // Pass if EITHER the surface approves the category OR the component
+    // itself declares a context match for this uiState.
+    return categoryOK || contextOK;
   });
 }
 

@@ -1848,6 +1848,134 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Streaming variant of /api/pipeline/full. Emits one SSE event per
+  // step so the client can see EXACTLY where the pipeline stalls or
+  // fails, along with the JSON output each step produced. Events:
+  //   event: step_started   data: { step, label, idx, total }
+  //   event: step_done      data: { step, output, elapsedMs, idx, total }
+  //   event: done           data: { /* full bundled result */ }
+  //   event: error          data: { step, message, elapsedMs }
+  if (url === '/api/pipeline/full/stream' && req.method === 'POST') {
+    const _body = await readBody(req);
+    const _scenarioText = _body.scenario_text || _body.prompt || '';
+    const _viewport     = _body.viewport || null;
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no'
+    });
+    function emit(event, data) {
+      res.write('event: ' + event + '\n');
+      res.write('data: ' + JSON.stringify(data) + '\n\n');
+    }
+
+    const STEPS = [
+      { id: 'plan',     label: 'interpret \u2192 ui_state \u2192 plan (steps 1-3)' },
+      { id: 'compose',  label: 'LLM layout composer (step 4)' },
+      { id: 'validate', label: 'Rollup validation (step 5)' },
+      { id: 'explain',  label: 'Explanation layer (step 7)' }
+    ];
+    const TOTAL = STEPS.length;
+    let currentStep = null;
+    let stepT0 = 0;
+
+    function startStep(idx) {
+      currentStep = STEPS[idx];
+      stepT0 = Date.now();
+      emit('step_started', {
+        step:  currentStep.id,
+        label: currentStep.label,
+        idx:   idx + 1,
+        total: TOTAL
+      });
+    }
+    function doneStep(idx, output) {
+      emit('step_done', {
+        step:      STEPS[idx].id,
+        output:    output,
+        elapsedMs: Date.now() - stepT0,
+        idx:       idx + 1,
+        total:     TOTAL
+      });
+    }
+
+    try {
+      // Step 1: plan (interpret + normalize + select)
+      startStep(0);
+      const planResult = await pipeline.runPlan({
+        scenarioText: _scenarioText,
+        llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
+      });
+      doneStep(0, {
+        interpretation:  planResult.interpretation,
+        planningPacket:  planResult.planningPacket,
+        plan:            planResult.plan,
+        uiState:         planResult.uiState,
+        planViolations:  planResult.planViolations
+      });
+
+      // Step 2: compose (LLM layout composer)
+      startStep(1);
+      const layoutResult = await pipeline.runComposeLayout({
+        planningPacket: planResult.planningPacket,
+        plan:           planResult.plan,
+        llmCall:        (sys, user) => callOpenAI(sys, user, 0.3),
+        viewport:       _viewport
+      });
+      doneStep(1, {
+        layoutPlan:       layoutResult.composed.layoutPlan,
+        composerNotes:    layoutResult.composed.composerNotes,
+        layoutViolations: layoutResult.violations
+      });
+
+      // Step 3: validate (rollup)
+      startStep(2);
+      const validation = pipeline.rollupValidationResults({
+        planViolations:   planResult.planViolations,
+        layoutViolations: layoutResult.violations
+      });
+      doneStep(2, validation);
+
+      // Step 4: explain
+      startStep(3);
+      const explanation = await pipeline.runExplain({
+        scenarioText:     _scenarioText,
+        uiState:          planResult.uiState,
+        plan:             planResult.plan,
+        layoutPlan:       layoutResult.composed.layoutPlan,
+        validationReport: validation,
+        llmCall:          (sys, user) => callOpenAI(sys, user, 0.4)
+      });
+      doneStep(3, explanation);
+
+      // Final bundled result (same shape as /api/pipeline/full)
+      emit('done', {
+        interpretation: planResult.interpretation,
+        planningPacket: planResult.planningPacket,
+        plan:           planResult.plan,
+        uiState:        planResult.uiState,
+        layoutPlan:     layoutResult.composed.layoutPlan,
+        composerNotes:  layoutResult.composed.composerNotes,
+        explanation,
+        validation
+      });
+      console.log(`[Pipeline/stream] full for "${_scenarioText.substring(0,50)}" → groups:${layoutResult.composed.layoutPlan.groups.length} violations:${validation.summary.total}`);
+    } catch (err) {
+      const elapsed = Date.now() - stepT0;
+      console.error('[Pipeline/stream]', (currentStep ? currentStep.id : 'init'), err.message);
+      emit('error', {
+        step: currentStep ? currentStep.id : 'init',
+        message: err.message || 'Pipeline failed',
+        elapsedMs: elapsed
+      });
+    } finally {
+      res.end();
+    }
+    return;
+  }
+
   if (url === '/api/pipeline/full' && req.method === 'POST') {
     try {
       const body = await readBody(req);

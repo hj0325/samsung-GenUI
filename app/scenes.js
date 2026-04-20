@@ -316,6 +316,14 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
 
   showAgentLoading(`Generating Variant ${v}...`);
 
+  // Live log in the pipelineOutput panel so the user can watch progress.
+  _pipelineStart('AI generation \u2014 Variant ' + v);
+  _pipelineInfo('Prompt: "' + prompt.slice(0, 80) + (prompt.length > 80 ? '\u2026' : '') + '"');
+  if (scenarioHint) _pipelineInfo('Scenario hint: ' + scenarioHint);
+  _pipelineInfo('Surface skeleton: ' + skeletonSurfaceType);
+  _pipelineStatus('ai-step', '\u2022 Calling AI\u2026', 'var(--text-3)');
+  const _tStart = Date.now();
+
   try {
     let classifiedSurfaceType = skeletonSurfaceType;
     let componentCount = 0;
@@ -336,11 +344,19 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
         if (info && info.intent) {
           showAgentLoading(`Generating \u201C${info.intent}\u201D\u2026`);
         }
+        // Live pipeline log
+        if (info) {
+          if (info.surfaceType) _pipelineLog('\u2022 Surface classified: <b>' + info.surfaceType + '</b>');
+          if (info.intent)      _pipelineLog('\u2022 Intent: ' + info.intent);
+        }
       },
       // Progressive component count — updates the loader message
       onComponent: function (comp) {
         componentCount++;
         showAgentLoading(`Received ${componentCount} component${componentCount === 1 ? '' : 's'}\u2026`);
+        _pipelineStatus('comp-count',
+          '\u2022 Receiving components: <b>' + componentCount + '</b>',
+          '#3E91FF');
       }
     });
 
@@ -375,6 +391,19 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
         'Model response was sanitized or defaulted. Generated result is a minimal fallback surface.');
     }
 
+    // Pipeline log — summary on success
+    var elapsed = ((Date.now() - _tStart) / 1000).toFixed(1);
+    _pipelineStatus('ai-step',
+      (res.__cached ? '\u2022 Served from cache' : '\u2022 AI call complete') +
+      ' (' + elapsed + 's)', '#4ade80');
+    if (res.critic) {
+      var issuesCount = (res.critic.issues && res.critic.issues.length) || 0;
+      _pipelineLog('\u2022 Critic: ' + (issuesCount
+        ? issuesCount + ' issue' + (issuesCount === 1 ? '' : 's') + ' flagged'
+        : 'no issues'), issuesCount ? '#f59e0b' : '#4ade80');
+    }
+    _pipelineSuccess('Rendered Variant ' + v + (isFallback ? ' (fallback)' : ''));
+
     // History — push unless this is a cached replay (cached came from history)
     if (!res.__cached) {
       _pushHistoryEntry({
@@ -390,6 +419,8 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
     hideAgentLoading();
     const canvasErr = document.getElementById('canvas');
     if (canvasErr) canvasErr.classList.remove('skeleton-loading');
+    _pipelineError('Agent generation failed: ' +
+      ((err && err.message) ? err.message : 'Unknown error'));
     _showGenerateError('NETWORK / SERVER ERROR',
       (err && err.message) ? err.message : 'Unknown error. Click Retry to try again, or use a different prompt.');
   }
@@ -549,24 +580,277 @@ function renderPipelineResponse(resp) {
   }
 }
 
+// ---------------------------------------------------------------------------
+//  pipelineOutput helpers — live progress surface for AI / pipeline calls
+//  ---------------------------------------------------------------------------
+//  #pipelineOutput is a scrollable panel below the chat input. We use it as
+//  a live log during AI generation (sendChatMessage in Agent mode,
+//  pipelineGenerate, generateFromUrl) so the user sees what's happening
+//  instead of just a blocking spinner.
+// ---------------------------------------------------------------------------
+function _pipelineOutput() {
+  return document.getElementById('pipelineOutput');
+}
+// Reset + show the panel with a title header.
+function _pipelineStart(title) {
+  var o = _pipelineOutput();
+  if (!o) return;
+  o.style.display = 'block';
+  o.innerHTML = '<div style="color:#3E91FF;font-weight:600;margin-bottom:6px;">' +
+    title + '</div>';
+}
+// Append a one-off log line.
+function _pipelineLog(html, color) {
+  var o = _pipelineOutput();
+  if (!o) return;
+  o.style.display = 'block';
+  var line = document.createElement('div');
+  line.style.cssText = 'padding:1px 0;' + (color ? ('color:' + color + ';') : '');
+  line.innerHTML = html;
+  o.appendChild(line);
+  o.scrollTop = o.scrollHeight;
+}
+// Update (or create) a persistent status line by key — used for counters
+// that should update in place rather than appending a new row each tick.
+function _pipelineStatus(key, html, color) {
+  var o = _pipelineOutput();
+  if (!o) return;
+  o.style.display = 'block';
+  var line = o.querySelector('[data-pline="' + key + '"]');
+  if (!line) {
+    line = document.createElement('div');
+    line.dataset.pline = key;
+    line.style.cssText = 'padding:1px 0;' + (color ? ('color:' + color + ';') : '');
+    o.appendChild(line);
+  } else if (color) {
+    line.style.color = color;
+  }
+  line.innerHTML = html;
+  o.scrollTop = o.scrollHeight;
+}
+function _pipelineSuccess(msg) { _pipelineLog('\u2713 ' + msg, '#4ade80'); }
+function _pipelineError(msg)   { _pipelineLog('\u2717 ' + msg, '#ff6b6b'); }
+function _pipelineInfo(msg)    { _pipelineLog('\u2192 ' + msg, 'var(--text-2)'); }
+
+// Escape HTML for safe JSON rendering in the pipelineOutput panel.
+function _escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+// Render a pretty-printed <details> block containing a step's JSON output.
+function _pipelineJsonBlock(title, obj, meta) {
+  var json = '';
+  try { json = JSON.stringify(obj, null, 2); }
+  catch (e) { json = String(obj); }
+  // Cap size to avoid huge panels — show first 2500 chars + "(+N more)"
+  var MAX = 2500;
+  var truncated = '';
+  if (json.length > MAX) {
+    truncated = ' <span style="color:var(--text-3);">(+' + (json.length - MAX) + ' more chars)</span>';
+    json = json.slice(0, MAX);
+  }
+  var metaHtml = meta ? ' <span style="color:var(--text-3);font-weight:400;">' + _escapeHtml(meta) + '</span>' : '';
+  return '<details style="margin:4px 0;padding:4px 0;border-top:1px solid rgba(255,255,255,0.05);">' +
+    '<summary style="cursor:pointer;color:#fff;font-weight:600;font-size:11px;">' + _escapeHtml(title) + metaHtml + '</summary>' +
+    '<pre style="margin:6px 0 0 0;padding:8px;background:rgba(0,0,0,0.35);border-radius:6px;font-size:10px;line-height:1.45;color:#cbd5e1;overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-word;">' +
+      _escapeHtml(json) + truncated +
+    '</pre>' +
+  '</details>';
+}
+
+// Run the full 5-step pipeline with Server-Sent Events so each step's
+// JSON output lands in #pipelineOutput as soon as it's produced. If a
+// step fails, an explicit "✗ {step}" line appears instead of a generic
+// error — makes it immediately obvious WHERE the chain is breaking.
 async function pipelineGenerate() {
   const prompt = document.getElementById('genPrompt').value.trim();
   if (!prompt) { alert('Enter a scenario first.'); return; }
-  const output = document.getElementById('pipelineOutput');
-  if (output) { output.style.display='block'; output.innerHTML = '<div style="color:var(--text-3);">Running pipeline… (interpret → ui_state → plan → compose → validate → explain)</div>'; }
+  _pipelineStart('AI Pipeline (5 steps)');
+  _pipelineInfo('Prompt: "' + prompt.slice(0, 80) + (prompt.length > 80 ? '\u2026' : '') + '"');
+  _pipelineInfo('Streaming each step&rsquo;s JSON output below.');
+  const tPipeline = Date.now();
+
+  let finalData = null;
+  let firstErrStep = null;
   try {
-    const resp = await fetch('/api/pipeline/full', {
+    const resp = await fetch('/api/pipeline/full/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
       body: JSON.stringify({ scenario_text: prompt })
     });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error);
-    renderPipelineResponse(data);
+    if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // Parse SSE frames separated by blank lines
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+      for (const frame of frames) {
+        if (!frame.trim()) continue;
+        let ev = 'message', data = '';
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) ev = line.slice(6).trim();
+          else if (line.startsWith('data:')) data += line.slice(5).trim();
+        }
+        let payload = {};
+        try { payload = data ? JSON.parse(data) : {}; } catch (e) { payload = { raw: data }; }
+        _handlePipelineEvent(ev, payload);
+        if (ev === 'done') finalData = payload;
+        if (ev === 'error' && !firstErrStep) firstErrStep = payload.step || 'unknown';
+      }
+    }
+
+    if (firstErrStep) {
+      _pipelineError('Pipeline halted at step "' + firstErrStep + '"');
+      return;
+    }
+    if (!finalData) {
+      _pipelineError('Stream ended without a "done" event');
+      return;
+    }
+    _pipelineSuccess('Pipeline complete (' + ((Date.now() - tPipeline) / 1000).toFixed(1) + 's total)');
+    renderPipelineResponse(finalData);
   } catch (e) {
     console.error('[pipeline]', e);
-    if (output) output.innerHTML = `<div style="color:#ff6b6b;">Pipeline failed: ${e.message}</div>`;
+    _pipelineError('Pipeline request failed: ' + e.message);
+  }
+}
+
+// Per-event handler. Each SSE event from /api/pipeline/full/stream is
+// rendered as its own status line + collapsible JSON block.
+function _handlePipelineEvent(ev, payload) {
+  if (ev === 'step_started') {
+    _pipelineStatus('step-' + payload.step,
+      '<b>Step ' + payload.idx + '/' + payload.total + '</b> &middot; ' +
+      _escapeHtml(payload.step) + ' \u2014 ' + _escapeHtml(payload.label || '') +
+      ' <span style="color:var(--text-3);">running\u2026</span>',
+      'var(--text-2)');
+    return;
+  }
+  if (ev === 'step_done') {
+    var secs = ((payload.elapsedMs || 0) / 1000).toFixed(1);
+    _pipelineStatus('step-' + payload.step,
+      '\u2713 <b>Step ' + payload.idx + '/' + payload.total + '</b> &middot; ' +
+      _escapeHtml(payload.step) + ' <span style="color:var(--text-3);">(' + secs + 's)</span>',
+      '#4ade80');
+    // Append a collapsible JSON preview for that step
+    var title = payload.step + ' output';
+    var meta = '(' + secs + 's)';
+    var o = _pipelineOutput();
+    if (o) {
+      var wrap = document.createElement('div');
+      wrap.innerHTML = _pipelineJsonBlock(title, payload.output || {}, meta);
+      o.appendChild(wrap.firstElementChild);
+      o.scrollTop = o.scrollHeight;
+    }
+    return;
+  }
+  if (ev === 'done') {
+    // Schema check — validate the server actually returned what
+    // renderPipelineResponse expects (layoutPlan.groups[].children[]).
+    _validatePipelineSchema(payload);
+    return;
+  }
+  if (ev === 'error') {
+    var secs2 = ((payload.elapsedMs || 0) / 1000).toFixed(1);
+    _pipelineStatus('step-' + (payload.step || 'unknown'),
+      '\u2717 <b>' + _escapeHtml(payload.step || 'unknown') + '</b> \u2014 ' +
+      _escapeHtml(payload.message || 'error') +
+      ' <span style="color:var(--text-3);">(' + secs2 + 's)</span>',
+      '#ff6b6b');
+    return;
+  }
+}
+
+// Validate the final pipeline payload has the schema that
+// renderPipelineResponse expects, and log any mismatches. This makes
+// Phase-1 debugging explicit: if the server changes contract or a
+// composer step returns something unexpected, we see it immediately.
+function _validatePipelineSchema(data) {
+  var errors = [];       // schema broken (renderer will fail)
+  var warnings = [];     // schema ok, but suspicious data (renderer might show empty)
+
+  if (!data || typeof data !== 'object') {
+    errors.push('response is not an object');
+  } else {
+    if (!data.uiState || typeof data.uiState !== 'object') {
+      errors.push('missing uiState (expected step-2 ui_state_resolution output)');
+    }
+    if (!data.plan || typeof data.plan !== 'object') {
+      errors.push('missing plan (expected step-3 required_components output)');
+    } else if (!Array.isArray(data.plan.requiredComponents)) {
+      errors.push('plan.requiredComponents missing or not an array');
+    } else if (data.plan.requiredComponents.length === 0) {
+      warnings.push('plan.requiredComponents is empty \u2014 composer will render no content');
+    }
+    if (!data.layoutPlan || typeof data.layoutPlan !== 'object') {
+      errors.push('missing layoutPlan (expected step-4 composer output)');
+    } else {
+      if (!Array.isArray(data.layoutPlan.groups)) {
+        errors.push('layoutPlan.groups missing or not an array \u2014 renderPipelineResponse expects groups[]');
+      } else {
+        data.layoutPlan.groups.forEach(function (g, i) {
+          if (!Array.isArray(g.children)) {
+            errors.push('layoutPlan.groups[' + i + '].children missing or not an array');
+          } else {
+            g.children.forEach(function (c, j) {
+              if (!c.componentId) {
+                errors.push('layoutPlan.groups[' + i + '].children[' + j + '] missing componentId');
+              }
+            });
+          }
+        });
+        if (!data.layoutPlan.surfaceType && !data.layoutPlan.groups.length) {
+          errors.push('layoutPlan has neither surfaceType nor any groups');
+        }
+      }
+      // Cross-check: every componentId used in layoutPlan should exist
+      // in plan.requiredComponents. Composer inventing new ids is a
+      // real bug we want to surface.
+      if (data.plan && Array.isArray(data.plan.requiredComponents) &&
+          Array.isArray(data.layoutPlan.groups)) {
+        var known = new Set(data.plan.requiredComponents.map(function (c) { return c.componentType || c.id; }));
+        data.layoutPlan.groups.forEach(function (g) {
+          (g.children || []).forEach(function (c) {
+            if (c.componentId && !known.has(c.componentId)) {
+              warnings.push('composer invented componentId "' + c.componentId +
+                '" not in plan.requiredComponents');
+            }
+          });
+        });
+      }
+    }
+    if (!data.validation || typeof data.validation !== 'object') {
+      errors.push('missing validation (expected rollupValidationResults output)');
+    } else if (data.validation.summary && data.validation.summary.high > 0) {
+      warnings.push('validation: ' + data.validation.summary.high + ' HIGH-severity violation(s)');
+    }
+    if (!data.explanation || typeof data.explanation !== 'object') {
+      errors.push('missing explanation (expected step-7 output)');
+    }
+  }
+
+  if (errors.length === 0) {
+    var groupCount = (data.layoutPlan && data.layoutPlan.groups && data.layoutPlan.groups.length) || 0;
+    var childCount = 0;
+    (data.layoutPlan && data.layoutPlan.groups || []).forEach(function (g) {
+      childCount += (g.children || []).length;
+    });
+    _pipelineSuccess('Schema OK \u2014 layoutPlan.groups[' + groupCount + '] with ' +
+      childCount + ' child' + (childCount === 1 ? '' : 'ren'));
+  } else {
+    _pipelineError('Schema BROKEN (' + errors.length + ' error' + (errors.length === 1 ? '' : 's') + '):');
+    errors.forEach(function (msg) { _pipelineLog('&nbsp;&nbsp;\u2022 ' + _escapeHtml(msg), '#ff6b6b'); });
+  }
+  if (warnings.length > 0) {
+    _pipelineLog('&#9888; Warnings (' + warnings.length + '):', '#fbbf24');
+    warnings.forEach(function (msg) { _pipelineLog('&nbsp;&nbsp;\u2022 ' + _escapeHtml(msg), '#fbbf24'); });
   }
 }
 
@@ -1323,6 +1607,11 @@ function generateFromPrompt() {
   } else {
     // Local Mode: generate for selected variants locally
     const matched = scenarioHint || (promptLower ? 'feed' : 'login');
+    _pipelineStart('Local mode');
+    _pipelineInfo('Prompt: "' + prompt.slice(0, 80) + (prompt.length > 80 ? '\u2026' : '') + '"');
+    _pipelineInfo('Keyword match: ' + (scenarioHint ? '<b>' + scenarioHint + '</b>' : 'none') +
+      (scenarioHint ? '' : ' \u2014 defaulting to <b>' + matched + '</b>'));
+    _pipelineSuccess('Rendering scenario: ' + matched);
     generateVariants(matched, prompt);
   }
 }
@@ -1349,20 +1638,31 @@ function generateFromUrl() {
     const payload = StateManager.getGeneratePayload(null, '');
     payload.referenceUrl = url;
     showAgentLoading('Analyzing reference...');
+    _pipelineStart('URL reference generation');
+    _pipelineInfo('Reference URL: ' + url);
+    _pipelineStatus('url-step', '\u2022 Analyzing reference\u2026', 'var(--text-3)');
+    var _urlT0 = Date.now();
     AgentAPI.generateUI(payload)
       .then(response => {
         hideAgentLoading();
+        _pipelineStatus('url-step',
+          '\u2022 Analysis complete (' + ((Date.now() - _urlT0) / 1000).toFixed(1) + 's)',
+          '#4ade80');
         StateManager.updateFromAgentGenerate(response);
         RenderEngine.renderFromModel(response.renderModel);
         RenderEngine.renderCritic(response.critic);
+        _pipelineSuccess('Rendered from URL');
       })
       .catch(err => {
         console.warn('Agent URL generate failed, falling back to local:', err.message);
         hideAgentLoading();
+        _pipelineError('URL analysis failed: ' + err.message + ' \u2014 falling back to local');
         _local_generateFromUrl(url);
       });
     return;
   }
+  _pipelineStart('Local mode \u2014 URL');
+  _pipelineInfo('URL: ' + url);
   _local_generateFromUrl(url);
 }
 
