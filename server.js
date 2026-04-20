@@ -432,7 +432,7 @@ const CONSTRAINT_FRAGMENTS = {
     // CRITICAL: always render real PNG icons. NEVER use letter placeholders (e.g. <div>G</div>, <div>Y</div>) or coloured squares with initials.
     // Use <img src="app-icons/{name}.png" style="width:...;height:...;border-radius:...;"> with one of these canonical filenames (URL-encode Korean automatically in the browser):
     assets: [
-      '전화.png','메시지.png','카메라.png','갤러리.png','설정.png','인터넷.png','연락처.png','시계.png','계산기.png','날씨.png','헬스.png','빅스비.png','클라우드.png','라디오.png','리마인더.png','스튜디오.png','음성 녹음.png','내 파일.png','데일리 보드.png','디바이스 케어_.png','디지털 웰빙.png','보안 Wi-fi.png','보안 폴더.png',
+      'Phone.png','Messages.png','Camera.png','Gallery.png','Settings.png','Internet.png','Contacts.png','Clock.png','Calculator.png','Weather.png','Health.png','Bixby.png','Cloud.png','Radio.png','Reminder.png','Studio.png','VoiceRecorder.png','MyFiles.png','DailyBoard.png','DeviceCare.png','DigitalWellbeing.png','SecureWifi.png','SecureFolder.png',
       'Find.png','Notes.png','Pass.png','SmartThings.png','Store.png','Wallet.png','Wearable.png'
     ],
     rule: 'MANDATORY <img src="app-icons/…"> for every app icon. No letter/emoji fallbacks. If an app has no asset, pick the closest match from the list.'
@@ -671,74 +671,416 @@ async function callOpenAI(systemPrompt, userMessage, temperature = 0.7) {
 }
 
 // ============================================================================
+//  Streaming OpenAI call (SSE). Each token delta invokes onDelta(text, full);
+//  resolves with the final parsed JSON object when the stream completes.
+// ============================================================================
+async function callOpenAIStream(systemPrompt, userMessage, temperature, onDelta) {
+  const body = JSON.stringify({
+    model: OPENAI_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage }
+    ],
+    temperature: temperature != null ? temperature : 0.7,
+    response_format: { type: 'json_object' },
+    stream: true
+  });
+
+  const url = new URL('https://api.openai.com/v1/chat/completions');
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Length': Buffer.byteLength(body)
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const req = https.request(url, options, (res) => {
+      if (res.statusCode !== 200) {
+        let err = '';
+        res.on('data', c => err += c);
+        res.on('end', () => reject(new Error(`OpenAI ${res.statusCode}: ${err.substring(0, 200)}`)));
+        return;
+      }
+      let buffer = '';
+      let fullText = '';
+      res.on('data', chunk => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // last line may be incomplete
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.slice(5).trim();
+          if (payload === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(payload);
+            const delta = (parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content) || '';
+            if (delta) {
+              fullText += delta;
+              try { onDelta(delta, fullText); } catch (e) { /* handler error, ignore */ }
+            }
+          } catch (e) { /* skip malformed SSE frames */ }
+        }
+      });
+      res.on('end', () => {
+        try {
+          const finalJson = JSON.parse(fullText);
+          resolve(finalJson);
+        } catch (e) {
+          reject(new Error('Failed to parse streamed JSON: ' + e.message + ' (text length: ' + fullText.length + ')'));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(120000, () => { req.destroy(); reject(new Error('OpenAI stream timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+// Scan accumulated (possibly incomplete) JSON text and extract every complete
+// object from the `components` array. Uses a minimal brace-counting state
+// machine — doesn't require valid JSON at the top level yet.
+function extractStreamedComponents(fullText, alreadyEmitted) {
+  const match = fullText.match(/"components"\s*:\s*\[/);
+  if (!match) return [];
+  const start = match.index + match[0].length;
+  let depth = 0, inStr = false, esc = false;
+  let objStart = -1;
+  let foundIdx = 0;
+  const out = [];
+  for (let i = start; i < fullText.length; i++) {
+    const c = fullText[i];
+    if (esc) { esc = false; continue; }
+    if (c === '\\') { esc = true; continue; }
+    if (c === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (c === '{') { if (depth === 0) objStart = i; depth++; }
+    else if (c === '}') {
+      depth--;
+      if (depth === 0 && objStart >= 0) {
+        if (foundIdx >= alreadyEmitted) {
+          try { out.push(JSON.parse(fullText.substring(objStart, i + 1))); }
+          catch (e) { /* component still incomplete */ }
+        }
+        foundIdx++;
+        objStart = -1;
+      }
+    }
+    else if (c === ']' && depth === 0) break;
+  }
+  return out;
+}
+
+// ============================================================================
 // System Prompt Builders (constraint-driven, NOT raw document injection)
 // ============================================================================
 
+function buildGenerateSystemPrompt() {
+  return `
+You are generating semantic UI plans for Samsung One UI mobile surfaces.
+
+Do not generate arbitrary freeform layouts.
+Do not return absolute pixel coordinates.
+Do not return generic vertical card stacks unless they are explicitly part of a role-aware surface plan.
+
+You must think in surface grammar.
+
+Always determine:
+1. surfaceType
+2. user intent
+3. content hierarchy
+4. component roles
+5. role-specific content
+6. allowed state values
+
+One UI rules to respect:
+- viewing area and interaction area are distinct
+- important content should use focus-block hierarchy when appropriate
+- bottom bar and bottom navigation are different roles
+- safe side margins are respected by the renderer
+- expandable app bar may rest only in "expanded" or "collapsed"
+- do not invent a mid resting state for app bars
+- do not mix navigation and action components at the bottom
+
+Your job is to propose semantic components.
+The frontend renderer owns spatial placement.
+
+Return strict JSON only in this shape:
+{
+  "layoutTree": {
+    "surfaceType": "first-depth-list",
+    "intent": "browse content",
+    "hierarchy": "focus-on-list"
+  },
+  "renderModel": {
+    "surfaceType": "first-depth-list",
+    "layout": {
+      "surfaceType": "first-depth-list",
+      "theme": "dark",
+      "variant": "one-ui"
+    },
+    "components": [
+      {
+        "id": "app-bar",
+        "role": "expandable-app-bar",
+        "state": "expanded",
+        "text": "Messages",
+        "content": {
+          "title": "Messages"
+        }
+      }
+    ]
+  },
+  "critic": {
+    "score": 85,
+    "issues": [],
+    "suggestions": []
+  }
+}
+
+ALLOWED_SURFACE_TYPES:
+lockscreen, first-depth-list, second-depth-detail, tab-root,
+dialog-bottom, dialog-center, quick-settings, notification-shade, selection-mode
+
+ALLOWED_ROLES:
+status-bar, expandable-app-bar, collapsed-app-bar, selection-app-bar, search-bar,
+focus-block, focus-block-group, list, detail-content, notification-list,
+bottom-navigation, bottom-bar, bottom-dialog, center-dialog,
+lock-time, lock-date, lock-shortcuts, quick-settings-panel, background, scrim
+`;
+}
+
+function buildGenerateUserPrompt(payload) {
+  const constraints = extractConstraints(
+    payload.prompt || payload.scenario || '',
+    payload.scenario,
+    payload.mode || 'dark'
+  );
+  const tokenSummary = formatConstraintsForPrompt({
+    core: constraints.core,
+    colors: constraints.colors,
+    typography: constraints.typography
+  });
+
+  return `
+Requested surfaceType: ${payload.surfaceType || 'first-depth-list'}
+Scenario key: ${payload.scenario || ''}
+Prompt: ${payload.prompt || ''}
+Brand: ${payload.surface || 'samsung'}
+Mode: ${payload.mode || 'dark'}
+Device: ${payload.device || 'Galaxy S26'}
+
+Constraints:
+${JSON.stringify(payload.constraints || {}, null, 2)}
+
+Design tokens (for copy/color/typography reference only — do not quote coordinates):
+${tokenSummary}
+
+Reference image attached: ${payload.referenceImage ? 'yes' : 'no'}
+
+Instructions:
+- Keep the response semantic and role-based.
+- The frontend renderer will handle placement.
+- Choose only from approved roles and approved surface types.
+- If the prompt implies browsing, likely use first-depth-list or tab-root.
+- If the prompt implies detail view, use second-depth-detail.
+- If the prompt implies confirmation or chooser, use dialog-bottom or dialog-center.
+- If the prompt implies lock screen information, use lockscreen.
+- If the prompt implies quick toggles, use quick-settings.
+`;
+}
+
+// Legacy entry point used elsewhere (handleConstraintExtract, variants). Left
+// as a thin wrapper so we don't break callers that expect the old signature.
 function buildGeneratePrompt(prompt, scenario, mode) {
   const constraints = extractConstraints(prompt, scenario, mode);
   const constraintJSON = formatConstraintsForPrompt(constraints);
 
-  return `You are a Samsung One UI 8.5 design system expert. You generate mobile UI layouts as structured JSON.
+  return `You are generating semantic UI plans for Samsung One UI screens.
 
-=== DESIGN CONSTRAINTS (extracted from Samsung One UI 8.5 Design System) ===
+You are NOT a layout engine. You do NOT decide coordinates, x/y/width/height, or spatial structure.
+The frontend owns spatial placement via the surface grammar engine. Your job is to propose
+SEMANTIC components with a role, the right surfaceType, and content — nothing else.
+
+=== STRICT RULES ===
+- Do NOT return absolute pixel coordinates (no x, y, top, left, width, height, position).
+- Do NOT invent "card1 / card2 / box3" unnamed roles. Every component.role MUST come from the enum below.
+- Do NOT merge bottom-bar and bottom-navigation — they are DIFFERENT roles.
+- Do NOT invent app-bar "intermediate" states. Only "expanded" or "collapsed" are allowed.
+- Do NOT return "free layout" or generic vertical stacks.
+- Do NOT generate more components than the surface actually needs.
+
+Always determine:
+  1. surfaceType (one of ALLOWED_SURFACE_TYPES)
+  2. user intent (e.g., "browse messages", "inspect product")
+  3. content hierarchy (what's the focus block? what's secondary?)
+  4. component roles (one per slot, from ALLOWED_ROLES)
+  5. role-specific content (title, list items, tabs, placeholder, etc.)
+  6. allowed state values (for expandable-app-bar: expanded|collapsed)
+
+One UI structural principles you MUST respect (the engine enforces them; you propose semantics):
+- Viewing area and interaction area are distinct.
+- Focus-block hierarchy is used for emphasis, not as a generic container.
+- Safe side margins are the engine's job.
+- Expandable app bar may rest ONLY in "expanded" or "collapsed".
+
+=== ALLOWED_SURFACE_TYPES ===
+lockscreen, first-depth-list, second-depth-detail, tab-root,
+dialog-bottom, dialog-center, quick-settings, notification-shade, selection-mode
+
+=== ALLOWED_ROLES ===
+status-bar, expandable-app-bar, collapsed-app-bar, selection-app-bar, search-bar,
+focus-block, focus-block-group, list, detail-content, notification-list,
+bottom-navigation, bottom-bar, bottom-dialog, center-dialog,
+lock-time, lock-date, lock-shortcuts, quick-settings-panel, background, scrim
+
+=== DESIGN CONSTRAINTS (tokens only — for content/copy guidance) ===
 ${constraintJSON}
 === END CONSTRAINTS ===
-
-Apply these constraints precisely. Do NOT invent new tokens — use only the values above.
-
-AVAILABLE COMPONENT TYPES (use these exact type strings):
-btn-contained, btn-outlined, btn-flat, fab, switch, checkbox, radio, chip, input, search,
-appbar, bottomnav, pill-tab, tab-bar, card, list-item, dialog, snackbar, divider, badge,
-status-bar, now-bar, qs-toggle, qs-grid, media-card, notification-card, widget-small, keyboard
-
-For complex custom components, use type:"custom" with inline HTML.
 
 RESPOND with valid JSON in this exact structure:
 {
   "sessionId": "<uuid>",
   "layoutTree": {
-    "type": "screen",
-    "surface": "<scenario name>",
-    "children": [ { "id": "item-1", "type": "<component-type>", "role": "gen|static", "text": "..." } ]
+    "surfaceType": "<one of ALLOWED_SURFACE_TYPES>",
+    "intent": "<short user-intent phrase>",
+    "hierarchy": "focus-on-list | focus-on-hero | focus-on-dialog | focus-on-chrome",
+    "zones": { "topSystem": true, "viewing": true, "interaction": true, "bottomNavigation": true }
   },
   "renderModel": {
-    "layout": { "align": "stretch", "gap": <number>, "padding": "<css padding>" },
+    "surfaceType": "<same as layoutTree.surfaceType>",
+    "layout": {
+      "surfaceType": "<same>",
+      "theme": "${mode}",
+      "variant": "one-ui"
+    },
     "components": [
       {
-        "id": "item-1",
-        "type": "<component-type or custom>",
-        "role": "gen|static",
-        "text": "optional override text",
-        "html": "only if type is custom - full inner HTML string",
-        "motion": "fadeIn|slideUp|scaleUp",
-        "delay": <ms>,
-        "fullWidth": true
+        "id": "<semantic id e.g. 'app-bar'>",
+        "role": "<one of ALLOWED_ROLES>",
+        "state": "expanded | collapsed (only for expandable-app-bar)",
+        "text": "<optional primary copy>",
+        "content": { "title": "...", "items": [...], "tabs": [...], "placeholder": "..." }
       }
     ]
   },
   "critic": {
     "score": <0-100>,
-    "issues": [ { "type": "spacing|hierarchy|density|alignment|consistency", "message": "..." } ],
+    "issues": [ { "type": "hierarchy|density|consistency|semantic", "message": "..." } ],
     "suggestions": [ "..." ]
   }
 }
 
-DESIGN RULES:
-- Every screen starts with a status-bar (static, fadeIn, delay:0)
-- Use appbar for navigation header (static)
-- Use bottomnav or pill-tab for bottom navigation (static)
-- Content components are "gen" role, chrome/navigation are "static" role
-- Gap 0 for edge-to-edge screens, 8-16 for padded content
-- Padding: "0" for full bleed, "16px" for standard, "28px 0 0" for lockscreen-style
-- Use proper motion stagger: static elements first (delay 0-40ms), gen elements after (100-400ms)
-- For custom HTML, use inline styles with CSS variables: var(--primary), var(--text), var(--text-2), var(--text-3), var(--surface), var(--surface-2), var(--divider)
-- Create realistic, production-quality screens with proper content (not placeholder text)
-- Include 8-15 components per screen for a complete feel
-- APP ICONS: every app/shortcut MUST render as <img src="app-icons/{filename}.png" style="width:WIDTHpx;height:HEIGHTpx;border-radius:Rpx;">. NEVER emit letter/initial placeholders like <div>G</div>, coloured squares with a single capital, or emoji glyphs in place of an icon. Valid filenames (Korean filenames are URL-encoded automatically): 전화.png, 메시지.png, 카메라.png, 갤러리.png, 설정.png, 인터넷.png, 연락처.png, 시계.png, 계산기.png, 날씨.png, 헬스.png, 빅스비.png, 클라우드.png, 라디오.png, 리마인더.png, 스튜디오.png, 음성 녹음.png, 내 파일.png, 데일리 보드.png, 디바이스 케어_.png, 디지털 웰빙.png, 보안 Wi-fi.png, 보안 폴더.png, Find.png, Notes.png, Pass.png, SmartThings.png, Store.png, Wallet.png, Wearable.png. If an app has no exact asset, pick the closest match from this list.`;
+CONTENT RULES:
+- Use role-specific content fields: list → content.items[{title, secondary}], bottom-navigation → content.tabs[], search-bar → content.placeholder.
+- App-bar content: content.title required, content.subtitle optional.
+- If the surface is lock/dialog/QS/notification, do NOT add a bottom-navigation or bottom-bar unless the surfaceType explicitly expects it.
+
+APP ICON RULE (only when you must inline an icon reference in content):
+Use <img src="app-icons/{filename}.png" …>. NEVER emit letter or emoji placeholders.
+Valid filenames: Phone.png, Messages.png, Camera.png, Gallery.png, Settings.png, Internet.png, Contacts.png, Clock.png, Calculator.png, Weather.png, Health.png, Bixby.png, Cloud.png, Radio.png, Reminder.png, Studio.png, VoiceRecorder.png, MyFiles.png, DailyBoard.png, DeviceCare.png, DigitalWellbeing.png, SecureWifi.png, SecureFolder.png, Find.png, Notes.png, Pass.png, SmartThings.png, Store.png, Wallet.png, Wearable.png. If an app has no exact asset, pick the closest match.
+
+Your output is the SEMANTIC layer. The renderer owns spatial placement.`;
 }
 
+function buildRefineSystemPrompt() {
+  return `
+You are refining an existing Samsung One UI semantic UI plan.
+
+You must not redesign the whole layout.
+You must not invent a new surface type unless explicitly instructed by the user.
+You must not return absolute coordinates.
+You must not move structure ownership away from the frontend renderer.
+
+Refinement rules:
+- Patch by targetRole, not arbitrary freeform layout
+- Allowed patch kinds: content, style, state
+- Forbidden style properties: x, y, top, left, right, bottom, width, height, position
+- Expandable app bar state can only be "expanded" or "collapsed"
+- Bottom bar and bottom navigation must remain distinct roles
+- Preserve One UI structure: viewing area, interaction area, focus hierarchy
+
+Return strict JSON only in this shape:
+{
+  "parsedIssue": {
+    "type": "hierarchy",
+    "severity": "medium",
+    "summary": "Search bar is competing with title"
+  },
+  "patchPlan": {
+    "surfaceType": "first-depth-list",
+    "patches": [
+      {
+        "targetRole": "expandable-app-bar",
+        "changes": [
+          {
+            "kind": "content",
+            "field": "title",
+            "to": "Messages"
+          },
+          {
+            "kind": "style",
+            "property": "emphasis",
+            "to": "stronger"
+          }
+        ]
+      }
+    ]
+  },
+  "critic": {
+    "score": 90,
+    "issues": [],
+    "suggestions": []
+  }
+}
+`;
+}
+
+function buildRefineUserPrompt(payload) {
+  const fallbackSurfaceType =
+    (payload.currentRenderModel && payload.currentRenderModel.surfaceType) ||
+    (payload.currentLayout && payload.currentLayout.surfaceType) ||
+    'first-depth-list';
+
+  return `
+Current surfaceType: ${fallbackSurfaceType}
+
+User feedback:
+${payload.feedback || ''}
+
+Issue tags:
+${JSON.stringify(payload.issueTags || [], null, 2)}
+
+Selected nodes:
+${JSON.stringify(payload.selectedNodes || [], null, 2)}
+
+Current layout tree:
+${JSON.stringify(payload.currentLayout || {}, null, 2)}
+
+Current render model:
+${JSON.stringify(payload.currentRenderModel || {}, null, 2)}
+
+Variant context:
+${JSON.stringify(payload.variantContext || {}, null, 2)}
+
+Snapshot summary:
+${JSON.stringify(payload.snapshot || {}, null, 2)}
+
+Refinement instructions:
+- Keep the same surfaceType unless the user explicitly demands a surface change.
+- Prefer targetRole-based patches.
+- Patch semantics, emphasis, copy, and allowed state values.
+- Do not output spatial coordinates.
+`;
+}
+
+// Legacy single-string builder (kept for callers that still expect it).
 function buildRefinePrompt(mode) {
-  // Refinement reuses ONLY core tokens + rules — no full document reload
   const constraints = {
     core: CONSTRAINT_FRAGMENTS.core,
     colors: mode === 'light' ? CONSTRAINT_FRAGMENTS.colors_light : CONSTRAINT_FRAGMENTS.colors_dark,
@@ -746,40 +1088,54 @@ function buildRefinePrompt(mode) {
   };
   const constraintJSON = formatConstraintsForPrompt(constraints);
 
-  return `You are a Samsung One UI 8.5 design critic and refinement expert. You analyze UI issues and produce precise CSS patch plans.
+  return `You are a Samsung One UI design critic. You propose ROLE-BASED patches, not structural rewrites.
 
-=== DESIGN CONSTRAINTS (for validation) ===
+You are NOT allowed to redesign the screen. The surface engine owns layout. You may only
+patch existing roles (title copy, placeholder text, emphasis, opacity, app-bar state, etc.).
+
+=== STRICT REFINE RULES ===
+- Patches MUST target a role (targetRole), not absolute coordinates.
+- You MAY change: content (title/text/placeholder/subtitle), semantic style tokens (emphasis/opacity/tone), and expandable-app-bar state.
+- You MUST NOT change: surfaceType, x/y/top/left/width/height/position, transforms, or delete/replace structural roles.
+- You MUST NOT convert a bottom-navigation into a bottom-bar (or vice versa).
+- You MUST NOT invent an app-bar state other than "expanded" or "collapsed".
+- You MUST preserve all other roles untouched.
+
+=== ALLOWED patch.kind values ===
+content   — replace text/title/placeholder
+style     — semantic tokens only (emphasis=stronger|softer, opacity=0.0–1.0, tone=cool|warm)
+state     — only for expandable-app-bar (expanded|collapsed)
+
+=== FORBIDDEN patch properties ===
+x, y, top, left, right, bottom, width, height, position, transform, translate*
+
+=== ALLOWED_ROLES for targetRole ===
+status-bar, expandable-app-bar, collapsed-app-bar, selection-app-bar, search-bar,
+focus-block, focus-block-group, list, detail-content, notification-list,
+bottom-navigation, bottom-bar, bottom-dialog, center-dialog,
+lock-time, lock-date, lock-shortcuts, quick-settings-panel, background, scrim
+
+=== DESIGN CONSTRAINTS (for validation / copy tone) ===
 ${constraintJSON}
 === END CONSTRAINTS ===
 
-Apply localized patches only. Do NOT regenerate the entire UI. Preserve unaffected parts.
-
-Given the current layout snapshot and user feedback, you must:
-1. Parse the feedback into specific design issues
-2. Identify which nodes are affected
-3. Check violations against the constraint set above
-4. Create a concrete patch plan with CSS property changes
-
 RESPOND with valid JSON:
 {
-  "parsedIssue": [
-    {
-      "type": "spacing|density|hierarchy|alignment|sizing|readability|consistency|semantic|interaction",
-      "severity": "high|medium|low",
-      "description": "what is wrong",
-      "affectedNodes": ["item-1", "item-2"],
-      "suggestion": "how to fix",
-      "violatedConstraint": "which rule from the constraint set is violated (if any)"
-    }
-  ],
+  "parsedIssue": {
+    "type": "hierarchy|density|consistency|readability|semantic",
+    "severity": "high|medium|low",
+    "summary": "short summary of what's wrong"
+  },
   "patchPlan": {
+    "surfaceType": "<unchanged surfaceType>",
     "patches": [
       {
-        "issueType": "spacing",
+        "targetRole": "<role from ALLOWED_ROLES>",
         "changes": [
-          { "node": "item-1", "property": "margin-top", "from": "0px", "to": "8px", "target": "firstChild" }
-        ],
-        "expectedEffect": "Increase breathing room between header and content"
+          { "kind": "content", "field": "title|text|placeholder|subtitle", "to": "<new value>" },
+          { "kind": "style",   "property": "emphasis|opacity|tone", "to": "<new value>" },
+          { "kind": "state",   "to": "expanded|collapsed" }
+        ]
       }
     ]
   },
@@ -792,82 +1148,543 @@ RESPOND with valid JSON:
   }
 }
 
-PATCH RULES:
-- target "firstChild" means apply to el.firstElementChild, "self" means apply to the canvas-item itself
-- Use standard CSS properties: margin-top, margin-bottom, padding, font-size, font-weight, line-height, border-radius, gap, text-align, width, color, background, opacity
-- "from" should reflect the current computed value from the snapshot
-- "to" should be the corrected value
-- Follow 8dp grid for spacing values
-- Samsung One UI type scale: 11px caption, 13px body, 15px subtitle, 20px title, 28px headline
-- Font weights: 400 regular, 500 medium, 600 semibold, 700 bold`;
+If the user's feedback implies a structural change (move this below that, make it a different
+screen, etc.), you MUST REFUSE by returning an empty patches[] and a parsedIssue.type of
+"semantic" explaining that a refine cannot restructure the surface — a new generate is required.`;
+}
+
+// ============================================================================
+// Surface Grammar Schema — shared contract between server & frontend
+// ----------------------------------------------------------------------------
+// Server proposes semantic components. Frontend's surface engine owns spatial
+// placement. sanitize* functions are the enforcement boundary.
+// ============================================================================
+
+const ALLOWED_ROLES = new Set([
+  'status-bar',
+  'expandable-app-bar',
+  'collapsed-app-bar',
+  'selection-app-bar',
+  'search-bar',
+  'focus-block',
+  'focus-block-group',
+  'list',
+  'detail-content',
+  'notification-list',
+  'bottom-navigation',
+  'bottom-bar',
+  'bottom-dialog',
+  'center-dialog',
+  'lock-time',
+  'lock-date',
+  'lock-shortcuts',
+  'quick-settings-panel',
+  'background',
+  'scrim'
+]);
+
+const ALLOWED_SURFACE_TYPES = new Set([
+  'lockscreen',
+  'first-depth-list',
+  'second-depth-detail',
+  'tab-root',
+  'dialog-bottom',
+  'dialog-center',
+  'quick-settings',
+  'notification-shade',
+  'selection-mode'
+]);
+
+const ALLOWED_APPBAR_STATES = new Set(['expanded', 'collapsed']);
+
+const ALLOWED_PATCH_KINDS = new Set(['content', 'style', 'state']);
+
+const FORBIDDEN_STYLE_FIELDS = new Set([
+  'x', 'y', 'top', 'left', 'right', 'bottom',
+  'width', 'height', 'position'
+]);
+
+function safeSurfaceType(surfaceType) {
+  return ALLOWED_SURFACE_TYPES.has(surfaceType)
+    ? surfaceType
+    : 'first-depth-list';
+}
+
+function sanitizeRenderModel(renderModel) {
+  if (!renderModel || typeof renderModel !== 'object') {
+    return {
+      surfaceType: 'first-depth-list',
+      layout: { surfaceType: 'first-depth-list' },
+      components: []
+    };
+  }
+
+  const surfaceType = safeSurfaceType(
+    renderModel.surfaceType ||
+    (renderModel.layout && renderModel.layout.surfaceType)
+  );
+
+  const components = Array.isArray(renderModel.components)
+    ? renderModel.components
+        .filter(c => c && ALLOWED_ROLES.has(c.role))
+        .map((c, idx) => ({
+          id: c.id || `comp-${idx + 1}`,
+          role: c.role,
+          type: c.type || null,
+          text: c.text || '',
+          content: c.content && typeof c.content === 'object' ? c.content : {},
+          html: typeof c.html === 'string' ? c.html : '',
+          styles: c.styles && typeof c.styles === 'object' ? c.styles : {},
+          state:
+            c.role === 'expandable-app-bar' && ALLOWED_APPBAR_STATES.has(c.state)
+              ? c.state
+              : undefined
+        }))
+    : [];
+
+  return {
+    surfaceType,
+    layout: {
+      ...(renderModel.layout || {}),
+      surfaceType
+    },
+    components
+  };
+}
+
+function sanitizePatchPlan(patchPlan, fallbackSurfaceType = 'first-depth-list') {
+  if (!patchPlan || typeof patchPlan !== 'object') {
+    return {
+      surfaceType: safeSurfaceType(fallbackSurfaceType),
+      patches: []
+    };
+  }
+
+  const surfaceType = safeSurfaceType(
+    patchPlan.surfaceType || fallbackSurfaceType
+  );
+
+  const patches = Array.isArray(patchPlan.patches)
+    ? patchPlan.patches.map((patch) => {
+        const targetRole = ALLOWED_ROLES.has(patch.targetRole)
+          ? patch.targetRole
+          : null;
+
+        const changes = Array.isArray(patch.changes)
+          ? patch.changes.filter(ch => {
+              if (!ch || !ALLOWED_PATCH_KINDS.has(ch.kind)) return false;
+              if (ch.kind === 'style' && FORBIDDEN_STYLE_FIELDS.has(ch.property)) return false;
+              if (ch.kind === 'state' && ch.to && !ALLOWED_APPBAR_STATES.has(ch.to)) return false;
+              return true;
+            }).map(ch => ({
+              kind: ch.kind,
+              field: ch.field || null,
+              property: ch.property || null,
+              to: ch.to
+            }))
+          : [];
+
+        return {
+          targetRole,
+          changes
+        };
+      }).filter(p => p.targetRole && p.changes.length > 0)
+    : [];
+
+  return {
+    surfaceType,
+    patches
+  };
+}
+
+function coerceGenerateResponse(modelJson, requestedSurfaceType) {
+  modelJson = modelJson || {};
+  const renderModel = sanitizeRenderModel({
+    ...(modelJson.renderModel || {}),
+    surfaceType:
+      (modelJson.renderModel && modelJson.renderModel.surfaceType) ||
+      (modelJson.layoutTree && modelJson.layoutTree.surfaceType) ||
+      requestedSurfaceType
+  });
+
+  // If sanitize stripped everything (model violated the role contract), drop
+  // to a minimal valid surface template instead of returning an empty frame.
+  if (!renderModel.components.length) {
+    return fallbackGenerateResponse(renderModel.surfaceType);
+  }
+
+  return {
+    sessionId: modelJson.sessionId || `sess_${Date.now()}`,
+    layoutTree: {
+      ...(modelJson.layoutTree || {}),
+      surfaceType: renderModel.surfaceType,
+      intent: (modelJson.layoutTree && modelJson.layoutTree.intent) || 'generated',
+      hierarchy: (modelJson.layoutTree && modelJson.layoutTree.hierarchy) || 'default'
+    },
+    renderModel,
+    critic: {
+      score: (modelJson.critic && modelJson.critic.score != null) ? modelJson.critic.score : 80,
+      issues: Array.isArray(modelJson.critic && modelJson.critic.issues) ? modelJson.critic.issues : [],
+      suggestions: Array.isArray(modelJson.critic && modelJson.critic.suggestions) ? modelJson.critic.suggestions : []
+    }
+  };
+}
+
+function coerceRefineResponse(modelJson, fallbackSurfaceType) {
+  modelJson = modelJson || {};
+  const patchPlan = sanitizePatchPlan(modelJson.patchPlan, fallbackSurfaceType);
+
+  return {
+    parsedIssue: {
+      type: (modelJson.parsedIssue && modelJson.parsedIssue.type) || 'refinement',
+      severity: (modelJson.parsedIssue && modelJson.parsedIssue.severity) || 'medium',
+      summary: (modelJson.parsedIssue && modelJson.parsedIssue.summary) || ''
+    },
+    patchPlan,
+    critic: {
+      score: (modelJson.critic && modelJson.critic.score != null) ? modelJson.critic.score : 85,
+      issues: Array.isArray(modelJson.critic && modelJson.critic.issues) ? modelJson.critic.issues : [],
+      suggestions: Array.isArray(modelJson.critic && modelJson.critic.suggestions) ? modelJson.critic.suggestions : []
+    }
+  };
+}
+
+function fallbackGenerateResponse(surfaceType = 'first-depth-list') {
+  const st = safeSurfaceType(surfaceType);
+  return {
+    sessionId: `sess_${Date.now()}`,
+    layoutTree: {
+      surfaceType: st,
+      intent: 'fallback',
+      hierarchy: 'default'
+    },
+    renderModel: {
+      surfaceType: st,
+      layout: {
+        surfaceType: st,
+        theme: 'dark',
+        variant: 'one-ui'
+      },
+      components: [
+        { id: 'status-bar', role: 'status-bar' },
+        { id: 'app-bar', role: 'expandable-app-bar', state: 'expanded', text: 'Title' },
+        { id: 'list', role: 'list' },
+        { id: 'bottom-nav', role: 'bottom-navigation' }
+      ]
+    },
+    critic: {
+      score: 70,
+      issues: [{ type: 'fallback', message: 'Model response was sanitized or defaulted' }],
+      suggestions: []
+    }
+  };
 }
 
 // ============================================================================
 // Route handlers
 // ============================================================================
 
+// Step 1 of 2 — cheap classifier LLM call that picks surfaceType + intent
+// from the user prompt. Returns a safe default on any failure, so the main
+// generate step can always proceed.
+async function classifyIntent(userPrompt) {
+  if (!userPrompt || userPrompt.trim().length < 3) {
+    return { surfaceType: 'first-depth-list', intent: 'default', confidence: 0 };
+  }
+
+  const systemPrompt = `
+You are an intent classifier for Samsung One UI screens.
+Read the user's prompt and return ONLY a JSON object with:
+  {
+    "surfaceType": one of [lockscreen, first-depth-list, second-depth-detail, tab-root, dialog-bottom, dialog-center, quick-settings, notification-shade, selection-mode],
+    "intent":      a short phrase describing the user's goal (2-5 words),
+    "hierarchy":   one of [focus-on-list, focus-on-hero, focus-on-dialog, focus-on-chrome]
+  }
+
+Classification hints:
+- browse / list / messages / feed / inbox / conversations   → first-depth-list
+- detail / article / profile / product / single item view   → second-depth-detail
+- home / launcher / main / dashboard                        → tab-root
+- lock / standby / wake                                     → lockscreen
+- dialog / confirm / share / picker                         → dialog-bottom
+- alert / error / modal center                              → dialog-center
+- toggles / settings shade / quick controls                 → quick-settings
+- notifications / notif center / shade                      → notification-shade
+- multi-select mode                                         → selection-mode
+
+Do not explain. Output JSON only.`;
+
+  try {
+    const result = await callOpenAI(systemPrompt, userPrompt.slice(0, 500), 0.1);
+    const allowed = ALLOWED_SURFACE_TYPES;
+    const surfaceType = (result && allowed.has(result.surfaceType))
+      ? result.surfaceType
+      : 'first-depth-list';
+    return {
+      surfaceType: surfaceType,
+      intent: (result && result.intent) || 'generated',
+      hierarchy: (result && result.hierarchy) || 'focus-on-list',
+      confidence: result && result.surfaceType ? 1 : 0
+    };
+  } catch (err) {
+    console.warn('  [classify] failed:', err.message, '— falling back to client guess');
+    return null;
+  }
+}
+
 async function handleGenerate(body, res) {
-  const prompt = body.prompt || body.scenario || 'home screen';
-  const mode = body.mode || 'dark';
-  const scenario = body.scenario || null;
+  try {
+    const clientGuess = safeSurfaceType(body.surfaceType || 'first-depth-list');
 
-  // Build constraint-driven system prompt (NOT full document)
-  const systemPrompt = buildGeneratePrompt(prompt, scenario, mode);
+    // ── Step 1: Intent classification (skip for trivially short prompts) ──
+    let requestedSurfaceType = clientGuess;
+    let intent = null;
+    if (body.prompt && body.prompt.trim().length >= 6) {
+      const classification = await classifyIntent(body.prompt);
+      if (classification && classification.surfaceType) {
+        if (classification.surfaceType !== clientGuess) {
+          console.log(`  [classify] client="${clientGuess}" → llm="${classification.surfaceType}" (intent: ${classification.intent})`);
+        } else {
+          console.log(`  [classify] confirmed "${classification.surfaceType}"`);
+        }
+        requestedSurfaceType = classification.surfaceType;
+        intent = classification.intent;
+      }
+    }
 
-  const userMsg = `Generate a mobile UI screen for: ${prompt}
+    // ── Step 2: Generate the screen with the classified surfaceType ──
+    const systemPrompt = buildGenerateSystemPrompt();
+    const userPrompt = buildGenerateUserPrompt({
+      ...body,
+      surfaceType: requestedSurfaceType,
+      intent: intent
+    });
 
-Context:
-- Device: ${body.device || 'Galaxy S26'}
-- Design System: ${body.surface || 'samsung'}
-- Color Mode: ${mode}
-- Canvas: ${body.constraints?.canvasWidth || 360}x${body.constraints?.canvasHeight || 780}px
-${body.referenceUrl ? '- Reference URL: ' + body.referenceUrl : ''}
+    const promptSize = ((systemPrompt.length + userPrompt.length) / 1024).toFixed(1);
+    console.log(`  [surface-grammar] ${promptSize}KB prompt (surfaceType: ${requestedSurfaceType})`);
 
-Create a complete, production-quality Samsung One UI 8.5 screen layout.`;
+    const modelJson = await callOpenAI(systemPrompt, userPrompt, 0.6);
 
-  // Log constraint size for monitoring
-  const promptSize = (systemPrompt.length / 1024).toFixed(1);
-  console.log(`  [constraints] ${promptSize}KB system prompt (scenario: ${_detectScenario(prompt)})`);
+    const beforeCount = Array.isArray(modelJson.renderModel && modelJson.renderModel.components)
+      ? modelJson.renderModel.components.length : 0;
 
-  const result = await callOpenAI(systemPrompt, userMsg, 0.7);
-  sendJSON(res, 200, result);
+    // coerce handles sanitize + empty→fallback internally
+    const response = coerceGenerateResponse(modelJson, requestedSurfaceType);
+
+    const afterCount = response.renderModel.components.length;
+    if (beforeCount !== afterCount) {
+      console.log(`  [sanitize:generate] ${beforeCount} → ${afterCount} components (contract-enforced)`);
+    }
+
+    // Attach the classifier's intent to the layoutTree so clients can show it
+    if (intent && response.layoutTree && !response.layoutTree.intent) {
+      response.layoutTree.intent = intent;
+    }
+
+    sendJSON(res, 200, response);
+  } catch (err) {
+    console.error('[agent/generate]', err.message);
+    sendJSON(res, 500, { error: err.message || 'Generate failed' });
+  }
+}
+
+// ============================================================================
+//  Streaming Generate — SSE endpoint
+// ----------------------------------------------------------------------------
+//  Event sequence:
+//    event: classified   data: { surfaceType, intent, hierarchy }
+//    event: component    data: { id, role, content, ... }     (×N progressive)
+//    event: done         data: { sessionId, layoutTree, renderModel, critic }
+//    event: error        data: { message }
+// ============================================================================
+async function handleGenerateStream(body, req, res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+
+  function emit(event, data) {
+    res.write('event: ' + event + '\n');
+    res.write('data: ' + JSON.stringify(data) + '\n\n');
+  }
+
+  req.on('close', () => { /* client disconnected mid-stream */ });
+
+  try {
+    const clientGuess = safeSurfaceType(body.surfaceType || 'first-depth-list');
+
+    // ── Step 1: classify ──
+    let surfaceType = clientGuess;
+    let intent = null;
+    let hierarchy = null;
+    if (body.prompt && body.prompt.trim().length >= 6) {
+      const classification = await classifyIntent(body.prompt);
+      if (classification && classification.surfaceType) {
+        surfaceType = classification.surfaceType;
+        intent = classification.intent;
+        hierarchy = classification.hierarchy;
+      }
+    }
+    emit('classified', { surfaceType, intent, hierarchy });
+
+    // ── Step 2: stream generate ──
+    const systemPrompt = buildGenerateSystemPrompt();
+    const userPrompt = buildGenerateUserPrompt({ ...body, surfaceType, intent });
+
+    console.log(`  [stream] generate surfaceType=${surfaceType}`);
+
+    let emittedCount = 0;
+    let lastEmitTime = 0;
+    const fullJson = await callOpenAIStream(systemPrompt, userPrompt, 0.6, (delta, fullText) => {
+      // Throttle parsing to ~every 60ms to keep CPU low
+      const now = Date.now();
+      if (now - lastEmitTime < 60) return;
+      lastEmitTime = now;
+
+      const newComps = extractStreamedComponents(fullText, emittedCount);
+      newComps.forEach(comp => {
+        if (comp && comp.role && ALLOWED_ROLES.has(comp.role)) {
+          emit('component', comp);
+        }
+        emittedCount++;
+      });
+    });
+
+    // Final pass — pick up any components missed by the throttled parser
+    const remaining = extractStreamedComponents(JSON.stringify(fullJson), emittedCount);
+    remaining.forEach(comp => {
+      if (comp && comp.role && ALLOWED_ROLES.has(comp.role)) emit('component', comp);
+      emittedCount++;
+    });
+
+    const response = coerceGenerateResponse(fullJson, surfaceType);
+    if (intent && response.layoutTree && !response.layoutTree.intent) {
+      response.layoutTree.intent = intent;
+    }
+
+    emit('done', response);
+  } catch (err) {
+    console.error('[agent/generate/stream]', err.message);
+    emit('error', { message: err.message || 'Stream failed' });
+  } finally {
+    res.end();
+  }
 }
 
 async function handleRefine(body, res) {
-  const mode = body.mode || 'dark';
-  const systemPrompt = buildRefinePrompt(mode);
+  const fallbackSurface = safeSurfaceType(
+    (body.currentRenderModel && body.currentRenderModel.surfaceType) ||
+    (body.currentLayout && body.currentLayout.surfaceType) ||
+    'first-depth-list'
+  );
 
-  const snapshotSummary = (body.snapshot?.items || []).map(it =>
-    `${it.id}: styles={fontSize:${it.styles?.fontSize}, fontWeight:${it.styles?.fontWeight}, padding:${it.styles?.padding}, marginTop:${it.styles?.marginTop}, borderRadius:${it.styles?.borderRadius}} rect={w:${it.rect?.width?.toFixed?.(0) || '?'}, h:${it.rect?.height?.toFixed?.(0) || '?'}} text="${(it.textContent || '').substring(0, 40)}"`
-  ).join('\n');
+  try {
+    const systemPrompt = buildRefineSystemPrompt();
+    const userPrompt = buildRefineUserPrompt(body);
 
-  // Inject variant context — Refine knows both prompts and results
-  const varCtx = body.variantContext || getVariantContext(body.sessionId);
-  const activeV = body.activeVariant || 'A';
-  let variantSection = '';
-  if (varCtx.A || varCtx.B) {
-    variantSection = `\nVariant context (currently editing: ${activeV}):`;
-    if (varCtx.A) variantSection += `\n- Variant A prompt: "${varCtx.A.prompt || 'scenario button'}" | scenario: ${varCtx.A.scenario || '?'}${varCtx.A.critic ? ' | score: ' + (varCtx.A.critic.score || '?') : ''}`;
-    if (varCtx.B) variantSection += `\n- Variant B prompt: "${varCtx.B.prompt || 'scenario button'}" | scenario: ${varCtx.B.scenario || '?'}${varCtx.B.critic ? ' | score: ' + (varCtx.B.critic.score || '?') : ''}`;
-    variantSection += '\n';
+    const promptSize = ((systemPrompt.length + userPrompt.length) / 1024).toFixed(1);
+    console.log(`  [surface-grammar] ${promptSize}KB refine prompt (surfaceType: ${fallbackSurface})`);
+
+    const modelJson = await callOpenAI(systemPrompt, userPrompt, 0.4);
+    const response = coerceRefineResponse(modelJson, fallbackSurface);
+
+    const beforePatches = Array.isArray(modelJson.patchPlan && modelJson.patchPlan.patches)
+      ? modelJson.patchPlan.patches.length : 0;
+    const afterPatches = response.patchPlan.patches.length;
+    if (beforePatches !== afterPatches) {
+      console.log(`  [sanitize:refine] dropped ${beforePatches - afterPatches} patches (non-role or forbidden props)`);
+    }
+
+    sendJSON(res, 200, {
+      parsedIssue: response.parsedIssue,
+      patchPlan: response.patchPlan,
+      updatedLayoutTree: {
+        ...(body.currentLayout || {}),
+        surfaceType: response.patchPlan.surfaceType
+      },
+      updatedRenderModel: sanitizeRenderModel({
+        ...(body.currentRenderModel || {}),
+        surfaceType: response.patchPlan.surfaceType
+      }),
+      critic: response.critic
+    });
+  } catch (err) {
+    console.error('[agent/refine]', err.message);
+    sendJSON(res, 500, { error: err.message || 'Refine failed' });
   }
+}
 
-  const userMsg = `User feedback: "${body.feedback}"
-Selected issue tags: [${(body.issueTags || []).join(', ')}]
-${(body.selectedNodes || []).length > 0 ? 'Selected nodes: [' + body.selectedNodes.join(', ') + ']' : ''}
-${variantSection}
-Current layout snapshot (${(body.snapshot?.items || []).length} items, Variant ${activeV}):
-${snapshotSummary}
+// ============================================================================
+//  Critic — evaluates semantic correctness only, never redesigns
+// ============================================================================
 
-Canvas style: gap=${body.snapshot?.canvasStyle?.gap}, padding=${body.snapshot?.canvasStyle?.padding}
+function buildCriticSystemPrompt() {
+  return `
+You are a UI critic for Samsung One UI semantic surfaces.
 
-Analyze the issues and create a precise patch plan. Only patch affected nodes — preserve everything else.`;
+Do not redesign.
+Do not output coordinates.
 
-  const promptSize = (systemPrompt.length / 1024).toFixed(1);
-  console.log(`  [constraints] ${promptSize}KB refine prompt (variant: ${activeV})`);
+Evaluate:
+- hierarchy
+- clarity
+- role correctness
+- One UI consistency
+- action vs navigation separation
+- app bar state consistency
 
-  const result = await callOpenAI(systemPrompt, userMsg, 0.4);
-  sendJSON(res, 200, result);
+Return strict JSON only:
+{
+  "score": 84,
+  "issues": [
+    { "type": "hierarchy", "message": "Search bar competes with title" }
+  ],
+  "suggestions": [
+    "Strengthen app bar emphasis",
+    "Reduce search bar prominence"
+  ]
+}
+`;
+}
+
+function buildCriticUserPrompt(payload) {
+  const surfaceType =
+    (payload.renderModel && payload.renderModel.surfaceType) ||
+    (payload.layoutTree && payload.layoutTree.surfaceType) ||
+    'first-depth-list';
+
+  return `
+Surface type:
+${surfaceType}
+
+Layout tree:
+${JSON.stringify(payload.layoutTree || {}, null, 2)}
+
+Render model:
+${JSON.stringify(payload.renderModel || {}, null, 2)}
+
+Please critique the semantic correctness and One UI consistency only.
+`;
+}
+
+async function handleCritic(body, res) {
+  try {
+    const systemPrompt = buildCriticSystemPrompt();
+    const userPrompt = buildCriticUserPrompt(body);
+
+    const modelJson = await callOpenAI(systemPrompt, userPrompt, 0.3);
+
+    sendJSON(res, 200, {
+      score: (modelJson && modelJson.score != null) ? modelJson.score : 80,
+      issues: Array.isArray(modelJson && modelJson.issues) ? modelJson.issues : [],
+      suggestions: Array.isArray(modelJson && modelJson.suggestions) ? modelJson.suggestions : []
+    });
+  } catch (err) {
+    console.error('[agent/critic]', err.message);
+    sendJSON(res, 500, { error: err.message || 'Critic failed' });
+  }
 }
 
 // --- New: constraint extraction endpoint (for frontend debug/inspect) ---
@@ -1094,6 +1911,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Streaming generate (SSE)
+  if (url === '/api/agent/generate/stream' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      console.log(`[API] Generate (stream): "${(body.prompt || body.scenario || '?').substring(0, 60)}"`);
+      await handleGenerateStream(body, req, res);
+    } catch (e) {
+      console.error('[API] Stream error:', e.message);
+      // If res hasn't been written to yet, send JSON error; otherwise just end
+      try { sendJSON(res, 500, { error: e.message }); }
+      catch (_) { try { res.end(); } catch(__) {} }
+    }
+    return;
+  }
+
   if (url === '/api/agent/refine' && req.method === 'POST') {
     try {
       const body = await readBody(req);
@@ -1101,6 +1933,18 @@ const server = http.createServer(async (req, res) => {
       await handleRefine(body, res);
     } catch (e) {
       console.error('[API] Refine error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  if (url === '/api/agent/critic' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      console.log(`[API] Critic: surfaceType=${(body.renderModel && body.renderModel.surfaceType) || 'unknown'}`);
+      await handleCritic(body, res);
+    } catch (e) {
+      console.error('[API] Critic error:', e.message);
       sendJSON(res, 500, { error: e.message });
     }
     return;
@@ -1165,21 +2009,27 @@ const server = http.createServer(async (req, res) => {
     sendJSON(res, 200, {
       status: 'ok',
       model: OPENAI_MODEL,
+      mode: 'surface-grammar',
       designKB: {
+        mode: 'surface-grammar',
         designSections: Object.keys(DESIGN_SECTIONS).length,
         genuiSections: Object.keys(GENUI_SECTIONS).length,
         orchSections: Object.keys(ORCH_SECTIONS).length,
         evolveEntries: EVOLVE_CONSTRAINTS ? EVOLVE_CONSTRAINTS.length : 0,
         rawSize: `${((DESIGN_MD_RAW.length + GENUI_MD_RAW.length + ORCH_MD_RAW.length) / 1024).toFixed(1)}KB`,
         constraintFragments: Object.keys(CONSTRAINT_FRAGMENTS).length,
-        mode: 'constraint-extraction (DESIGN.md + GENUI-PRINCIPLES.md + ORCHESTRATION.md + evolve.md)'
+        sourceMode: 'constraint-extraction (DESIGN.md + GENUI-PRINCIPLES.md + ORCHESTRATION.md + evolve.md)'
       }
     });
     return;
   }
 
-  // Static files
-  let filePath = path.join(__dirname, url === '/' ? 'genui.html' : url);
+  // Static files — decode percent-encoded URLs so non-ASCII filenames (e.g.
+  // Korean app-icons like Phone.png → %EC%A0%84%ED%99%94.png) resolve correctly.
+  let decodedUrl;
+  try { decodedUrl = decodeURIComponent(url); }
+  catch (e) { decodedUrl = url; }
+  let filePath = path.join(__dirname, decodedUrl === '/' ? 'genui.html' : decodedUrl);
   if (!fs.existsSync(filePath)) { res.writeHead(404); res.end('Not Found'); return; }
   if (fs.statSync(filePath).isDirectory()) filePath = path.join(filePath, 'index.html');
   serveStatic(filePath, res);
