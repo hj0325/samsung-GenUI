@@ -311,6 +311,38 @@ const StateManager = {
   }
 };
 
+// Infer the surface-grammar zone for an agent-supplied component role
+// when the agent didn't set an explicit zone. Used by renderFromModel
+// to slot AI-picked atomics (now-bar, media-card, focus-block, etc.)
+// into the right region of the canned surface plan — otherwise they
+// fall through the role-merge filter and never render.
+function _inferZoneForAgentRole(role) {
+  if (!role) return 'interaction';
+  if (role === 'status-bar') return 'topSystem';
+  if (role === 'expandable-app-bar' || role === 'collapsed-app-bar' ||
+      role === 'selection-app-bar' || role === 'search-bar' ||
+      role === 'list-top-bar' || role === 'lock-clock' ||
+      role === 'weather-date' || role === 'lock-time' ||
+      role === 'lock-date') {
+    return 'viewing';
+  }
+  if (role === 'app-dock' || role === 'bottom-navigation' ||
+      role === 'bottom-bar' || role === 'gesture-bar' ||
+      role === 'gestureBar' || role === 'bottom-dialog') {
+    return 'bottomNav';
+  }
+  if (role === 'lock-indicator' || role === 'unlock-hint' ||
+      role === 'shortcut-left' || role === 'shortcut-right' ||
+      role === 'lock-shortcuts' || role === 'now-bar') {
+    return 'bottomAction';
+  }
+  // Content / interactive components (focus-block, list, list-item,
+  // media-card, notif-card, toggle-grid, slider-panel, selection-dialog,
+  // dialog-shell, etc.) all land in the interaction zone and are
+  // stacked vertically within it.
+  return 'interaction';
+}
+
 // --- Render Engine: renders agent response to DOM ---
 const RenderEngine = {
   _normalizeSurfaceType(renderModel) {
@@ -346,7 +378,14 @@ const RenderEngine = {
       delay: comp.delay || 0,
       fullWidth: !!comp.fullWidth,
       state: comp.state || null,
-      zone: comp.zone || null
+      zone: comp.zone || null,
+      // Preserve semantic content + variant so renderers downstream
+      // (renderAtomicForRole, focus-block kind:secondary, now-bar
+      // type:media, etc.) can use them. Earlier this was stripped,
+      // which is why rich AI components like now-bar always rendered
+      // with default (empty) state.
+      content: comp.content || null,
+      variant: comp.variant || null
     }));
 
     return out;
@@ -411,20 +450,107 @@ const RenderEngine = {
       const layout = window.createOneUILayout(viewport, surfaceType);
       const plan = window.composeSurfacePlan(surfaceType, layout);
 
-      // Merge agent content into plan items by role. First match wins; one
-      // agent component overrides one plan component of the same role.
+      // Pass 1: merge agent content into plan items by role (for chrome
+      // components already present in the canned plan — status-bar,
+      // app-bar, app-dock, etc.). First match wins.
       const agentByRole = new Map();
       (normalized.components || []).forEach(function (ac) {
         if (!agentByRole.has(ac.role)) agentByRole.set(ac.role, ac);
       });
+      const consumedRoles = new Set();
       (plan.components || []).forEach(function (pc) {
         var ac = agentByRole.get(pc.role);
         if (!ac) return;
+        consumedRoles.add(pc.role);
         if (ac.id)      pc.id      = ac.id;
         if (ac.text)    pc.text    = ac.text;
         if (ac.state)   pc.state   = ac.state;
         if (ac.content) pc.content = Object.assign({}, pc.content || {}, ac.content);
         if (ac.styles)  pc.styles  = Object.assign({}, pc.styles  || {}, ac.styles);
+        if (ac.variant) pc.variant = Object.assign({}, pc.variant || {}, ac.variant);
+      });
+
+      // Before Pass 2: if the AI is providing rich interaction-zone
+      // content, strip the canned plan's default interaction components
+      // (like app-grid for tab-root, detail-content for detail surfaces,
+      // focus-block-group for lockscreen) so AI's components don't
+      // overlap them. Chrome (status-bar/app-dock/bottom-nav) stays.
+      const agentInteractionRoles = new Set();
+      (normalized.components || []).forEach(function (ac) {
+        if (!ac.role || consumedRoles.has(ac.role)) return;
+        const iz = ac.zone || _inferZoneForAgentRole(ac.role);
+        if (iz === 'interaction') agentInteractionRoles.add(ac.role);
+      });
+      if (agentInteractionRoles.size > 0) {
+        plan.components = (plan.components || []).filter(function (pc) {
+          return pc.zone !== 'interaction';
+        });
+      }
+
+      // Pass 2: APPEND agent's unique content components that weren't
+      // matched by any canned plan role. These are the rich atomics the
+      // AI picked specifically for this prompt (now-bar for music,
+      // media-card for playback, focus-block for narrative, etc.).
+      // Stack them vertically in the interaction zone with a 12px gap
+      // so they don't overlap the canned chrome.
+      const interactionZone = (layout && layout.zones && layout.zones.interaction) ||
+        { x: 18, y: 140, w: 415, h: 600 };
+      let stackY = interactionZone.y;
+      const defaultH = {
+        'focus-block': 160,
+        'focus-block-group': 240,
+        'now-bar': 64,
+        'media-card': 180,
+        'media-half': 144,
+        'notif-card': 80,
+        'notif-card-ai': 80,
+        'list': 200,
+        'list-item': 80,
+        'paragraph': 52,
+        'action-row': 48,
+        'toggle-chip': 56,
+        'toggle-grid': 180,
+        'slider-pill': 56,
+        'slider-panel': 240,
+        'single-toggle': 88,
+        'smart-things': 88,
+        'selection-dialog': 360,
+        'dialog-shell': 200,
+        'dialog-site-header': 72,
+        'dialog-browser-bar': 92,
+        'dialog-icon-grid': 202
+      };
+      (normalized.components || []).forEach(function (ac) {
+        if (!ac.role) return;
+        if (consumedRoles.has(ac.role)) return;   // already merged in pass 1
+        const inferredZone = ac.zone || _inferZoneForAgentRole(ac.role);
+        // Only stack content components in interaction; chrome roles
+        // that weren't in the plan can still be added but use the
+        // standard zone resolution (resolveComponentRect will compute
+        // their rect from the zone).
+        const append = {
+          id:      ac.id || ('agent-' + ac.role),
+          role:    ac.role,
+          zone:    inferredZone,
+          text:    ac.text,
+          content: ac.content || {},
+          state:   ac.state,
+          variant: ac.variant
+        };
+        if (inferredZone === 'interaction') {
+          const h = defaultH[ac.role] || 120;
+          const remaining = (interactionZone.y + interactionZone.h) - stackY;
+          if (remaining < h + 12) return;         // ran out of space; skip
+          append._rect = {
+            x: interactionZone.x,
+            y: stackY,
+            w: interactionZone.w,
+            h: h
+          };
+          stackY += h + 12;
+        }
+        plan.components.push(append);
+        consumedRoles.add(ac.role);
       });
 
       // Expand list / focus-block-group / detail-content with agent content
