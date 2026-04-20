@@ -782,7 +782,7 @@ function extractStreamedComponents(fullText, alreadyEmitted) {
 
 function buildGenerateSystemPrompt() {
   return `
-You are generating semantic UI plans for Samsung One UI mobile surfaces.
+You are generating semantic UI plans for Samsung One UI 8.5 mobile surfaces.
 
 Do not generate arbitrary freeform layouts.
 Do not return absolute pixel coordinates.
@@ -790,68 +790,120 @@ Do not return generic vertical card stacks unless they are explicitly part of a 
 
 You must think in surface grammar.
 
-Always determine:
-1. surfaceType
-2. user intent
-3. content hierarchy
-4. component roles
-5. role-specific content
-6. allowed state values
+=== YOUR JOB ===
+Propose semantic components. The frontend renderer owns spatial placement.
 
-One UI rules to respect:
+Always determine:
+1. surfaceType (one of ALLOWED_SURFACE_TYPES)
+2. user intent (a specific phrase derived from the prompt — not generic)
+3. content hierarchy (what leads, what supports)
+4. component roles (pick the RICHEST roles that fit the prompt)
+5. role-specific content (use SPECIFIC detail from the prompt — never placeholder text)
+6. allowed state values (expandable-app-bar = expanded|collapsed only)
+
+=== CONTENT QUALITY BAR (this is the bar to clear) ===
+The renderer already produces a working template for any surfaceType.
+What YOU add is SPECIFIC CONTENT that reflects the user's scenario.
+
+GOOD:
+  prompt: "Morning brief with weather"
+  - expandable-app-bar.text = "Good morning, Kyuha"
+  - focus-block.content.title = "72° partly cloudy"
+  - focus-block.content.sub = "Low 58° · Rain expected 4 PM"
+
+BAD:
+  - expandable-app-bar.text = "Home"         (generic)
+  - focus-block.content.title = ""           (empty)
+  - focus-block.content.sub = "Card content" (placeholder)
+
+=== COMPONENT SELECTION HINTS ===
+Pick components that MATCH the activity in the prompt:
+- "music playing", "listening", "podcast"     → include now-bar with type="media"
+- "charging", "low battery"                    → include now-bar with type="charging"
+- "timer", "cooking", "workout duration"       → include now-bar with type="timer"
+- "notifications pending", "messages from X"   → include notif-card / notif-card-ai
+- "toggle wifi", "bluetooth", "airplane"       → include toggle-chip or toggle-grid
+- "lock screen"                                → lock-clock + weather-date + optionally now-bar
+- "quick settings"                             → slider-panel (brightness/volume) + toggle-grid
+- "share sheet", "pick browser"                → dialog-shell + dialog-icon-grid
+- "menu", "pick one of", "choose option"       → selection-dialog
+- Ambient, glanceable, minimal-touch contexts  → prefer focus-block with kind="secondary"
+                                                 (title + body text), avoid dense lists
+
+=== ONE UI STRUCTURAL RULES ===
 - viewing area and interaction area are distinct
 - important content should use focus-block hierarchy when appropriate
 - bottom bar and bottom navigation are different roles
 - safe side margins are respected by the renderer
 - expandable app bar may rest only in "expanded" or "collapsed"
-- do not invent a mid resting state for app bars
 - do not mix navigation and action components at the bottom
+- every component.role MUST come from ALLOWED_ROLES below
 
-Your job is to propose semantic components.
-The frontend renderer owns spatial placement.
-
-Return strict JSON only in this shape:
+=== STRICT OUTPUT SHAPE ===
+Return STRICT JSON only:
 {
   "layoutTree": {
-    "surfaceType": "first-depth-list",
-    "intent": "browse content",
-    "hierarchy": "focus-on-list"
+    "surfaceType": "<from ALLOWED_SURFACE_TYPES>",
+    "intent": "<specific phrase from prompt, 3-7 words>",
+    "hierarchy": "focus-on-list | focus-on-hero | focus-on-dialog | focus-on-chrome"
   },
   "renderModel": {
-    "surfaceType": "first-depth-list",
-    "layout": {
-      "surfaceType": "first-depth-list",
-      "theme": "dark",
-      "variant": "one-ui"
-    },
+    "surfaceType": "<same as above>",
+    "layout": { "surfaceType": "<same>", "theme": "dark | light", "variant": "one-ui" },
     "components": [
       {
-        "id": "app-bar",
-        "role": "expandable-app-bar",
-        "state": "expanded",
-        "text": "Messages",
+        "id": "<unique-id>",
+        "role": "<from ALLOWED_ROLES>",
+        "state": "<optional — only for app bars>",
+        "text": "<top-level text if the role carries a primary string>",
         "content": {
-          "title": "Messages"
-        }
+          "title": "<specific to prompt>",
+          "sub": "<specific to prompt>",
+          "value": "<specific to prompt>",
+          "items": [ { "title": "", "sub": "" }, ... ]
+        },
+        "variant": { "kind": "hero | secondary | ...", "type": "media | timer | charging" }
       }
     ]
   },
-  "critic": {
-    "score": 85,
-    "issues": [],
-    "suggestions": []
-  }
+  "critic": { "score": 0, "issues": [], "suggestions": [] }
 }
 
-ALLOWED_SURFACE_TYPES:
+=== ALLOWED_SURFACE_TYPES ===
 lockscreen, first-depth-list, second-depth-detail, tab-root,
 dialog-bottom, dialog-center, quick-settings, notification-shade, selection-mode
 
-ALLOWED_ROLES:
-status-bar, expandable-app-bar, collapsed-app-bar, selection-app-bar, search-bar,
-focus-block, focus-block-group, list, detail-content, notification-list,
-bottom-navigation, bottom-bar, bottom-dialog, center-dialog,
-lock-time, lock-date, lock-shortcuts, quick-settings-panel, background, scrim
+=== ALLOWED_ROLES ===
+Chrome / layout:
+  status-bar, expandable-app-bar, collapsed-app-bar, selection-app-bar,
+  search-bar, list-top-bar, bottom-navigation, bottom-bar,
+  app-dock, app-grid, app-icon
+
+Content containers:
+  focus-block, focus-block-group, list, list-item, detail-content,
+  notification-list, paragraph, action-row
+
+Lock screen:
+  lock-clock, weather-date, lock-indicator, unlock-hint, lock-shortcuts
+
+Live activity / media:
+  now-bar (type: media | timer | charging | dual-line | single-line),
+  media-card, media-half, progress-track, output-chip, media-output-row,
+  control-pill
+
+Notification / AI:
+  notif-card, notif-card-ai
+
+Quick Settings atomics:
+  toggle-chip, toggle-grid, slider-pill, slider-panel, single-toggle,
+  smart-things, qs-action-tile, drag-handle, quick-settings-panel
+
+Dialog atomics:
+  dialog-shell, dialog-site-header, dialog-browser-bar, dialog-icon-grid,
+  bottom-dialog, center-dialog, selection-dialog
+
+Background:
+  background, scrim
 `;
 }
 
@@ -867,8 +919,46 @@ function buildGenerateUserPrompt(payload) {
     typography: constraints.typography
   });
 
+  // Extract user-mentioned keywords so the prompt explicitly pushes the
+  // LLM to use THESE specifics in component text/content. A common
+  // failure mode was the model generating generic "Home" / "Messages"
+  // headers regardless of what the user typed.
+  const keywordSource = [payload.prompt, payload.intent, payload.activity]
+    .filter(Boolean).join(' ').toLowerCase();
+  const keywordHints = [];
+  [
+    ['music', 'now-bar with type="media"'],
+    ['playing', 'now-bar with type="media"'],
+    ['podcast', 'now-bar with type="media"'],
+    ['charging', 'now-bar with type="charging"'],
+    ['battery', 'now-bar with type="charging"'],
+    ['timer', 'now-bar with type="timer"'],
+    ['cooking', 'now-bar with type="timer"'],
+    ['workout', 'now-bar with type="timer"'],
+    ['weather', 'focus-block with weather info OR weather-date atomic'],
+    ['calendar', 'focus-block or list-item with calendar summary'],
+    ['message', 'notif-card OR list-item with message preview'],
+    ['notification', 'notif-card or notif-card-ai'],
+    ['wifi', 'toggle-chip or toggle-grid'],
+    ['bluetooth', 'toggle-chip or toggle-grid'],
+    ['brightness', 'slider-panel'],
+    ['volume', 'slider-panel']
+  ].forEach(function (pair) {
+    if (keywordSource.indexOf(pair[0]) !== -1) keywordHints.push(pair[1]);
+  });
+  const hintBlock = keywordHints.length
+    ? `Component hints based on prompt keywords (use at least one of these):\n  - ${Array.from(new Set(keywordHints)).join('\n  - ')}\n`
+    : '';
+
+  const contextLine = [
+    payload.timeOfDay ? `timeOfDay=${payload.timeOfDay}` : null,
+    payload.activity  ? `activity="${payload.activity}"` : null,
+    payload.intent    ? `intent="${payload.intent}"`     : null
+  ].filter(Boolean).join(', ');
+
   return `
 Requested surfaceType: ${payload.surfaceType || 'first-depth-list'}
+Classified context: ${contextLine || '(none extracted)'}
 Scenario key: ${payload.scenario || ''}
 Prompt: ${payload.prompt || ''}
 Brand: ${payload.surface || 'samsung'}
@@ -883,15 +973,18 @@ ${tokenSummary}
 
 Reference image attached: ${payload.referenceImage ? 'yes' : 'no'}
 
-Instructions:
-- Keep the response semantic and role-based.
-- The frontend renderer will handle placement.
+${hintBlock}Instructions:
+- Every component MUST reflect the USER'S SPECIFIC prompt in its text/content.
+- Use concrete details from the prompt, not generic fill ("Home", "Card content", "").
+- If timeOfDay is set, choose greetings / accent copy that match it
+  (morning → "Good morning", night → "Tonight" / "Evening briefing").
+- If activity is set, surface it via a now-bar (media/timer/charging) OR a
+  focus-block with narrative title + body.
+- Keep the response semantic and role-based. The frontend renderer handles placement.
 - Choose only from approved roles and approved surface types.
-- If the prompt implies browsing, likely use first-depth-list or tab-root.
-- If the prompt implies detail view, use second-depth-detail.
-- If the prompt implies confirmation or chooser, use dialog-bottom or dialog-center.
-- If the prompt implies lock screen information, use lockscreen.
-- If the prompt implies quick toggles, use quick-settings.
+- Prefer richer OneUI 8.5 atomics (now-bar, media-card, toggle-grid, slider-panel,
+  notif-card-ai, selection-dialog) over plain focus-block whenever the prompt
+  makes one of them appropriate.
 `;
 }
 
@@ -1161,6 +1254,7 @@ screen, etc.), you MUST REFUSE by returning an empty patches[] and a parsedIssue
 // ============================================================================
 
 const ALLOWED_ROLES = new Set([
+  // Structural (surface chrome + containers)
   'status-bar',
   'expandable-app-bar',
   'collapsed-app-bar',
@@ -1169,15 +1263,53 @@ const ALLOWED_ROLES = new Set([
   'focus-block',
   'focus-block-group',
   'list',
+  'list-item',
+  'list-top-bar',
   'detail-content',
   'notification-list',
   'bottom-navigation',
   'bottom-bar',
   'bottom-dialog',
   'center-dialog',
-  'lock-time',
+  'app-dock',
+  'app-grid',
+  'app-icon',
+  'paragraph',
+  'action-row',
+  // Lockscreen atomics
+  'lock-time',            // legacy alias for lock-clock
   'lock-date',
   'lock-shortcuts',
+  'lock-clock',
+  'weather-date',
+  'lock-indicator',
+  'unlock-hint',
+  // OneUI 8.5 atomic library — enables AI to pick rich, context-aware
+  // components: now-bar for ongoing media/timer/charging, media cards,
+  // toggle rows, sliders, etc. Previously the AI couldn't surface any
+  // of these because they weren't in its vocabulary.
+  'now-bar',
+  'media-card',
+  'media-half',
+  'notif-card',
+  'notif-card-ai',
+  'toggle-chip',
+  'toggle-grid',
+  'slider-pill',
+  'slider-panel',
+  'drag-handle',
+  'output-chip',
+  'progress-track',
+  'control-pill',
+  'media-output-row',
+  'qs-action-tile',
+  'single-toggle',
+  'smart-things',
+  'selection-dialog',
+  'dialog-shell',
+  'dialog-site-header',
+  'dialog-browser-bar',
+  'dialog-icon-grid',
   'quick-settings-panel',
   'background',
   'scrim'
@@ -1397,11 +1529,13 @@ You are an intent classifier for Samsung One UI screens.
 Read the user's prompt and return ONLY a JSON object with:
   {
     "surfaceType": one of [lockscreen, first-depth-list, second-depth-detail, tab-root, dialog-bottom, dialog-center, quick-settings, notification-shade, selection-mode],
-    "intent":      a short phrase describing the user's goal (2-5 words),
-    "hierarchy":   one of [focus-on-list, focus-on-hero, focus-on-dialog, focus-on-chrome]
+    "intent":      a SPECIFIC phrase derived from the prompt (3-7 words that reflect what the user actually said, NOT a generic label),
+    "hierarchy":   one of [focus-on-list, focus-on-hero, focus-on-dialog, focus-on-chrome],
+    "timeOfDay":   one of [morning, afternoon, evening, night, null]   // only if prompt mentions it
+    "activity":    short phrase for the ongoing activity if mentioned   // e.g., "playing music", "driving", "cooking"
   }
 
-Classification hints:
+Classification hints (surfaceType):
 - browse / list / messages / feed / inbox / conversations   → first-depth-list
 - detail / article / profile / product / single item view   → second-depth-detail
 - home / launcher / main / dashboard                        → tab-root
@@ -1411,6 +1545,14 @@ Classification hints:
 - toggles / settings shade / quick controls                 → quick-settings
 - notifications / notif center / shade                      → notification-shade
 - multi-select mode                                         → selection-mode
+
+intent examples:
+  prompt "Samsung Galaxy Home at night with music playing"
+    → intent: "evening home with active playback"
+  prompt "check morning calendar on lockscreen"
+    → intent: "morning calendar glance"
+  prompt "share this page to friend"
+    → intent: "share page via picker"
 
 Do not explain. Output JSON only.`;
 
@@ -1424,6 +1566,8 @@ Do not explain. Output JSON only.`;
       surfaceType: surfaceType,
       intent: (result && result.intent) || 'generated',
       hierarchy: (result && result.hierarchy) || 'focus-on-list',
+      timeOfDay: (result && result.timeOfDay) || null,
+      activity:  (result && result.activity)  || null,
       confidence: result && result.surfaceType ? 1 : 0
     };
   } catch (err) {
@@ -1439,6 +1583,8 @@ async function handleGenerate(body, res) {
     // ── Step 1: Intent classification (skip for trivially short prompts) ──
     let requestedSurfaceType = clientGuess;
     let intent = null;
+    let timeOfDay = null;
+    let activity = null;
     if (body.prompt && body.prompt.trim().length >= 6) {
       const classification = await classifyIntent(body.prompt);
       if (classification && classification.surfaceType) {
@@ -1449,6 +1595,8 @@ async function handleGenerate(body, res) {
         }
         requestedSurfaceType = classification.surfaceType;
         intent = classification.intent;
+        timeOfDay = classification.timeOfDay;
+        activity  = classification.activity;
       }
     }
 
@@ -1457,7 +1605,9 @@ async function handleGenerate(body, res) {
     const userPrompt = buildGenerateUserPrompt({
       ...body,
       surfaceType: requestedSurfaceType,
-      intent: intent
+      intent: intent,
+      timeOfDay: timeOfDay,
+      activity:  activity
     });
 
     const promptSize = ((systemPrompt.length + userPrompt.length) / 1024).toFixed(1);
@@ -1519,19 +1669,25 @@ async function handleGenerateStream(body, req, res) {
     let surfaceType = clientGuess;
     let intent = null;
     let hierarchy = null;
+    let timeOfDay = null;
+    let activity = null;
     if (body.prompt && body.prompt.trim().length >= 6) {
       const classification = await classifyIntent(body.prompt);
       if (classification && classification.surfaceType) {
         surfaceType = classification.surfaceType;
         intent = classification.intent;
         hierarchy = classification.hierarchy;
+        timeOfDay = classification.timeOfDay;
+        activity  = classification.activity;
       }
     }
-    emit('classified', { surfaceType, intent, hierarchy });
+    emit('classified', { surfaceType, intent, hierarchy, timeOfDay, activity });
 
     // ── Step 2: stream generate ──
     const systemPrompt = buildGenerateSystemPrompt();
-    const userPrompt = buildGenerateUserPrompt({ ...body, surfaceType, intent });
+    const userPrompt = buildGenerateUserPrompt({
+      ...body, surfaceType, intent, timeOfDay, activity
+    });
 
     console.log(`  [stream] generate surfaceType=${surfaceType}`);
 
