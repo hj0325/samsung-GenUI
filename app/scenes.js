@@ -348,6 +348,8 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
         if (info) {
           if (info.surfaceType) _pipelineLog('\u2022 Surface classified: <b>' + info.surfaceType + '</b>');
           if (info.intent)      _pipelineLog('\u2022 Intent: ' + info.intent);
+          // 4+2+1 orchestration block (purpose type, modulations, governance)
+          if (info.orchestration) _renderClassificationBlock(info);
         }
       },
       // Progressive component count — updates the loader message
@@ -676,6 +678,117 @@ function _pipelineJsonBlock(title, obj, meta) {
       _escapeHtml(json) + truncated +
     '</pre>' +
   '</details>';
+}
+
+// ---------------------------------------------------------------------------
+//  4+2+1 classification renderer — displays the orchestration decision
+//  packet the classifier returned. Default collapsed to a single-line
+//  summary chip; click to expand the full brief (purpose, modulation A,
+//  modulation B, governance). Color codes each purpose type so the
+//  reader can tell at a glance what kind of UI should result.
+// ---------------------------------------------------------------------------
+var _PURPOSE_META = {
+  context_reconstruction: { label: '\uB9E5\uB77D \uC7AC\uAD6C\uC131\uD615', en: 'Context Reconstruction',
+    color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.35)',
+    icon: '\u25C8' },
+  flow_continuity:        { label: '\uD750\uB984 \uC5F0\uC18D\uD615', en: 'Flow Continuity',
+    color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.35)',
+    icon: '\u2192' },
+  focus_protection:       { label: '\uBABB\uC785 \uBCF4\uD638\uD615', en: 'Focus Protection',
+    color: '#60a5fa', bg: 'rgba(96,165,250,0.12)', border: 'rgba(96,165,250,0.35)',
+    icon: '\u25CE' },
+  multi_party_coordination: { label: '\uB2E4\uC790\uAC04 \uC870\uC728\uD615', en: 'Multi-party Coordination',
+    color: '#fb923c', bg: 'rgba(251,146,60,0.12)', border: 'rgba(251,146,60,0.35)',
+    icon: '\u22C8' }
+};
+
+function _purposeChip(key, prefix) {
+  var m = _PURPOSE_META[key];
+  if (!m) return _escapeHtml(key || '');
+  return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;' +
+    'background:' + m.bg + ';color:' + m.color + ';border:1px solid ' + m.border + ';' +
+    'font-size:10px;font-weight:600;letter-spacing:0.2px;">' +
+    m.icon + ' ' + (prefix || '') + m.label + ' <span style="opacity:0.6;">(' + m.en + ')</span>' +
+    '</span>';
+}
+
+function _fieldRow(label, value, dim) {
+  if (value === undefined || value === null || value === '') return '';
+  var v = Array.isArray(value) ? value.join(', ') : String(value);
+  return '<div style="display:flex;gap:8px;padding:1px 0;font-size:10px;">' +
+    '<span style="color:var(--text-3);min-width:110px;">' + _escapeHtml(label) + '</span>' +
+    '<span style="color:' + (dim ? 'var(--text-2)' : '#fff') + ';">' + _escapeHtml(v) + '</span>' +
+    '</div>';
+}
+
+function _renderClassificationBlock(payload) {
+  var o = _pipelineOutput();
+  if (!o || !payload || !payload.orchestration) return;
+  var orch = payload.orchestration;
+  var pri  = (orch.purpose && orch.purpose.primary)   || 'context_reconstruction';
+  var sec  = (orch.purpose && orch.purpose.secondary) || null;
+  var modA = orch.modulationA || {};
+  var modB = orch.modulationB || {};
+  var gov  = orch.governance  || {};
+
+  var summary = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:3px 0;">' +
+    _purposeChip(pri) +
+    (sec ? _purposeChip(sec, '+ ') : '') +
+    '<span style="font-size:10px;color:var(--text-3);">\u00b7</span>' +
+    '<span style="font-size:10px;color:var(--text-2);">attn:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modA.attention || '?') + '</b></span>' +
+    '<span style="font-size:10px;color:var(--text-2);">interaction:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modA.interaction || '?') + '</b></span>' +
+    '<span style="font-size:10px;color:var(--text-2);">devices:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modB.device_count || 'single') + '</b></span>' +
+    ((gov.triggers && gov.triggers.length)
+      ? '<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.35);">\u26A0 governance</span>'
+      : '') +
+    '</div>';
+
+  var details = '';
+  if (orch.purpose && orch.purpose.reasoning) {
+    details += '<div style="font-size:10px;color:var(--text-2);font-style:italic;padding:2px 0 6px 0;">' +
+      '\u201C' + _escapeHtml(orch.purpose.reasoning) + '\u201D</div>';
+  }
+  details += '<div style="padding:4px 0;">' +
+    '<div style="font-size:10px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Modulation A \u00B7 body / environment</div>' +
+    _fieldRow('attention',   modA.attention) +
+    _fieldRow('mobility',    modA.mobility) +
+    _fieldRow('hands',       modA.hands) +
+    _fieldRow('interaction', modA.interaction) +
+    _fieldRow('privacy',     modA.privacy) +
+    _fieldRow('time of day', modA.time_of_day) +
+    _fieldRow('ambient',     modA.ambient) +
+    '</div>';
+  details += '<div style="padding:4px 0;">' +
+    '<div style="font-size:10px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Modulation B \u00B7 multi-device</div>' +
+    _fieldRow('device count',   modB.device_count) +
+    _fieldRow('primary device', modB.primary_device) +
+    _fieldRow('secondary',      (modB.secondary_devices && modB.secondary_devices.length) ? modB.secondary_devices : null) +
+    _fieldRow('handoff',        modB.handoff_required ? ('yes \u2192 ' + (modB.handoff_target || '?')) : 'no', true) +
+    _fieldRow('allocation',     modB.surface_allocation_hint) +
+    '</div>';
+  details += '<div style="padding:4px 0;">' +
+    '<div style="font-size:10px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Governance</div>' +
+    _fieldRow('triggers',            (gov.triggers && gov.triggers.length) ? gov.triggers : 'none', !(gov.triggers && gov.triggers.length)) +
+    _fieldRow('autonomy',            gov.autonomy_level) +
+    _fieldRow('explanation needed',  gov.explanation_needed ? 'yes' : 'no', !gov.explanation_needed) +
+    _fieldRow('override needed',     gov.override_needed    ? 'yes' : 'no', !gov.override_needed) +
+    '</div>';
+
+  var wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
+      'border-radius:8px;background:rgba(0,0,0,0.25);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">4+2+1 CLASSIFICATION</span>' +
+      '</div>' +
+      summary +
+      '<details style="margin-top:6px;">' +
+        '<summary style="cursor:pointer;font-size:10px;color:var(--text-3);padding:2px 0;">details</summary>' +
+        details +
+      '</details>' +
+    '</div>';
+  o.appendChild(wrap.firstElementChild);
+  o.scrollTop = o.scrollHeight;
 }
 
 // Run the full 5-step pipeline with Server-Sent Events so each step's

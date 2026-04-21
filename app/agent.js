@@ -118,7 +118,10 @@ const AgentAPI = {
       if (handlers.onClassified) handlers.onClassified({
         surfaceType: cached.renderModel && cached.renderModel.surfaceType,
         intent: cached.layoutTree && cached.layoutTree.intent,
-        hierarchy: cached.layoutTree && cached.layoutTree.hierarchy
+        hierarchy: cached.layoutTree && cached.layoutTree.hierarchy,
+        // Preserve 4+2+1 orchestration across cached replays so the
+        // pipelineOutput block renders identically on repeat generations.
+        orchestration: (cached.layoutTree && cached.layoutTree.orchestration) || null
       });
       const res = Object.assign({}, cached, { __cached: true });
       if (handlers.onDone) handlers.onDone(res);

@@ -793,6 +793,19 @@ You must think in surface grammar.
 === YOUR JOB ===
 Propose semantic components. The frontend renderer owns spatial placement.
 
+You will receive a "4+2+1 ORCHESTRATION BRIEF" in the user message. It
+tells you the PURPOSE TYPE (one of 4), the body/environment modulation,
+the multi-device modulation, and any governance triggers. READ THIS
+BRIEF FIRST and let it drive what you include and what you suppress.
+
+Decision order (always):
+1. Read the orchestration brief → understand what purpose this UI serves.
+2. Based on the purpose + modulation, decide which components MUST show
+   and which must be SUPPRESSED or deferred.
+3. Choose roles from ALLOWED_ROLES that match those decisions.
+4. Fill content with SPECIFIC detail from the prompt (never placeholder).
+5. Pick the surfaceType that best carries the resulting component set.
+
 Always determine:
 1. surfaceType (one of ALLOWED_SURFACE_TYPES)
 2. user intent (a specific phrase derived from the prompt — not generic)
@@ -956,6 +969,18 @@ function buildGenerateUserPrompt(payload) {
     payload.intent    ? `intent="${payload.intent}"`     : null
   ].filter(Boolean).join(', ');
 
+  // Build a 4+2+1 decision brief the generator can reason with. Each
+  // purpose type implies a DIFFERENT component-selection policy:
+  //   context_reconstruction → must_show = consolidated summary
+  //   flow_continuity        → must_show = continuity-critical state
+  //   focus_protection       → must_show = only the one thing; suppress rest
+  //   multi_party_coordinat. → must_show = conflict / alignment actions
+  // The prompt surfaces this brief so the generator asks itself "given
+  // THIS purpose, what's the minimum set of components" instead of
+  // reflexively emitting a full template.
+  const orch = payload.orchestration || null;
+  const orchBlock = orch ? buildOrchestrationBrief(orch) : '';
+
   return `
 Requested surfaceType: ${payload.surfaceType || 'first-depth-list'}
 Classified context: ${contextLine || '(none extracted)'}
@@ -965,7 +990,7 @@ Brand: ${payload.surface || 'samsung'}
 Mode: ${payload.mode || 'dark'}
 Device: ${payload.device || 'Galaxy S26'}
 
-Constraints:
+${orchBlock}Constraints:
 ${JSON.stringify(payload.constraints || {}, null, 2)}
 
 Design tokens (for copy/color/typography reference only — do not quote coordinates):
@@ -976,6 +1001,8 @@ Reference image attached: ${payload.referenceImage ? 'yes' : 'no'}
 ${hintBlock}Instructions:
 - Every component MUST reflect the USER'S SPECIFIC prompt in its text/content.
 - Use concrete details from the prompt, not generic fill ("Home", "Card content", "").
+- Respect the 4+2+1 ORCHESTRATION BRIEF above: the purpose type dictates
+  what MUST show vs. what should be suppressed.
 - If timeOfDay is set, choose greetings / accent copy that match it
   (morning → "Good morning", night → "Tonight" / "Evening briefing").
 - If activity is set, surface it via a now-bar (media/timer/charging) OR a
@@ -986,6 +1013,95 @@ ${hintBlock}Instructions:
   notif-card-ai, selection-dialog) over plain focus-block whenever the prompt
   makes one of them appropriate.
 `;
+}
+
+// Format the 4+2+1 classification as a concise decision brief that the
+// generator LLM can consume. Only included when the classifier produced
+// a non-null orchestration payload — otherwise returns empty string so
+// the prompt stays lean.
+function buildOrchestrationBrief(orch) {
+  if (!orch || !orch.purpose) return '';
+  const purposePolicy = {
+    context_reconstruction: [
+      'PURPOSE: context_reconstruction — consolidate scattered signals into ONE unified view.',
+      '  must_show  : the consolidated conclusion (summary cards, aggregate widgets).',
+      '  suppress   : raw per-source lists when a summary covers them.',
+      '  pattern    : focus-block (kind=hero or secondary) carrying the synthesis.'
+    ],
+    flow_continuity: [
+      'PURPOSE: flow_continuity — preserve the thread of intent across time/surface/device.',
+      '  must_show  : continuity-critical state (current step, next step, active session).',
+      '  suppress   : any component that breaks the thread.',
+      '  pattern    : now-bar + progress-track + handoff affordance.'
+    ],
+    focus_protection: [
+      'PURPOSE: focus_protection — reduce interruptions. Only the one thing that matters.',
+      '  must_show  : the single most urgent / ambient signal.',
+      '  suppress   : app-grid, dense widgets, promotional content, long lists.',
+      '  defer      : anything not time-critical.',
+      '  pattern    : now-bar + 1 minimal focus-block. Low density, high glass tier.'
+    ],
+    multi_party_coordination: [
+      'PURPOSE: multi_party_coordination — surface conflicts and alignment actions.',
+      '  must_show  : conflict visibility + resolution actions.',
+      '  suppress   : single-user personalization until conflict resolves.',
+      '  pattern    : selection-dialog / action-row / list showing parties and their states.'
+    ]
+  };
+  const pri = orch.purpose.primary || 'context_reconstruction';
+  const sec = orch.purpose.secondary;
+  const lines = [];
+  lines.push('==== 4+2+1 ORCHESTRATION BRIEF ====');
+  (purposePolicy[pri] || purposePolicy.context_reconstruction).forEach(l => lines.push(l));
+  if (sec && purposePolicy[sec]) {
+    lines.push('(Secondary purpose: ' + sec + ' — layer lightly on top of primary)');
+  }
+  if (orch.purpose.reasoning) {
+    lines.push('Why this purpose: ' + orch.purpose.reasoning);
+  }
+
+  const m = orch.modulationA || {};
+  const modA = [];
+  if (m.attention)    modA.push('attention=' + m.attention);
+  if (m.mobility)     modA.push('mobility=' + m.mobility);
+  if (m.interaction)  modA.push('interaction=' + m.interaction);
+  if (m.privacy)      modA.push('privacy=' + m.privacy);
+  if (m.time_of_day)  modA.push('time=' + m.time_of_day);
+  if (m.ambient)      modA.push('ambient=' + m.ambient);
+  if (modA.length) lines.push('Modulation A (body/env): ' + modA.join(', '));
+  if (m.attention === 'glanceable' || m.attention === 'distracted') {
+    lines.push('  → REDUCE density. Collapse non-essentials. Prefer minimal-touch targets.');
+  }
+  if (m.interaction === 'minimal-touch' || m.mobility === 'driving') {
+    lines.push('  → Touch targets ≥ 56px. No fine-grain dense lists.');
+  }
+
+  const d = orch.modulationB || {};
+  const modB = [];
+  modB.push('device_count=' + d.device_count);
+  if (d.primary_device)   modB.push('primary=' + d.primary_device);
+  if (d.handoff_required) modB.push('handoff→' + (d.handoff_target || 'target?'));
+  if (modB.length) lines.push('Modulation B (device): ' + modB.join(', '));
+  if (d.handoff_required) {
+    lines.push('  → Surface a handoff affordance (continuity hint, device icon).');
+  }
+
+  const g = orch.governance || {};
+  if ((g.triggers && g.triggers.length) || g.explanation_needed || g.override_needed) {
+    lines.push('Governance: triggers=[' + (g.triggers || []).join(',') + ']' +
+      ', autonomy=' + (g.autonomy_level || 'advise') +
+      (g.explanation_needed ? ', explanation_needed' : '') +
+      (g.override_needed ? ', override_needed' : ''));
+    if (g.explanation_needed) {
+      lines.push('  → Include an explicit "why this" rationale in one component\'s sub-text.');
+    }
+    if (g.override_needed) {
+      lines.push('  → Include an explicit user-override action (e.g. "Not now", "Change").');
+    }
+  }
+  lines.push('==== END BRIEF ====');
+  lines.push('');
+  return lines.join('\n');
 }
 
 // Legacy entry point used elsewhere (handleConstraintExtract, variants). Left
@@ -1519,56 +1635,219 @@ function fallbackGenerateResponse(surfaceType = 'first-depth-list') {
 // Step 1 of 2 — cheap classifier LLM call that picks surfaceType + intent
 // from the user prompt. Returns a safe default on any failure, so the main
 // generate step can always proceed.
+// ============================================================================
+//  4+2+1 ORCHESTRATION CLASSIFIER
+//  -------------------------------------------------------------------------
+//  Replaces the simple surfaceType-only classifier. Returns both:
+//    (a) Backward-compat fields — surfaceType, intent, hierarchy, timeOfDay,
+//        activity — so existing renderFromModel / surfaceType-driven code
+//        keeps working untouched.
+//    (b) `orchestration` object — the 4+2+1 decision structure:
+//          purpose       : 4 Purpose Types (primary + optional secondary + why)
+//          modulationA   : body + environment state that modulates UI density
+//          modulationB   : multi-device / handoff state
+//          governance    : explanation / autonomy / override triggers
+//  The generator step downstream reads (b) to reason about must_show /
+//  suppress / continuity BEFORE proposing components. The pipelineOutput
+//  client renders (b) as a structured block so every generation explains
+//  itself in the log.
+// ============================================================================
 async function classifyIntent(userPrompt) {
   if (!userPrompt || userPrompt.trim().length < 3) {
-    return { surfaceType: 'first-depth-list', intent: 'default', confidence: 0 };
+    return {
+      surfaceType: 'first-depth-list',
+      intent: 'default',
+      confidence: 0,
+      orchestration: null
+    };
   }
 
   const systemPrompt = `
-You are an intent classifier for Samsung One UI screens.
-Read the user's prompt and return ONLY a JSON object with:
-  {
-    "surfaceType": one of [lockscreen, first-depth-list, second-depth-detail, tab-root, dialog-bottom, dialog-center, quick-settings, notification-shade, selection-mode],
-    "intent":      a SPECIFIC phrase derived from the prompt (3-7 words that reflect what the user actually said, NOT a generic label),
-    "hierarchy":   one of [focus-on-list, focus-on-hero, focus-on-dialog, focus-on-chrome],
-    "timeOfDay":   one of [morning, afternoon, evening, night, null]   // only if prompt mentions it
-    "activity":    short phrase for the ongoing activity if mentioned   // e.g., "playing music", "driving", "cooking"
+You are the ORCHESTRATION CLASSIFIER for a state-based generative UI system
+for Samsung One UI 8.5. You do NOT design screens. You classify the user's
+scenario into a structured decision packet that a downstream component
+selector uses to reason about what should be shown, suppressed, deferred,
+or handed off.
+
+Read the user's prompt and return STRICT JSON with the following shape:
+
+{
+  "surfaceType": "lockscreen | first-depth-list | second-depth-detail | tab-root | dialog-bottom | dialog-center | quick-settings | notification-shade | selection-mode",
+  "intent":     "<3-7 word specific phrase derived from prompt>",
+  "hierarchy":  "focus-on-list | focus-on-hero | focus-on-dialog | focus-on-chrome",
+  "timeOfDay":  "morning | afternoon | evening | night | null",
+  "activity":   "<short phrase or null>",
+
+  "orchestration": {
+    "purpose": {
+      "primary":   "context_reconstruction | flow_continuity | focus_protection | multi_party_coordination",
+      "secondary": "<same enum or null>",
+      "reasoning": "<one sentence: why this purpose type>"
+    },
+    "modulationA_body_env": {
+      "attention":         "glanceable | focused | distracted",
+      "mobility":          "stationary | walking | driving | transit",
+      "hands":             "both | one | none | null",
+      "interaction":       "touch | voice | mixed | minimal-touch",
+      "privacy":           "public | private | mixed | null",
+      "time_of_day":       "morning | afternoon | evening | night | null",
+      "ambient":           "<short free-form phrase like 'dim night private' or null>"
+    },
+    "modulationB_multi_device": {
+      "device_count":      "single | multi",
+      "primary_device":    "phone | tablet | watch | tv | desktop | null",
+      "secondary_devices": ["<device>", ...],
+      "handoff_required":  true | false,
+      "handoff_target":    "<device name or null>",
+      "surface_allocation_hint": "<short phrase or null>"
+    },
+    "governance": {
+      "triggers":            [ "high_impact_decision" | "biometric" | "high_autonomy" | "explanation_gap" | "trust_risk" | "social_conflict" ],
+      "autonomy_level":      "advise | execute_with_confirm | execute",
+      "explanation_needed":  true | false,
+      "override_needed":     true | false
+    }
   }
+}
 
-Classification hints (surfaceType):
-- browse / list / messages / feed / inbox / conversations   → first-depth-list
-- detail / article / profile / product / single item view   → second-depth-detail
-- home / launcher / main / dashboard                        → tab-root
-- lock / standby / wake                                     → lockscreen
-- dialog / confirm / share / picker                         → dialog-bottom
-- alert / error / modal center                              → dialog-center
-- toggles / settings shade / quick controls                 → quick-settings
-- notifications / notif center / shade                      → notification-shade
-- multi-select mode                                         → selection-mode
+== 4 PURPOSE TYPES (pick exactly one as primary) ==
+- context_reconstruction (맥락 재구성형)
+    흩어진 정보, 기능, 신호를 사용자 목적 중심으로 한 화면/한 흐름으로 재편.
+    Signals: "morning brief", "at a glance", "summary", "today's status",
+             consolidating multiple data sources into one view.
 
-intent examples:
-  prompt "Samsung Galaxy Home at night with music playing"
-    → intent: "evening home with active playback"
-  prompt "check morning calendar on lockscreen"
-    → intent: "morning calendar glance"
-  prompt "share this page to friend"
-    → intent: "share page via picker"
+- flow_continuity (흐름 연속형)
+    Intent가 시간/surface/디바이스/상태를 넘어도 끊기지 않도록 이어줌.
+    Signals: "continue", "pick up where I left", "handoff", "resume on
+             another device", navigating step-to-step in a task.
 
-Do not explain. Output JSON only.`;
+- focus_protection (몰입 보호형)
+    방해를 줄이고 지금 필요한 것만 남기며 나머지는 suppress / defer / collapse.
+    Signals: "night", "driving", "do not disturb", "ambient", "minimal",
+             "while working", "glanceable", "while doing X".
+
+- multi_party_coordination (다자간 조율형)
+    여러 사람 / 여러 목표 / 여러 기기 / 여러 제약의 충돌을 조정하고 정렬.
+    Signals: "with my team", "shared", "two people need", "family",
+             "meeting", "everyone", "schedule together", conflict
+             between parties or intents.
+
+== 2 MODULATION LAYERS (how the purpose is modulated by context) ==
+A. Body / Environment
+   Directly affects attention_capacity, interaction_budget, complexity
+   allowance. Extract EVERY field that the prompt provides.
+   If the prompt doesn't mention it, INFER the most likely default
+   (e.g. no mention of driving → mobility = stationary).
+
+B. Multi-device
+   Affects continuity_path, surface_allocation, handoff_design. If the
+   prompt mentions only one device, set device_count = single and
+   handoff_required = false.
+
+== 1 GOVERNANCE LAYER ==
+Check if the scenario triggers any of:
+- high_impact_decision : financial / health / legal / safety
+- biometric            : uses or implies fingerprint / face / voice ID
+- high_autonomy        : system would act without explicit confirm
+- explanation_gap      : user may not understand why the UI appeared
+- trust_risk           : wrong action degrades trust or breaks a relationship
+- social_conflict      : multi-party coordination with competing goals
+If NONE apply, triggers = [].
+autonomy_level: default "advise" unless scenario clearly says system
+should act.
+
+== STRICT RULES ==
+- Always return ALL top-level fields including orchestration.
+- Never invent enum values outside the allowed sets above.
+- If a field is unknowable from the prompt, use null.
+- Purpose primary MUST be one of the 4 types.
+- Return JSON only, no prose before or after.
+
+EXAMPLES
+
+Prompt: "Samsung Galaxy Home at night with music playing"
+→ purpose.primary = focus_protection
+  purpose.secondary = context_reconstruction
+  reasoning: "night ambient context + ongoing background activity → UI
+              should be low-density with playback awareness, not feature-rich"
+  modulationA: attention=glanceable, mobility=stationary, interaction=
+               minimal-touch, privacy=private, time_of_day=night
+  modulationB: single device, no handoff
+  governance:  no triggers
+
+Prompt: "Pick a browser to share this page"
+→ purpose.primary = multi_party_coordination
+  secondary:        null
+  reasoning: "user must choose between multiple candidate targets"
+  modulationA: attention=focused, interaction=touch
+  modulationB: single device
+  governance:  explanation_needed=true (user needs to know what each
+               option does)
+
+Prompt: "Check morning calendar on lockscreen"
+→ purpose.primary = context_reconstruction
+  reasoning: "pulling today's schedule together for a glanceable read"
+  modulationA: attention=glanceable, time_of_day=morning, interaction=
+               minimal-touch
+  modulationB: single device (phone)
+  governance:  none`;
 
   try {
-    const result = await callOpenAI(systemPrompt, userPrompt.slice(0, 500), 0.1);
+    const result = await callOpenAI(systemPrompt, userPrompt.slice(0, 800), 0.1);
     const allowed = ALLOWED_SURFACE_TYPES;
     const surfaceType = (result && allowed.has(result.surfaceType))
       ? result.surfaceType
       : 'first-depth-list';
+
+    // Normalize orchestration payload (defensive — LLM may omit or partial)
+    const orch = (result && result.orchestration) || {};
+    const ALLOWED_PURPOSE = new Set([
+      'context_reconstruction', 'flow_continuity',
+      'focus_protection', 'multi_party_coordination'
+    ]);
+    const purpose = orch.purpose || {};
+    const modA    = orch.modulationA_body_env || {};
+    const modB    = orch.modulationB_multi_device || {};
+    const gov     = orch.governance || {};
+    const normalizedOrch = {
+      purpose: {
+        primary:   ALLOWED_PURPOSE.has(purpose.primary) ? purpose.primary : 'context_reconstruction',
+        secondary: ALLOWED_PURPOSE.has(purpose.secondary) ? purpose.secondary : null,
+        reasoning: purpose.reasoning || ''
+      },
+      modulationA: {
+        attention:    modA.attention    || 'focused',
+        mobility:     modA.mobility     || 'stationary',
+        hands:        modA.hands        || null,
+        interaction:  modA.interaction  || 'touch',
+        privacy:      modA.privacy      || null,
+        time_of_day:  modA.time_of_day  || (result && result.timeOfDay) || null,
+        ambient:      modA.ambient      || null
+      },
+      modulationB: {
+        device_count:      (modB.device_count === 'multi') ? 'multi' : 'single',
+        primary_device:    modB.primary_device    || 'phone',
+        secondary_devices: Array.isArray(modB.secondary_devices) ? modB.secondary_devices : [],
+        handoff_required:  !!modB.handoff_required,
+        handoff_target:    modB.handoff_target    || null,
+        surface_allocation_hint: modB.surface_allocation_hint || null
+      },
+      governance: {
+        triggers:            Array.isArray(gov.triggers) ? gov.triggers : [],
+        autonomy_level:      gov.autonomy_level || 'advise',
+        explanation_needed:  !!gov.explanation_needed,
+        override_needed:     !!gov.override_needed
+      }
+    };
+
     return {
       surfaceType: surfaceType,
       intent: (result && result.intent) || 'generated',
       hierarchy: (result && result.hierarchy) || 'focus-on-list',
-      timeOfDay: (result && result.timeOfDay) || null,
+      timeOfDay: (result && result.timeOfDay) || normalizedOrch.modulationA.time_of_day,
       activity:  (result && result.activity)  || null,
-      confidence: result && result.surfaceType ? 1 : 0
+      confidence: result && result.surfaceType ? 1 : 0,
+      orchestration: normalizedOrch
     };
   } catch (err) {
     console.warn('  [classify] failed:', err.message, '— falling back to client guess');
@@ -1580,11 +1859,12 @@ async function handleGenerate(body, res) {
   try {
     const clientGuess = safeSurfaceType(body.surfaceType || 'first-depth-list');
 
-    // ── Step 1: Intent classification (skip for trivially short prompts) ──
+    // ── Step 1: Intent classification (4+2+1 orchestration classifier) ──
     let requestedSurfaceType = clientGuess;
     let intent = null;
     let timeOfDay = null;
     let activity = null;
+    let orchestration = null;
     if (body.prompt && body.prompt.trim().length >= 6) {
       const classification = await classifyIntent(body.prompt);
       if (classification && classification.surfaceType) {
@@ -1593,10 +1873,18 @@ async function handleGenerate(body, res) {
         } else {
           console.log(`  [classify] confirmed "${classification.surfaceType}"`);
         }
+        if (classification.orchestration) {
+          console.log(`  [4+2+1] purpose=${classification.orchestration.purpose.primary}` +
+            (classification.orchestration.purpose.secondary ? ` / ${classification.orchestration.purpose.secondary}` : '') +
+            ` · attn=${classification.orchestration.modulationA.attention}` +
+            ` · devices=${classification.orchestration.modulationB.device_count}` +
+            ` · gov_triggers=${classification.orchestration.governance.triggers.length}`);
+        }
         requestedSurfaceType = classification.surfaceType;
         intent = classification.intent;
         timeOfDay = classification.timeOfDay;
         activity  = classification.activity;
+        orchestration = classification.orchestration || null;
       }
     }
 
@@ -1607,7 +1895,8 @@ async function handleGenerate(body, res) {
       surfaceType: requestedSurfaceType,
       intent: intent,
       timeOfDay: timeOfDay,
-      activity:  activity
+      activity:  activity,
+      orchestration: orchestration
     });
 
     const promptSize = ((systemPrompt.length + userPrompt.length) / 1024).toFixed(1);
@@ -1665,12 +1954,13 @@ async function handleGenerateStream(body, req, res) {
   try {
     const clientGuess = safeSurfaceType(body.surfaceType || 'first-depth-list');
 
-    // ── Step 1: classify ──
+    // ── Step 1: classify (4+2+1 orchestration classifier) ──
     let surfaceType = clientGuess;
     let intent = null;
     let hierarchy = null;
     let timeOfDay = null;
     let activity = null;
+    let orchestration = null;
     if (body.prompt && body.prompt.trim().length >= 6) {
       const classification = await classifyIntent(body.prompt);
       if (classification && classification.surfaceType) {
@@ -1679,14 +1969,21 @@ async function handleGenerateStream(body, req, res) {
         hierarchy = classification.hierarchy;
         timeOfDay = classification.timeOfDay;
         activity  = classification.activity;
+        orchestration = classification.orchestration || null;
       }
     }
-    emit('classified', { surfaceType, intent, hierarchy, timeOfDay, activity });
+    // Emit the 4+2+1 decision packet alongside backward-compat fields so
+    // the client can render a structured "why this UI" block in the log.
+    emit('classified', {
+      surfaceType, intent, hierarchy, timeOfDay, activity,
+      orchestration
+    });
 
     // ── Step 2: stream generate ──
     const systemPrompt = buildGenerateSystemPrompt();
     const userPrompt = buildGenerateUserPrompt({
-      ...body, surfaceType, intent, timeOfDay, activity
+      ...body, surfaceType, intent, timeOfDay, activity,
+      orchestration
     });
 
     console.log(`  [stream] generate surfaceType=${surfaceType}`);
@@ -1718,6 +2015,13 @@ async function handleGenerateStream(body, req, res) {
     const response = coerceGenerateResponse(fullJson, surfaceType);
     if (intent && response.layoutTree && !response.layoutTree.intent) {
       response.layoutTree.intent = intent;
+    }
+    // Attach the 4+2+1 orchestration packet to the layoutTree so it
+    // persists in cached responses — when a client replays from the
+    // LRU cache, the synthetic `classified` event can still render the
+    // classification block in the log.
+    if (orchestration && response.layoutTree) {
+      response.layoutTree.orchestration = orchestration;
     }
 
     emit('done', response);
