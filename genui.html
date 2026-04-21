@@ -467,14 +467,18 @@
           <div id="criticBadgeIssues" style="margin-top:4px;font-size:10px;color:var(--text-2);line-height:1.4;"></div>
         </div>
 
-        <!-- 3. SCREENS (full-screen base surfaces) — 1×4 row -->
+        <!-- 3. SCREENS (AI seed prompts) — 1×4 row
+             Clicking any of these fills the chat input below with a
+             randomized scenario-specific prompt and fires the AI pipeline
+             (same path as pressing Send). Ensures Screens and Chat share
+             a single source of truth instead of competing flows. -->
         <div style="margin-bottom:10px;">
-          <div class="panel-label">Screens</div>
+          <div class="panel-label" title="Click to auto-generate a surface-specific prompt and send it through the AI pipeline.">Screens <span style="font-weight:400;color:var(--text-3);">&middot; AI seeds</span></div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;">
-            <button class="scene-btn" data-role="screen" onclick="generateScreen('lockscreen', this)"><span>Lock</span></button>
-            <button class="scene-btn" data-role="screen" onclick="generateScreen('home', this)"><span>Home</span></button>
-            <button class="scene-btn" data-role="screen" onclick="generateScreen('feed', this)"><span>List</span></button>
-            <button class="scene-btn" data-role="screen" onclick="generateScreen('detail', this)"><span>Detail</span></button>
+            <button class="scene-btn" data-role="screen" onclick="seedAndGenerate('lockscreen', this)" title="Seed a lockscreen prompt and generate via AI"><span>Lock</span></button>
+            <button class="scene-btn" data-role="screen" onclick="seedAndGenerate('home', this)" title="Seed a home screen prompt and generate via AI"><span>Home</span></button>
+            <button class="scene-btn" data-role="screen" onclick="seedAndGenerate('feed', this)" title="Seed a list/inbox prompt and generate via AI"><span>List</span></button>
+            <button class="scene-btn" data-role="screen" onclick="seedAndGenerate('detail', this)" title="Seed a detail-page prompt and generate via AI"><span>Detail</span></button>
           </div>
         </div>
 
