@@ -967,69 +967,6 @@ function generateScreen(scenarioKey, buttonEl) {
   _refreshOverlayHint();
 }
 
-// Screen buttons were previously "instant canned templates" (bypassed the
-// AI pipeline entirely) — that competed with the chat Send flow. Now they
-// act as SEED PROMPTS: clicking Lock/Home/List/Detail fills the chat
-// input with a randomized scenario-specific seed and fires sendChatMessage
-// so the AI is always the single source of truth. Users can still edit
-// the seed before sending (the button only seeds if the input is empty
-// or the user hasn't been editing).
-function seedAndGenerate(scenarioKey, buttonEl) {
-  const SEEDS = {
-    lockscreen: [
-      'Samsung Galaxy lock screen at night, show time and weather',
-      'Lock screen in the morning with upcoming calendar',
-      'Lock screen while charging overnight',
-      'Lockscreen with a media playback activity in the now bar',
-      'Minimal lock screen, focus on clock and unlock hint'
-    ],
-    home: [
-      'Samsung Galaxy home screen with app grid and media playing',
-      'Home screen in the evening showing quick widgets',
-      'Home screen with weather and calendar widgets at glance',
-      'Morning home screen, greet the user and show today\u2019s schedule',
-      'Minimal home with just app dock and a single focus block'
-    ],
-    feed: [
-      'Samsung messages inbox showing recent conversations',
-      'Email list view with unread threads and search',
-      'Settings list with connectivity and personalization sections',
-      'Saved articles list with article previews',
-      'Contacts list sorted alphabetically'
-    ],
-    detail: [
-      'News article detail with hero image, title, and body text',
-      'Product detail for Galaxy S26 with description and price',
-      'Profile detail page with avatar, bio, and action buttons',
-      'Calendar event detail with time, location, and attendees',
-      'Message thread detail with chat bubbles and input bar'
-    ]
-  };
-
-  const pool = SEEDS[scenarioKey] || SEEDS.home;
-  const seed = pool[Math.floor(Math.random() * pool.length)];
-
-  const input = document.getElementById('genPrompt');
-  if (input) {
-    input.value = seed;
-    if (typeof autoResizeChatInput === 'function') autoResizeChatInput(input);
-  }
-
-  // Keep the visual "active screen" highlight consistent with the old
-  // generateScreen flow so the sidebar UX doesn't regress.
-  _markActiveSceneBtn(buttonEl, 'screen');
-  window.currentBaseSurface = scenarioKey;
-  window.currentOverlay = null;
-  _removeOverlayLayer();
-
-  // Fire the same Send flow the chat uses. In Agent mode this hits the
-  // AI pipeline; in Local mode it falls through to the keyword matcher
-  // (which will still match the seed's strongest surface keyword).
-  sendChatMessage();
-}
-
-window.seedAndGenerate = seedAndGenerate;
-
 function toggleOverlay(overlayKey, buttonEl) {
   // If the user hit an overlay button without picking a screen first, pick
   // one of the four base screens at random so the overlay has realistic
