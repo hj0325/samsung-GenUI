@@ -379,9 +379,17 @@ function _fullResetForGeneration() {
       canvas._rulesInner.classList.remove('overlay-hides-all',
         'overlay-hides-statusbar', 'overlay-hides-lock-content');
     }
+
+    // 4. Wipe canvas content. Without this, the PREVIOUS render (a
+    //    prior AI result, or a canned Home/Lock screen) stayed visible
+    //    for the ~20s of the next AI call — users saw it through the
+    //    loading blur and read it as "the result". Now the loading
+    //    overlay sits on an empty wallpaper instead.
+    canvas.innerHTML = '';
+    canvas._rulesInner = null;
   }
 
-  // 4. Refresh the Overlay hint text so it no longer says "Base: lock · Overlay: notif"
+  // 5. Refresh the Overlay hint text so it no longer says "Base: lock · Overlay: notif"
   if (typeof _refreshOverlayHint === 'function') {
     try { _refreshOverlayHint(); } catch (e) { /* ignore */ }
   }
@@ -404,18 +412,14 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
     applyScenarioBackground(scenarioHint);
   }
 
-  // Skeleton pre-render
-  const skeletonSurfaceType = payload.surfaceType ||
-    (window.SURFACE_TYPES && window.SURFACE_TYPES.FIRST_DEPTH_LIST) ||
-    'first-depth-list';
-  if (typeof window.generateSurfaceScenario === 'function') {
-    try {
-      window.generateSurfaceScenario(skeletonSurfaceType);
-      const canvas = document.getElementById('canvas');
-      if (canvas) canvas.classList.add('skeleton-loading');
-    } catch (err) { /* ignore */ }
-  }
-
+  // NOTE: earlier builds pre-rendered a canned surface (e.g.
+  // first-depth-list) as a skeleton behind the loading overlay so the
+  // canvas never looked empty during the ~20s AI call. Reported as
+  // confusing — a home screen or list UI would flash through the blur
+  // and feel like "the result", then jump to something else when the
+  // real AI response arrived. We now keep the canvas empty + blurred
+  // during generation and rely on the loading overlay + pipelineOutput
+  // blocks to communicate progress.
   showAgentLoading(`Generating Variant ${v}...`);
 
   // Live log in the pipelineOutput panel so the user can watch progress.
@@ -431,21 +435,18 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
   const _tStart = Date.now();
 
   try {
-    let classifiedSurfaceType = skeletonSurfaceType;
     let componentCount = 0;
 
     const res = await AgentAPI.generateUIStream(payload, {
-      // Classifier lands ~300ms in — update skeleton to the correct surface
-      // type immediately so the user sees accurate structure early.
       onClassified: function (info) {
-        if (info && info.surfaceType && info.surfaceType !== classifiedSurfaceType) {
-          classifiedSurfaceType = info.surfaceType;
-          try {
-            window.generateSurfaceScenario(info.surfaceType);
-            const c2 = document.getElementById('canvas');
-            if (c2) c2.classList.add('skeleton-loading');
-          } catch (err) { /* ignore */ }
-        }
+        // NOTE: earlier builds also re-rendered a canned skeleton here
+        // on the classified surfaceType so the canvas visually snapped
+        // to the right shape ~300ms in. Removed for the same reason —
+        // it flashed a fake UI (e.g. a canned home screen) BEFORE the
+        // real components arrived, which read as "the result" to users.
+        // The loading overlay + pipelineOutput blocks communicate
+        // progress instead.
+
         // Update loading message with intent
         if (info && info.intent) {
           showAgentLoading(`Generating \u201C${info.intent}\u201D\u2026`);
