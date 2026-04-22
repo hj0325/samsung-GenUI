@@ -703,20 +703,16 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
    marks a component with _emphasis. Each emphasis reads as a distinct
    visual tier without overriding the atomic's own styling. */
 
-/* hero  — dominant element in the purpose layout (one per generation) */
+/* hero  — dominant element in the purpose layout (one per generation)
+   NOTE: earlier revision used a ::before radial-gradient overlay that
+   rendered as a visible grey rectangle OUTSIDE the atomic's rounded
+   silhouette (atomic owns the border-radius; the wrapper doesn't), so
+   the glow looked like a phantom container. Reverted to a pure inline
+   emphasis — no pseudo, no extra box. The atomic's own glass already
+   reads as prominent when the hero is placed in the purpose layout's
+   hero slot. */
 .surface-item.emphasis-hero {
-  transition: box-shadow 260ms ease, transform 260ms ease;
-  box-shadow: 0 12px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06) inset;
-}
-.surface-item.emphasis-hero::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: inherit;
-  pointer-events: none;
-  background: radial-gradient(ellipse at 50% 0%,
-    rgba(96,165,250,0.12), transparent 65%);
-  z-index: -1;
+  /* deliberately empty — let the atomic + layout position speak */
 }
 
 /* must  — matches informationPriority.must_show. Subtle green ring. */

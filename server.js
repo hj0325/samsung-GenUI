@@ -1552,15 +1552,41 @@ function sanitizeRenderModel(renderModel) {
     (renderModel.layout && renderModel.layout.surfaceType)
   );
 
+  // Roles that only make sense when filled with real content — a
+  // focus-block with no title/sub renders the atomic's default
+  // placeholder ("Focus block · Important content goes here"), which
+  // looks broken on canvas. Drop them rather than let them through.
+  const CONTENT_REQUIRED_ROLES = new Set([
+    'focus-block', 'focus-block-group', 'paragraph', 'notif-card',
+    'notif-card-ai', 'list-item', 'media-card', 'media-half'
+  ]);
+  function _hasMeaningfulContent(c) {
+    if (c.text && c.text.trim().length >= 2) return true;
+    const ct = c.content && typeof c.content === 'object' ? c.content : null;
+    if (!ct) return false;
+    const fields = ['title', 'sub', 'subtitle', 'body', 'value', 'label',
+                    'description', 'items'];
+    for (const k of fields) {
+      const v = ct[k];
+      if (typeof v === 'string' && v.trim().length >= 2) return true;
+      if (Array.isArray(v) && v.length > 0) return true;
+    }
+    return false;
+  }
+
   const components = Array.isArray(renderModel.components)
     ? renderModel.components
         .filter(c => c && ALLOWED_ROLES.has(c.role))
+        .filter(c => !CONTENT_REQUIRED_ROLES.has(c.role) || _hasMeaningfulContent(c))
         .map((c, idx) => ({
           id: c.id || `comp-${idx + 1}`,
           role: c.role,
           type: c.type || null,
           text: c.text || '',
           content: c.content && typeof c.content === 'object' ? c.content : {},
+          variant: c.variant && typeof c.variant === 'object' ? c.variant : null,
+          visibility: c.visibility === 'collapsed' || c.visibility === 'hidden'
+            ? c.visibility : 'visible',
           html: typeof c.html === 'string' ? c.html : '',
           styles: c.styles && typeof c.styles === 'object' ? c.styles : {},
           state:

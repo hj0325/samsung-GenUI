@@ -342,9 +342,17 @@ function _inferZoneForAgentRole(role) {
   }
   if (role === 'lock-indicator' || role === 'unlock-hint' ||
       role === 'shortcut-left' || role === 'shortcut-right' ||
-      role === 'lock-shortcuts' || role === 'now-bar') {
+      role === 'lock-shortcuts') {
     return 'bottomAction';
   }
+  // now-bar used to live in bottomAction so it'd sit near the gesture
+  // bar. On lockscreen that collided with unlock-hint + lock-shortcuts
+  // (both also in bottomAction), producing the visible "timer on top
+  // of Swipe up to unlock" overlap bug. Treat now-bar as a content
+  // role instead so the purpose-aware layout dispatcher positions it
+  // explicitly in the interaction zone (e.g. continuity_stream hero,
+  // focus_protection hero_single supporting line, etc.).
+  if (role === 'now-bar') return 'interaction';
   // Content / interactive components (focus-block, list, list-item,
   // media-card, notif-card, toggle-grid, slider-panel, selection-dialog,
   // dialog-shell, etc.) all land in the interaction zone and are
@@ -459,8 +467,12 @@ function _place(comp, rect, emphasis) {
 
 // ---------------------------------------------------------------------
 //  Strategy 1: HERO_SINGLE  (focus_protection)
-//  One dominant component (the first must_show), ambient whitespace,
-//  supporting items dimmed below.
+//  One dominant component (the first must_show), calm whitespace,
+//  supporting items dimmed below. Earlier revision pushed the hero
+//  22% down the interaction zone — on a tall interaction zone that
+//  left ~2/3 of the phone looking empty. Now the hero starts near
+//  the top and supporting items sit tight under it so the vertical
+//  column reads as intentionally minimal, not broken.
 // ---------------------------------------------------------------------
 function _layoutHeroSingle(aiComponents, z, mustShow) {
   const placed = [];
@@ -472,23 +484,24 @@ function _layoutHeroSingle(aiComponents, z, mustShow) {
   const hero = aiComponents[heroIdx];
   const rest = aiComponents.filter((_, i) => i !== heroIdx);
 
-  // Hero sits ~1/3 down from top, full width, tall.
-  const heroH = Math.min(220, Math.max(160, _hFor(hero.role, hero) + 40));
-  const heroY = z.y + Math.floor(z.h * 0.22);
+  // Hero near top of interaction zone, full width.
+  const heroH = Math.min(220, Math.max(140, _hFor(hero.role, hero) + 20));
+  const heroY = z.y;
   placed.push(_place(hero, { x: z.x, y: heroY, w: z.w, h: heroH }, 'hero'));
 
-  // Supporting: up to 2 items, smaller, below hero, centered.
-  const maxSecondary = 2;
-  const sidePad = 32;
+  // Supporting: up to 3 items, tighter spacing so the column feels
+  // purposefully sparse without leaving a gaping void below.
+  const maxSecondary = 3;
+  const sidePad = 24;
   const secondaryW = z.w - sidePad * 2;
-  let y = heroY + heroH + 28;
+  let y = heroY + heroH + 14;
   for (let i = 0; i < Math.min(rest.length, maxSecondary); i++) {
     const c = rest[i];
-    const h = Math.min(72, _hFor(c.role, c));
+    const h = Math.min(88, _hFor(c.role, c));
     if (y + h > z.y + z.h - 12) break;
     const emphasis = _isMustShow(c.role, mustShow) ? 'must' : 'dim';
     placed.push(_place(c, { x: z.x + sidePad, y: y, w: secondaryW, h: h }, emphasis));
-    y += h + 10;
+    y += h + 8;
   }
   return placed;
 }
@@ -812,15 +825,30 @@ const RenderEngine = {
       // (like app-grid for tab-root, detail-content for detail surfaces,
       // focus-block-group for lockscreen) so AI's components don't
       // overlap them. Chrome (status-bar/app-dock/bottom-nav) stays.
+      //
+      // ALSO strip canned decorative items that would fight with the
+      // AI's own hero:
+      //   lockscreen  → lock-clock, weather-date, lock-time, lock-date
+      //                 are the canned "big clock + date" hero. If AI
+      //                 is supplying context_reconstruction or hero_single
+      //                 content, two heroes at once looks broken — the
+      //                 AI hero replaces them. (unlock-hint + shortcuts
+      //                 stay; they're chrome, not decoration.)
       const agentInteractionRoles = new Set();
       (normalized.components || []).forEach(function (ac) {
         if (!ac.role || consumedRoles.has(ac.role)) return;
         const iz = ac.zone || _inferZoneForAgentRole(ac.role);
         if (iz === 'interaction') agentInteractionRoles.add(ac.role);
       });
+      const STRIP_WHEN_AI_OVERRIDES = new Set([
+        'lock-clock', 'lock-time', 'lock-date', 'weather-date',
+        'lock-indicator'
+      ]);
       if (agentInteractionRoles.size > 0) {
         plan.components = (plan.components || []).filter(function (pc) {
-          return pc.zone !== 'interaction';
+          if (pc.zone === 'interaction') return false;
+          if (STRIP_WHEN_AI_OVERRIDES.has(pc.role)) return false;
+          return true;
         });
       }
 

@@ -242,10 +242,63 @@ function _restoreHistoryEntry(i) {
   if (i < 0 || i >= h.entries.length) return;
   h.index = i;
   var entry = h.entries[i];
+
+  // 1. Restore the prompt that produced this entry so the chat input
+  //    reflects what's actually on canvas. Previously the input was
+  //    whatever the user typed most recently, which didn't match the
+  //    rendered variant — confusing on back/forward navigation.
+  var promptEl = document.getElementById('genPrompt');
+  if (promptEl && typeof entry.prompt === 'string') {
+    promptEl.value = entry.prompt;
+    if (typeof autoResizeChatInput === 'function') {
+      try { autoResizeChatInput(promptEl); } catch (e) { /* ignore */ }
+    }
+  }
+
+  // 2. Re-render the canvas from the cached renderModel. Attach the
+  //    decision packet (from layoutTree) so the purpose-aware layout
+  //    dispatcher still picks the right strategy on replay.
   if (entry.response && entry.response.renderModel) {
+    if (entry.response.layoutTree) {
+      entry.response.renderModel._orchestration       = entry.response.layoutTree.orchestration       || null;
+      entry.response.renderModel._interpretation      = entry.response.layoutTree.interpretation      || null;
+      entry.response.renderModel._statePacket         = entry.response.layoutTree.statePacket         || null;
+      entry.response.renderModel._informationPriority = entry.response.layoutTree.informationPriority || null;
+    }
+    // Also blank overlay state — a history replay is semantically a
+    // fresh render of the variant, not a layer-on-top.
+    if (typeof _fullResetForGeneration === 'function') {
+      try { _fullResetForGeneration(); } catch (e) { /* ignore */ }
+    }
     RenderEngine.renderFromModel(entry.response.renderModel);
     if (entry.response.critic) RenderEngine.renderCritic(entry.response.critic);
   }
+
+  // 3. Re-render the pipelineOutput blocks (4+2+1 classification,
+  //    interpretation, state packet, information priority) for this
+  //    entry so the log panel matches the canvas on replay.
+  var lt = (entry.response && entry.response.layoutTree) || {};
+  if (lt.orchestration || lt.interpretation || lt.statePacket || lt.informationPriority) {
+    _pipelineStart('History replay \u2014 ' +
+      (entry.prompt ? '"' + entry.prompt.slice(0, 60) + (entry.prompt.length > 60 ? '\u2026' : '') + '"' : 'Variant ' + (i + 1)));
+    _pipelineInfo('Entry ' + (i + 1) + '/' + h.entries.length +
+      (entry.ts ? '  \u00b7  ' + new Date(entry.ts).toLocaleTimeString() : ''));
+    var classifiedPayload = {
+      surfaceType: (entry.response.renderModel && entry.response.renderModel.surfaceType) || null,
+      intent:      lt.intent      || null,
+      hierarchy:   lt.hierarchy   || null,
+      orchestration:       lt.orchestration       || null,
+      interpretation:      lt.interpretation      || null,
+      statePacket:         lt.statePacket         || null,
+      informationPriority: lt.informationPriority || null
+    };
+    if (classifiedPayload.orchestration)       _renderClassificationBlock(classifiedPayload);
+    if (classifiedPayload.interpretation)      _renderInterpretationBlock(classifiedPayload);
+    if (classifiedPayload.statePacket)         _renderStatePacketBlock(classifiedPayload);
+    if (classifiedPayload.informationPriority) _renderPriorityBlock(classifiedPayload);
+    _pipelineSuccess('Replayed from history.');
+  }
+
   _updateHistoryUI();
 }
 
