@@ -820,37 +820,44 @@ const RenderEngine = {
         if (ac.visibility && ac.visibility !== 'visible') pc.visibility = ac.visibility;
       });
 
-      // Before Pass 2: if the AI is providing rich interaction-zone
-      // content, strip the canned plan's default interaction components
-      // (like app-grid for tab-root, detail-content for detail surfaces,
-      // focus-block-group for lockscreen) so AI's components don't
-      // overlap them. Chrome (status-bar/app-dock/bottom-nav) stays.
+      // Before Pass 2: strip canned plan items that would COLLIDE with
+      // what the AI is supplying.
       //
-      // ALSO strip canned decorative items that would fight with the
-      // AI's own hero:
-      //   lockscreen  → lock-clock, weather-date, lock-time, lock-date
-      //                 are the canned "big clock + date" hero. If AI
-      //                 is supplying context_reconstruction or hero_single
-      //                 content, two heroes at once looks broken — the
-      //                 AI hero replaces them. (unlock-hint + shortcuts
-      //                 stay; they're chrome, not decoration.)
+      // Earlier revision only fired this when the AI had INTERACTION-
+      // zone content, but the classifier happily routes rich output
+      // (lock-clock, weather-date, notif-card, expandable-app-bar, etc.)
+      // into the VIEWING zone. Those AI components landed on top of
+      // the canned lockscreen lock-time / lock-date / focus-block-group
+      // because neither plan knew the other existed — visible overlap:
+      // 12:45 clock + 00:00:00 timer + "Swipe to unlock" all stacked.
+      //
+      // New rule: if AI is supplying ANY 2+ content components (i.e.
+      // it's actually driving the screen, not just dropping a single
+      // tweak), strip EVERY canned content component. Only pure
+      // chrome zones (topSystem, bottomNav, bottomAction) survive —
+      // status-bar, app-dock, bottom-navigation, unlock-hint,
+      // lock-shortcuts, gesture-bar. The AI's components then own
+      // the viewing + interaction regions cleanly.
+      const CHROME_ZONES = new Set(['topSystem', 'bottomNav', 'bottomAction']);
+      const agentContentCount = (normalized.components || []).filter(function (ac) {
+        if (!ac.role || consumedRoles.has(ac.role)) return false;
+        return true;
+      }).length;
+      const aiDrivingScreen = agentContentCount >= 2;
+      if (aiDrivingScreen) {
+        plan.components = (plan.components || []).filter(function (pc) {
+          return CHROME_ZONES.has(pc.zone);
+        });
+      }
+      // Track which zones the AI is filling — used by layouts to leave
+      // bottom reserve for canned chrome that still exists (app-dock,
+      // bottom-nav, gesture-bar).
       const agentInteractionRoles = new Set();
       (normalized.components || []).forEach(function (ac) {
         if (!ac.role || consumedRoles.has(ac.role)) return;
         const iz = ac.zone || _inferZoneForAgentRole(ac.role);
         if (iz === 'interaction') agentInteractionRoles.add(ac.role);
       });
-      const STRIP_WHEN_AI_OVERRIDES = new Set([
-        'lock-clock', 'lock-time', 'lock-date', 'weather-date',
-        'lock-indicator'
-      ]);
-      if (agentInteractionRoles.size > 0) {
-        plan.components = (plan.components || []).filter(function (pc) {
-          if (pc.zone === 'interaction') return false;
-          if (STRIP_WHEN_AI_OVERRIDES.has(pc.role)) return false;
-          return true;
-        });
-      }
 
       // Pass 2 (R3-B): APPEND agent's unique content components using a
       // PURPOSE-AWARE LAYOUT STRATEGY instead of the old fixed vertical
@@ -860,13 +867,42 @@ const RenderEngine = {
       //   context_reconstruction   → summary_grid (2-col info tiles)
       //   flow_continuity          → continuity_stream (hero + middle + action)
       //   multi_party_coordination → modal_stack (centered dialog)
+      //
+      // Layout scope = the combined VIEWING + INTERACTION area. Earlier
+      // revision only passed the interaction zone, which was too narrow
+      // on lockscreen (viewing zone hogged the top). Now the dispatcher
+      // sees the full content canvas (everything between topSystem
+      // chrome and bottomNav/bottomAction chrome).
+      const viewingZone     = (layout && layout.zones && layout.zones.viewing)     || null;
       const interactionZone = (layout && layout.zones && layout.zones.interaction) ||
         { x: 18, y: 140, w: 415, h: 600 };
+      const contentZone = viewingZone ? {
+        x: Math.min(viewingZone.x, interactionZone.x),
+        y: viewingZone.y,
+        w: Math.max(viewingZone.w, interactionZone.w),
+        h: (interactionZone.y + interactionZone.h) - viewingZone.y
+      } : interactionZone;
 
-      // Collect the AI components that are NOT yet in the plan and belong
-      // to the interaction zone (content, not chrome).
-      const interactionCandidates = [];
-      const otherZoneCandidates = [];
+      // Reserve space at the bottom if canned chrome (app-dock,
+      // bottom-nav, gesture-bar, lock-shortcuts, unlock-hint) will
+      // still render under the AI content.
+      const hasBottomChrome = (plan.components || []).some(function (pc) {
+        return pc.zone === 'bottomNav' || pc.zone === 'bottomAction';
+      });
+      const layoutZone = hasBottomChrome ? {
+        x: contentZone.x,
+        y: contentZone.y,
+        w: contentZone.w,
+        h: Math.max(120, contentZone.h - 20)     // 20px buffer above chrome
+      } : contentZone;
+
+      // Collect every AI component not already merged. The dispatcher
+      // handles CONTENT components (anything zoned to viewing or
+      // interaction); the remaining items (topSystem / bottomNav /
+      // bottomAction chrome the AI explicitly emitted) fall through to
+      // the standard zone resolver.
+      const contentCandidates = [];
+      const chromeCandidates  = [];
       (normalized.components || []).forEach(function (ac) {
         if (!ac.role) return;
         if (consumedRoles.has(ac.role)) return;
@@ -881,26 +917,28 @@ const RenderEngine = {
           variant:    ac.variant,
           visibility: ac.visibility || 'visible'
         };
-        if (inferredZone === 'interaction') interactionCandidates.push(spec);
-        else                                otherZoneCandidates.push(spec);
+        if (inferredZone === 'viewing' || inferredZone === 'interaction') {
+          contentCandidates.push(spec);
+        } else {
+          chromeCandidates.push(spec);
+        }
       });
 
-      // Run the purpose-aware layout dispatcher over the interaction-
-      // zone candidates. Each result has `_rect` and `_emphasis` set.
+      // Run the purpose-aware layout dispatcher over every AI content
+      // component. Each result has `_rect` and `_emphasis` set.
       const purposeType = (normalized._orchestration &&
                            normalized._orchestration.purpose &&
                            normalized._orchestration.purpose.primary) || null;
       const mustShowList = (normalized._informationPriority &&
                             normalized._informationPriority.must_show) || [];
-      const placed = _layoutForPurpose(purposeType, interactionCandidates, interactionZone, mustShowList);
+      const placed = _layoutForPurpose(purposeType, contentCandidates, layoutZone, mustShowList);
 
       placed.forEach(function (spec) {
         plan.components.push(spec);
         consumedRoles.add(spec.role);
       });
-      otherZoneCandidates.forEach(function (spec) {
-        // Chrome / non-interaction items get standard zone positioning
-        // via resolveComponentRect (no _rect needed).
+      chromeCandidates.forEach(function (spec) {
+        // Chrome items get standard zone positioning via resolveComponentRect.
         plan.components.push(spec);
         consumedRoles.add(spec.role);
       });

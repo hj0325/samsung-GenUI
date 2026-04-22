@@ -551,11 +551,180 @@
         <input type="checkbox" id="genGenStatic" style="display:none;">
       </div>
 
-      <!-- PANEL 6: DESIGN (Combined: Scene + Components + Layout + Colors + Motion) -->
+      <!-- PANEL 6: DESIGN (Combined: Hierarchy + Scene + Components + Layout + Colors + Motion) -->
       <div class="panel" id="panel-6">
 
+        <!-- ── HIERARCHY ── visual-grammar rules that map 4+2+1 decisions
+             to on-canvas visuals. Lives ABOVE Scene because a designer
+             defines the grammar first, then inspects how it applied.
+             For now, each group is READ-ONLY (shows the mapping Claude
+             currently uses). Each row will later get an "Edit" affordance
+             so designers can override the rule (e.g. change the accent
+             color for urgency=high, swap the layout template for
+             focus_protection, etc.). -->
+        <div class="design-section open" id="ds-hierarchy">
+          <div class="design-section-header" onclick="toggleDesignSection('ds-hierarchy')">
+            <span class="design-section-title">Hierarchy</span>
+            <span class="design-section-arrow"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="design-section-body">
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;line-height:1.5;">
+              Visual grammar for the 4+2+1 orchestration. Each rule maps a state-packet field to how it should look on canvas.
+            </div>
+
+            <!-- Group 1: Purpose → Layout Template -->
+            <div class="panel-section" style="margin-bottom:12px;">
+              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Purpose &rarr; Layout Template</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">4 rules</span>
+              </div>
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#60a5fa;">&#9678; Focus Protection</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">hero_single</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#a78bfa;">&#9670; Context Reconstruction</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">summary_grid</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#4ade80;">&rarr; Flow Continuity</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">continuity_stream</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#fb923c;">&#10216;&#10217; Multi-party Coordination</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">modal_stack</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Group 2: Attention Capacity → Density -->
+            <div class="panel-section" style="margin-bottom:12px;">
+              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Attention Capacity &rarr; Density</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">3 rules</span>
+              </div>
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+                <div class="hierarchy-rule">
+                  <span class="hr-key">low (glanceable)</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">wide whitespace, larger type, max 3 items</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">medium</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">default gap, normal type scale</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">high (focused)</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">compact gap, denser grid, many items</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Group 3: Urgency → Accent -->
+            <div class="panel-section" style="margin-bottom:12px;">
+              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Urgency &rarr; Accent Color</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">3 rules</span>
+              </div>
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+                <div class="hierarchy-rule">
+                  <span class="hr-key">low</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:rgba(255,255,255,0.2);vertical-align:middle;"></span> neutral surface</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">medium</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#3388E9;vertical-align:middle;"></span> Samsung blue accent on hero</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">high</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#EF4444;vertical-align:middle;"></span> warning red ring on must_show</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Group 4: Emphasis Tiers (visual hierarchy of components) -->
+            <div class="panel-section" style="margin-bottom:12px;">
+              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Emphasis Tiers</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">5 tiers</span>
+              </div>
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+                <div class="hierarchy-rule">
+                  <span class="hr-key">hero</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">dominant position in purpose layout</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">must (must_show match)</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">subtle green ring, primary surface</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">secondary</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">opacity 0.9, standard presentation</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">dim (supporting in hero_single)</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">opacity 0.55, scale 0.96, saturate 0.8</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">action (pinned)</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">bottom, shadow + backdrop-filter</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Group 5: Governance Triggers → Auto UI Additions -->
+            <div class="panel-section" style="margin-bottom:6px;">
+              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Governance Triggers &rarr; Auto Additions</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">planned</span>
+              </div>
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+                <div class="hierarchy-rule hr-planned">
+                  <span class="hr-key">explanation_needed</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">auto-append "Why this?" link to layout bottom</span>
+                </div>
+                <div class="hierarchy-rule hr-planned">
+                  <span class="hr-key">override_needed</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">auto-append "Not now" button to action-row</span>
+                </div>
+                <div class="hierarchy-rule hr-planned">
+                  <span class="hr-key">handoff_required</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">device badge &#128241;&#8594;&#8986; on relevant card</span>
+                </div>
+                <div class="hierarchy-rule hr-planned">
+                  <span class="hr-key">high_impact_decision</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">confirm scrim + biometric prompt gate</span>
+                </div>
+              </div>
+              <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
+                These rules are declared but not yet auto-applied to the canvas. Edit affordance coming in R4.
+              </div>
+            </div>
+
+          </div>
+        </div>
+
         <!-- ── SCENE (live inspector of the current canvas) ── -->
-        <div class="design-section open" id="ds-scene">
+        <div class="design-section" id="ds-scene">
           <div class="design-section-header" onclick="toggleDesignSection('ds-scene')">
             <span class="design-section-title">Scene</span>
             <span class="design-section-arrow"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
