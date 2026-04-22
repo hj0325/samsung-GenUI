@@ -866,7 +866,7 @@ Return STRICT JSON only:
     "components": [
       {
         "id": "<unique-id>",
-        "role": "<from ALLOWED_ROLES>",
+        "role": "<a SEMANTIC id (preferred) OR an atomic ALLOWED_ROLE>",
         "state": "<optional — only for app bars>",
         "text": "<top-level text if the role carries a primary string>",
         "content": {
@@ -875,11 +875,35 @@ Return STRICT JSON only:
           "value": "<specific to prompt>",
           "items": [ { "title": "", "sub": "" }, ... ]
         },
-        "variant": { "kind": "hero | secondary | ...", "type": "media | timer | charging" }
+        "variant": { "<only set if using a raw atomic role; semantic ids auto-variant>": "" }
       }
     ]
   },
   "critic": { "score": 0, "issues": [], "suggestions": [] }
+}
+
+Concrete output example — a morning-brief screen using SEMANTIC ids
+(this is what a good response looks like):
+
+{
+  "layoutTree": { "surfaceType": "lockscreen", "intent": "morning status glance",
+                  "hierarchy": "focus-on-hero" },
+  "renderModel": {
+    "surfaceType": "lockscreen",
+    "layout": { "surfaceType": "lockscreen", "theme": "dark", "variant": "one-ui" },
+    "components": [
+      { "id": "hdr", "role": "intent_header",
+        "content": { "title": "Good morning, Kyuha", "sub": "Today at a glance" } },
+      { "id": "weather", "role": "information_glance_tile",
+        "content": { "title": "72\u00b0 partly cloudy", "sub": "Low 58\u00b0 \u00b7 Rain 4 PM" } },
+      { "id": "cal", "role": "information_glance_tile",
+        "content": { "title": "Design review \u00b7 3 PM", "sub": "with Sarah + Alex" } },
+      { "id": "msgs", "role": "notification_summary",
+        "content": { "title": "3 unread messages",
+                     "sub": "Sarah \u00b7 Alex \u00b7 Design team" } }
+    ]
+  },
+  "critic": { "score": 88, "issues": [], "suggestions": [] }
 }
 
 === ALLOWED_SURFACE_TYPES ===
@@ -917,6 +941,74 @@ Dialog atomics:
 
 Background:
   background, scrim
+
+=== SEMANTIC COMPONENT VOCABULARY (STRONGLY PREFER THESE) ===
+
+These are INTENT-BASED component IDs. They carry design meaning
+("what this component is DOING for the user") on top of the atomic
+role they resolve to.
+
+USE a semantic id whenever your purpose matches one of them. The
+server resolves each semantic id to its atomic role + default
+variant automatically — you do NOT set variant yourself. Only fall
+back to a raw atomic role when the semantic vocabulary genuinely
+doesn't cover your intent.
+
+Concrete examples of the PREFERRED choice:
+
+  Morning brief screen (context_reconstruction)
+    GOOD: intent_header + information_glance_tile x3 + notification_summary
+    BAD : expandable-app-bar + focus-block x3 + notif-card-ai
+          (renders the same, but drops every bit of design intent)
+
+  Music playing ambient (focus_protection)
+    GOOD: ambient_status_line + explanation_footer
+    BAD : now-bar + paragraph
+
+  Watch-to-phone handoff (flow_continuity)
+    GOOD: intent_header + continuity_bridge_panel + progress_trail
+          + primary_action_pill
+    BAD : expandable-app-bar + now-bar + progress-track + single-toggle
+
+  Pick browser to share (multi_party_coordination)
+    GOOD: intent_header + coordination_sheet + target_picker
+    BAD : expandable-app-bar + selection-dialog + dialog-icon-grid
+
+Content cards
+  contextual_summary_card   unified summary of many sources (context_reconstruction)
+  information_glance_tile   small single-source glance tile (grid friendly)
+  focus_protection_overlay  ambient card for low-attention contexts
+
+Continuity / live activity
+  continuity_bridge_panel   active session continuation hero (flow_continuity)
+  ambient_status_line       glanceable one-line status pill
+  progress_trail            visible session progress bar
+
+Actions
+  primary_action_pill       the ONE main action for this moment
+  override_action           explicit "Not now" / escape hatch
+
+Coordination
+  coordination_sheet        options + alignment actions (multi_party_coordination)
+  target_picker             grid of target apps/devices (share / handoff)
+
+Governance annotations
+  explanation_footer        "Why this UI?" caption text
+  handoff_affordance        device-to-device transfer invitation
+
+Attention / interruption
+  interruption_banner       time-sensitive alert demanding attention NOW
+  notification_summary      AI-condensed summary of notifications
+
+Chrome-ish
+  intent_header             greeting / contextual heading (app-bar)
+  scenario_title_bar        compact title + time/date bar above content
+
+EMIT RULE
+  You MAY mix semantic ids and atomic roles in the same components
+  array. If you use a semantic id, the server resolves it for you —
+  you don't need to set variant/role manually. If the semantic list
+  doesn't cover what you need, fall back to the raw atomic role.
 `;
 }
 
@@ -1527,6 +1619,136 @@ const ALLOWED_APPBAR_STATES = new Set(['expanded', 'collapsed']);
 
 const ALLOWED_PATCH_KINDS = new Set(['content', 'style', 'state']);
 
+// ═══════════════════════════════════════════════════════════════════════
+//  R3-C — SEMANTIC COMPONENT VOCABULARY
+//  ---------------------------------------------------------------------
+//  AI can emit INTENT-BASED component IDs (what the component IS doing
+//  for the user's purpose) instead of — or alongside — raw atomic roles.
+//  The resolver below maps each semantic id to an atomic role + a
+//  default variant, so downstream renderers stay unchanged. The AI
+//  benefits because picking "contextual_summary_card" expresses design
+//  INTENT more cleanly than "focus-block kind=secondary", and the
+//  designer benefits because the pipelineOutput log shows each
+//  semantic → atomic resolution explicitly.
+//
+//  Each entry's SHAPE:
+//    role:    required OneUI atomic role
+//    variant: default variant (merged over AI-provided variant)
+//    note:    short doc string surfaced in the Hierarchy panel + log
+// ═══════════════════════════════════════════════════════════════════════
+const SEMANTIC_COMPONENT_VOCAB = {
+  // ── Content cards ────────────────────────────────────────────────
+  contextual_summary_card: {
+    role: 'focus-block',
+    variant: { kind: 'secondary' },
+    note: 'Consolidated summary of multiple sources in ONE card (context_reconstruction).'
+  },
+  information_glance_tile: {
+    role: 'focus-block',
+    variant: { kind: 'secondary' },
+    note: 'Small single-source info tile, grid-friendly (weather / calendar / messages glance).'
+  },
+  focus_protection_overlay: {
+    role: 'focus-block',
+    variant: { kind: 'secondary' },
+    note: 'Ambient content card that respects low attention (focus_protection hero).'
+  },
+
+  // ── Continuity / live activity ──────────────────────────────────
+  continuity_bridge_panel: {
+    role: 'now-bar',
+    variant: { type: 'media' },
+    note: 'Active session continuation indicator (flow_continuity primary hero).'
+  },
+  ambient_status_line: {
+    role: 'now-bar',
+    variant: { type: 'media' },
+    note: 'Glanceable one-line status (media / timer / charging pill).'
+  },
+  progress_trail: {
+    role: 'progress-track',
+    variant: {},
+    note: 'Visible session progress bar; pairs with continuity_bridge_panel.'
+  },
+
+  // ── Actions ─────────────────────────────────────────────────────
+  primary_action_pill: {
+    role: 'single-toggle',
+    variant: { kind: 'shortcut', width: 'half' },
+    note: 'The ONE main action the user is expected to take.'
+  },
+  override_action: {
+    role: 'action-row',
+    variant: { kind: 'override' },
+    note: 'Explicit "Not now" / change-behavior escape hatch (governance.override_needed).'
+  },
+
+  // ── Coordination ────────────────────────────────────────────────
+  coordination_sheet: {
+    role: 'selection-dialog',
+    variant: { theme: 'dark' },
+    note: 'Options + alignment actions for multi_party_coordination.'
+  },
+  target_picker: {
+    role: 'dialog-icon-grid',
+    variant: {},
+    note: 'Grid of target apps/devices to route to (share sheet, handoff target).'
+  },
+
+  // ── Governance annotations ──────────────────────────────────────
+  explanation_footer: {
+    role: 'paragraph',
+    variant: { kind: 'caption' },
+    note: '"Why this UI?" justification text (governance.explanation_needed).'
+  },
+  handoff_affordance: {
+    role: 'focus-block',
+    variant: { kind: 'secondary', accent: '#3388E9' },
+    note: 'Device-to-device transfer invitation (governance.handoff_required).'
+  },
+
+  // ── Attention / interruption ────────────────────────────────────
+  interruption_banner: {
+    role: 'notif-card',
+    variant: { urgency: 'high' },
+    note: 'Time-sensitive alert demanding attention NOW (not background).'
+  },
+  notification_summary: {
+    role: 'notif-card-ai',
+    variant: {},
+    note: 'AI-condensed summary of notifications (context_reconstruction).'
+  },
+
+  // ── Chrome-ish ──────────────────────────────────────────────────
+  intent_header: {
+    role: 'expandable-app-bar',
+    variant: { state: 'collapsed' },
+    note: 'Greeting / contextual heading aware of intent + timeOfDay.'
+  },
+  scenario_title_bar: {
+    role: 'list-top-bar',
+    variant: {},
+    note: 'Compact title + time/date bar used above scenario content.'
+  }
+};
+
+// Resolve a single AI-emitted component. If its role is a semantic id,
+// rewrite it to the mapped atomic role and merge the default variant.
+// Preserves `_semanticId` on the output so the client log can show the
+// origin (the Design-tab Hierarchy panel + pipelineOutput need this).
+function resolveSemanticComponent(comp) {
+  if (!comp || !comp.role) return comp;
+  const spec = SEMANTIC_COMPONENT_VOCAB[comp.role];
+  if (!spec) return comp;        // not semantic — pass through unchanged
+  const mergedVariant = Object.assign({}, spec.variant || {}, comp.variant || {});
+  return Object.assign({}, comp, {
+    _semanticId: comp.role,
+    role: spec.role,
+    variant: mergedVariant,
+    _semanticNote: spec.note
+  });
+}
+
 const FORBIDDEN_STYLE_FIELDS = new Set([
   'x', 'y', 'top', 'left', 'right', 'bottom',
   'width', 'height', 'position'
@@ -1576,6 +1798,11 @@ function sanitizeRenderModel(renderModel) {
 
   const components = Array.isArray(renderModel.components)
     ? renderModel.components
+        // R3-C: resolve semantic component IDs (e.g. 'contextual_summary_card'
+        // → { role: 'focus-block', variant: { kind: 'secondary' } }) BEFORE
+        // the atomic-role allowlist + content-required gates run, otherwise
+        // every semantic emission gets dropped for "unknown role".
+        .map(c => c && typeof c === 'object' ? resolveSemanticComponent(c) : c)
         .filter(c => c && ALLOWED_ROLES.has(c.role))
         .filter(c => !CONTENT_REQUIRED_ROLES.has(c.role) || _hasMeaningfulContent(c))
         .map((c, idx) => ({
@@ -1592,7 +1819,12 @@ function sanitizeRenderModel(renderModel) {
           state:
             c.role === 'expandable-app-bar' && ALLOWED_APPBAR_STATES.has(c.state)
               ? c.state
-              : undefined
+              : undefined,
+          // R3-C: keep the origin semantic id + note when present so the
+          // client log + Hierarchy panel can show what the AI asked for
+          // (semantic) vs what it became (atomic).
+          _semanticId:   c._semanticId   || null,
+          _semanticNote: c._semanticNote || null
         }))
     : [];
 

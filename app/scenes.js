@@ -488,6 +488,13 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
       res.renderModel._informationPriority = res.layoutTree.informationPriority || null;
     }
     RenderEngine.renderFromModel(res.renderModel);
+
+    // R3-C: show the semantic-id \u2192 atomic-role resolution map in the
+    // pipelineOutput so the designer sees what the AI actually asked
+    // for vs what the server resolved it to.
+    if (typeof _renderResolutionBlock === 'function') {
+      try { _renderResolutionBlock(res.renderModel); } catch (e) { /* ignore */ }
+    }
     _saveCurrentVariant();
     variants[v].generated = true;
     variants[v].prompt = prompt;
@@ -1059,6 +1066,77 @@ function _renderPriorityBlock(payload) {
       '</div>' +
       '<div style="display:flex;gap:8px;align-items:flex-start;">' + columns + '</div>' +
       reasoning +
+    '</div>';
+  o.appendChild(wrap.firstElementChild);
+  o.scrollTop = o.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+//  R3-C — Component Resolution renderer
+//  Shows the semantic id \u2192 atomic role mapping for every AI-emitted
+//  component that came from the semantic vocabulary. Components that
+//  were emitted as raw atomic roles are listed too (marked "direct")
+//  so the designer sees the full picture of what got rendered.
+// ---------------------------------------------------------------------------
+function _renderResolutionBlock(renderModel) {
+  var o = _pipelineOutput();
+  if (!o || !renderModel) return;
+  var comps = Array.isArray(renderModel.components) ? renderModel.components : [];
+  if (!comps.length) return;
+
+  // Split semantic-origin vs direct-atomic
+  var semanticRows = [];
+  var directCount = 0;
+  comps.forEach(function (c) {
+    if (c._semanticId) {
+      semanticRows.push({
+        semantic: c._semanticId,
+        atomic:   c.role,
+        note:     c._semanticNote || ''
+      });
+    } else {
+      directCount++;
+    }
+  });
+
+  var rowsHtml = semanticRows.map(function (r) {
+    return '<div style="display:grid;grid-template-columns:1.1fr auto 1fr;gap:8px;padding:3px 0;align-items:center;font-size:10px;line-height:1.35;">' +
+      '<span style="color:#a78bfa;font-weight:500;">' + _escapeHtml(r.semantic) + '</span>' +
+      '<span style="color:var(--text-3);">\u2192</span>' +
+      '<span style="color:#fff;font-family:ui-monospace,monospace;">' + _escapeHtml(r.atomic) + '</span>' +
+      (r.note
+        ? '<div style="grid-column:1 / -1;color:var(--text-3);font-style:italic;font-size:9px;padding-left:2px;margin-top:1px;">' + _escapeHtml(r.note) + '</div>'
+        : '') +
+    '</div>';
+  }).join('');
+
+  // Empty-state: if every component was direct-atomic, still show the
+  // block with a count so the designer knows the AI didn't use the
+  // semantic vocabulary this round (vs. it being broken).
+  var innerHtml = semanticRows.length
+    ? rowsHtml +
+      (directCount
+        ? '<div style="font-size:10px;color:var(--text-3);margin-top:6px;font-style:italic;">+ ' +
+            directCount + ' direct atomic component' + (directCount === 1 ? '' : 's') +
+            ' (no semantic wrapper)</div>'
+        : '')
+    : '<div style="font-size:10px;color:var(--text-3);font-style:italic;">AI emitted ' +
+        directCount + ' direct atomic component' + (directCount === 1 ? '' : 's') +
+        ' \u2014 no semantic ids used this round.</div>';
+
+  var wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
+      'border-radius:8px;background:rgba(255,255,255,0.02);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+          '\uD83D\uDD17 COMPONENT RESOLUTION' +
+        '</span>' +
+        '<span style="font-size:9px;color:var(--text-3);">' +
+          semanticRows.length + ' semantic / ' + directCount + ' direct' +
+        '</span>' +
+      '</div>' +
+      innerHtml +
     '</div>';
   o.appendChild(wrap.firstElementChild);
   o.scrollTop = o.scrollHeight;

@@ -688,7 +688,7 @@
             </div>
 
             <!-- Group 5: Governance Triggers → Auto UI Additions -->
-            <div class="panel-section" style="margin-bottom:6px;">
+            <div class="panel-section" style="margin-bottom:12px;">
               <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
                 <span>Governance Triggers &rarr; Auto Additions</span>
                 <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">planned</span>
@@ -717,6 +717,99 @@
               </div>
               <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
                 These rules are declared but not yet auto-applied to the canvas. Edit affordance coming in R4.
+              </div>
+            </div>
+
+            <!-- Group 6: Semantic Components (R3-C) -->
+            <div class="panel-section" style="margin-bottom:6px;">
+              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Semantic Components &rarr; Atomic Role</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">15 ids</span>
+              </div>
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:6px;line-height:1.45;">
+                AI emits intent-based component ids (e.g. <code>contextual_summary_card</code>). Server resolves each to an atomic role + default variant before rendering. Log panel shows the resolution map per generation.
+              </div>
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+                <div class="hierarchy-rule">
+                  <span class="hr-key">contextual_summary_card</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>focus-block</code> (kind=secondary)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">information_glance_tile</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>focus-block</code> (kind=secondary, grid)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">focus_protection_overlay</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>focus-block</code> (kind=secondary, ambient)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">continuity_bridge_panel</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>now-bar</code> (type=media)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">ambient_status_line</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>now-bar</code> (type=media)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">progress_trail</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>progress-track</code></span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">primary_action_pill</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>single-toggle</code> (shortcut, half)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">override_action</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>action-row</code> (kind=override)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">coordination_sheet</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>selection-dialog</code></span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">target_picker</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>dialog-icon-grid</code></span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">explanation_footer</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>paragraph</code> (kind=caption)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">handoff_affordance</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>focus-block</code> (accent blue)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">interruption_banner</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>notif-card</code> (urgency=high)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">notification_summary</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>notif-card-ai</code></span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">intent_header</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>expandable-app-bar</code></span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">scenario_title_bar</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>list-top-bar</code></span>
+                </div>
               </div>
             </div>
 
