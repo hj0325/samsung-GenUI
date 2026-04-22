@@ -2423,6 +2423,18 @@ window.renderSurfacePlan = function renderSurfacePlan(canvas, plan, layout) {
       wrapper.style.display = 'none';
     }
 
+    // R3-B: emphasis classes driven by the purpose-aware layout
+    // dispatcher (_layoutForPurpose). Renderer just reflects the
+    // decision — no further reasoning here.
+    //   hero      : central dominant element of the purpose layout
+    //   must      : matches informationPriority.must_show (subtle glow)
+    //   action    : pinned action-row at bottom of continuity/modal
+    //   secondary : above-dialog context / supporting info
+    //   dim       : dimmed supporting items in hero_single
+    if (comp._emphasis) {
+      wrapper.classList.add('emphasis-' + comp._emphasis);
+    }
+
     wrapper.innerHTML = window.renderAtomicForRole(comp, rect);
 
     // Expanded children (list-item, focus-block cells, paragraphs, etc.)

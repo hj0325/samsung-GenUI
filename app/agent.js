@@ -352,6 +352,321 @@ function _inferZoneForAgentRole(role) {
   return 'interaction';
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  R3-B: PURPOSE-AWARE LAYOUT STRATEGIES
+//  ---------------------------------------------------------------------
+//  The four Purpose Types from the 4+2+1 framework need visibly
+//  different layouts, not just different component content. These
+//  helpers take the AI-produced component list + the interaction zone
+//  + the informationPriority.must_show set and return enriched specs
+//  with `_rect` and `_emphasis` ('hero' | 'must' | 'secondary' |
+//  'dim') so renderSurfacePlan can apply the matching CSS class.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Semantic concept ↔ role matching — also used by the server-side
+// enforcer. Kept local here so the renderer can reason without a
+// network hop. Concepts are lowercase + underscore-normalized.
+function _conceptMatchesRole(concept, role) {
+  if (!concept || !role) return false;
+  const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const c = norm(concept);
+  const r = norm(role);
+  if (c === r || c.indexOf(r) !== -1 || r.indexOf(c) !== -1) return true;
+  const aliases = {
+    'now-bar':          ['playback', 'now_bar', 'current_playback_status', 'timer', 'charging'],
+    'focus-block':      ['summary', 'glance_card', 'hero_card', 'insight'],
+    'media-card':       ['media_card', 'full_media_controls', 'playback_detail'],
+    'weather-date':     ['weather', 'weather_glance', 'date_weather'],
+    'lock-clock':       ['time', 'clock', 'lockscreen_clock'],
+    'toggle-grid':      ['toggles', 'quick_toggles'],
+    'slider-panel':     ['brightness', 'volume', 'slider'],
+    'selection-dialog': ['options_menu', 'picker', 'select_list'],
+    'action-row':       ['actions', 'confirm_cancel', 'primary_actions'],
+    'progress-track':   ['progress', 'elapsed_time_and_metrics', 'session_progress'],
+    'notif-card':       ['notification', 'unread_message_summary'],
+    'notif-card-ai':    ['ai_summary', 'ai_insight'],
+    'search-bar':       ['search'],
+    'list':             ['list', 'feed'],
+    'list-item':        ['list_item'],
+    'dialog-shell':     ['dialog', 'share_sheet', 'picker_shell'],
+    'dialog-icon-grid': ['share_target_options', 'target_picker']
+  };
+  const list = aliases[role] || [];
+  return list.some(a => norm(a) === c || norm(a).indexOf(c) !== -1 || c.indexOf(norm(a)) !== -1);
+}
+function _isMustShow(role, mustShowList) {
+  if (!mustShowList || !mustShowList.length) return false;
+  return mustShowList.some(m => _conceptMatchesRole(m, role));
+}
+
+// Content-aware default height. Longer content → taller card; short
+// prompt-specific bullets → compact. Replaces the old fixed defaultH
+// table so focus-blocks don't all waste 160px when one has a 4-word title.
+function _contentAwareHeight(comp, role, baseline) {
+  const c = comp.content || {};
+  const textSrc = [comp.text, c.title, c.sub, c.subtitle, c.body, c.value]
+    .filter(Boolean).join(' ');
+  const len = textSrc.length;
+  let h = baseline;
+  if (role === 'focus-block' || role === 'notif-card' || role === 'notif-card-ai' || role === 'list-item') {
+    if (len < 30)  h = Math.max(72,  baseline - 60);
+    else if (len < 80)  h = baseline - 20;
+    else if (len > 140) h = baseline + 40;
+  }
+  return h;
+}
+
+// Default baseline heights per role (pre content-aware adjustment).
+const _LAYOUT_BASELINE_H = {
+  'focus-block':       140,
+  'focus-block-group': 240,
+  'now-bar':           72,
+  'media-card':        180,
+  'media-half':        144,
+  'notif-card':        88,
+  'notif-card-ai':     88,
+  'list':              200,
+  'list-item':         72,
+  'paragraph':         48,
+  'action-row':        52,
+  'toggle-chip':       56,
+  'toggle-grid':       180,
+  'slider-pill':       56,
+  'slider-panel':      240,
+  'single-toggle':     88,
+  'smart-things':      88,
+  'selection-dialog':  360,
+  'dialog-shell':      240,
+  'dialog-site-header':72,
+  'dialog-browser-bar':92,
+  'dialog-icon-grid':  210,
+  'weather-date':      96,
+  'lock-clock':        160,
+  'progress-track':    44
+};
+function _hFor(role, comp) {
+  const base = _LAYOUT_BASELINE_H[role] || 120;
+  return _contentAwareHeight(comp, role, base);
+}
+
+// Attach _rect + _emphasis to a component spec.
+function _place(comp, rect, emphasis) {
+  return Object.assign({}, comp, {
+    _rect: rect,
+    _emphasis: emphasis || null
+  });
+}
+
+// ---------------------------------------------------------------------
+//  Strategy 1: HERO_SINGLE  (focus_protection)
+//  One dominant component (the first must_show), ambient whitespace,
+//  supporting items dimmed below.
+// ---------------------------------------------------------------------
+function _layoutHeroSingle(aiComponents, z, mustShow) {
+  const placed = [];
+  if (!aiComponents.length) return placed;
+
+  // Pick hero = first must_show match, else first non-chrome component.
+  let heroIdx = aiComponents.findIndex(c => _isMustShow(c.role, mustShow));
+  if (heroIdx < 0) heroIdx = 0;
+  const hero = aiComponents[heroIdx];
+  const rest = aiComponents.filter((_, i) => i !== heroIdx);
+
+  // Hero sits ~1/3 down from top, full width, tall.
+  const heroH = Math.min(220, Math.max(160, _hFor(hero.role, hero) + 40));
+  const heroY = z.y + Math.floor(z.h * 0.22);
+  placed.push(_place(hero, { x: z.x, y: heroY, w: z.w, h: heroH }, 'hero'));
+
+  // Supporting: up to 2 items, smaller, below hero, centered.
+  const maxSecondary = 2;
+  const sidePad = 32;
+  const secondaryW = z.w - sidePad * 2;
+  let y = heroY + heroH + 28;
+  for (let i = 0; i < Math.min(rest.length, maxSecondary); i++) {
+    const c = rest[i];
+    const h = Math.min(72, _hFor(c.role, c));
+    if (y + h > z.y + z.h - 12) break;
+    const emphasis = _isMustShow(c.role, mustShow) ? 'must' : 'dim';
+    placed.push(_place(c, { x: z.x + sidePad, y: y, w: secondaryW, h: h }, emphasis));
+    y += h + 10;
+  }
+  return placed;
+}
+
+// ---------------------------------------------------------------------
+//  Strategy 2: SUMMARY_GRID  (context_reconstruction)
+//  Top row: consolidated hero (greeting/time/weather). Below: 2-column
+//  grid of information tiles. Optional wide card at bottom.
+// ---------------------------------------------------------------------
+function _layoutSummaryGrid(aiComponents, z, mustShow) {
+  const placed = [];
+  if (!aiComponents.length) return placed;
+
+  const head = aiComponents[0];
+  const rest = aiComponents.slice(1);
+
+  // Head: full-width, moderate height
+  const headH = _hFor(head.role, head);
+  placed.push(_place(head,
+    { x: z.x, y: z.y, w: z.w, h: headH },
+    _isMustShow(head.role, mustShow) ? 'must' : 'hero'));
+
+  // 2-column grid for the rest
+  const colGap = 10;
+  const rowGap = 10;
+  const colW = Math.floor((z.w - colGap) / 2);
+  const tileH = 108;
+  let x = z.x;
+  let y = z.y + headH + 14;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest[i];
+    const col = i % 2;
+    if (col === 0 && i > 0) { y += tileH + rowGap; x = z.x; }
+    if (col === 1) x = z.x + colW + colGap;
+    if (y + tileH > z.y + z.h - 8) break;
+    const emph = _isMustShow(c.role, mustShow) ? 'must' : 'normal';
+    placed.push(_place(c, { x: x, y: y, w: colW, h: tileH }, emph));
+  }
+  return placed;
+}
+
+// ---------------------------------------------------------------------
+//  Strategy 3: CONTINUITY_STREAM  (flow_continuity)
+//  Progress indicator hero (now-bar / progress-track) near top, session
+//  state below, handoff / action-row pinned at bottom.
+// ---------------------------------------------------------------------
+function _layoutContinuityStream(aiComponents, z, mustShow) {
+  const placed = [];
+  if (!aiComponents.length) return placed;
+
+  // Find the continuity hero (now-bar > progress-track > media-card > first).
+  const heroCandidates = ['now-bar', 'progress-track', 'media-card'];
+  let heroIdx = -1;
+  for (const rc of heroCandidates) {
+    heroIdx = aiComponents.findIndex(c => c.role === rc);
+    if (heroIdx >= 0) break;
+  }
+  if (heroIdx < 0) heroIdx = 0;
+  const hero = aiComponents[heroIdx];
+
+  // Find action-row / handoff affordance for the bottom.
+  const actionIdx = aiComponents.findIndex((c, i) =>
+    i !== heroIdx && (c.role === 'action-row' || c.role === 'bottom-bar'));
+  const actionComp = actionIdx >= 0 ? aiComponents[actionIdx] : null;
+
+  // Middle items = everything else.
+  const middle = aiComponents.filter((_, i) => i !== heroIdx && i !== actionIdx);
+
+  // Hero at top — prominent but not oversized.
+  const heroH = Math.max(80, _hFor(hero.role, hero));
+  placed.push(_place(hero,
+    { x: z.x, y: z.y, w: z.w, h: heroH }, 'hero'));
+
+  // Middle stack — tighter spacing for continuity rhythm.
+  let y = z.y + heroH + 14;
+  const bottomReserve = actionComp ? 64 : 0;
+  for (let i = 0; i < middle.length; i++) {
+    const c = middle[i];
+    const h = _hFor(c.role, c);
+    if (y + h > z.y + z.h - bottomReserve - 8) break;
+    const emph = _isMustShow(c.role, mustShow) ? 'must' : 'normal';
+    placed.push(_place(c, { x: z.x, y: y, w: z.w, h: h }, emph));
+    y += h + 10;
+  }
+
+  // Action-row pinned to bottom of interaction zone.
+  if (actionComp) {
+    placed.push(_place(actionComp,
+      { x: z.x, y: z.y + z.h - 56, w: z.w, h: 48 }, 'action'));
+  }
+  return placed;
+}
+
+// ---------------------------------------------------------------------
+//  Strategy 4: MODAL_STACK  (multi_party_coordination)
+//  Centered dialog / selection-dialog dominates, options visible,
+//  action-row anchored at bottom.
+// ---------------------------------------------------------------------
+function _layoutModalStack(aiComponents, z, mustShow) {
+  const placed = [];
+  if (!aiComponents.length) return placed;
+
+  // Dialog-ish hero: selection-dialog > dialog-shell > first must_show.
+  const preferred = ['selection-dialog', 'dialog-shell', 'dialog-icon-grid'];
+  let heroIdx = -1;
+  for (const p of preferred) {
+    heroIdx = aiComponents.findIndex(c => c.role === p);
+    if (heroIdx >= 0) break;
+  }
+  if (heroIdx < 0) {
+    heroIdx = aiComponents.findIndex(c => _isMustShow(c.role, mustShow));
+    if (heroIdx < 0) heroIdx = 0;
+  }
+  const hero = aiComponents[heroIdx];
+
+  const actionIdx = aiComponents.findIndex((c, i) =>
+    i !== heroIdx && c.role === 'action-row');
+  const actionComp = actionIdx >= 0 ? aiComponents[actionIdx] : null;
+
+  const rest = aiComponents.filter((_, i) => i !== heroIdx && i !== actionIdx);
+
+  // Hero dialog — vertically centered, slightly lifted.
+  const heroH = Math.min(Math.max(_hFor(hero.role, hero) + 40, 240), z.h - 100);
+  const heroY = z.y + Math.max(40, Math.floor((z.h - heroH) / 2) - 30);
+  placed.push(_place(hero,
+    { x: z.x, y: heroY, w: z.w, h: heroH }, 'hero'));
+
+  // Context rows above the dialog.
+  let yAbove = heroY - 10;
+  for (let i = rest.length - 1; i >= 0; i--) {
+    const c = rest[i];
+    const h = Math.min(_hFor(c.role, c), 64);
+    if (yAbove - h < z.y + 8) break;
+    const emph = _isMustShow(c.role, mustShow) ? 'must' : 'secondary';
+    placed.push(_place(c,
+      { x: z.x + 18, y: yAbove - h, w: z.w - 36, h: h }, emph));
+    yAbove -= h + 8;
+  }
+
+  // Action-row pinned bottom.
+  if (actionComp) {
+    placed.push(_place(actionComp,
+      { x: z.x, y: z.y + z.h - 56, w: z.w, h: 48 }, 'action'));
+  }
+  return placed;
+}
+
+// ---------------------------------------------------------------------
+//  Default / fallback: straight vertical stack (the old Pass-2 behavior).
+//  Used when no purpose info is present or purpose is unknown.
+// ---------------------------------------------------------------------
+function _layoutDefaultStack(aiComponents, z, mustShow) {
+  const placed = [];
+  let y = z.y;
+  for (const c of aiComponents) {
+    const h = _hFor(c.role, c);
+    const remaining = (z.y + z.h) - y;
+    if (remaining < h + 10) break;
+    const emph = _isMustShow(c.role, mustShow) ? 'must' : 'normal';
+    placed.push(_place(c, { x: z.x, y: y, w: z.w, h: h }, emph));
+    y += h + 10;
+  }
+  return placed;
+}
+
+// Main dispatcher.
+function _layoutForPurpose(purposeType, aiComponents, interactionZone, mustShowList) {
+  const z = interactionZone;
+  const mustShow = Array.isArray(mustShowList) ? mustShowList : [];
+  switch (purposeType) {
+    case 'focus_protection':         return _layoutHeroSingle(aiComponents, z, mustShow);
+    case 'context_reconstruction':   return _layoutSummaryGrid(aiComponents, z, mustShow);
+    case 'flow_continuity':          return _layoutContinuityStream(aiComponents, z, mustShow);
+    case 'multi_party_coordination': return _layoutModalStack(aiComponents, z, mustShow);
+    default:                         return _layoutDefaultStack(aiComponents, z, mustShow);
+  }
+}
+
 // --- Render Engine: renders agent response to DOM ---
 const RenderEngine = {
   _normalizeSurfaceType(renderModel) {
@@ -370,6 +685,13 @@ const RenderEngine = {
 
     const out = { ...renderModel };
     out.surfaceType = this._normalizeSurfaceType(renderModel);
+    // R3-B: preserve the decision packet so the layout dispatcher can
+    // read orchestration.purpose.primary, informationPriority.must_show,
+    // etc. when picking a purpose-specific layout strategy.
+    out._orchestration       = renderModel._orchestration       || null;
+    out._interpretation      = renderModel._interpretation      || null;
+    out._statePacket         = renderModel._statePacket         || null;
+    out._informationPriority = renderModel._informationPriority || null;
 
     if (!out.layout) out.layout = {};
     out.layout.surfaceType = out.surfaceType;
@@ -502,72 +824,57 @@ const RenderEngine = {
         });
       }
 
-      // Pass 2: APPEND agent's unique content components that weren't
-      // matched by any canned plan role. These are the rich atomics the
-      // AI picked specifically for this prompt (now-bar for music,
-      // media-card for playback, focus-block for narrative, etc.).
-      // Stack them vertically in the interaction zone with a 12px gap
-      // so they don't overlap the canned chrome.
+      // Pass 2 (R3-B): APPEND agent's unique content components using a
+      // PURPOSE-AWARE LAYOUT STRATEGY instead of the old fixed vertical
+      // stack. The dispatcher reads normalized._orchestration (4+2+1)
+      // and informationPriority.must_show to pick one of four strategies:
+      //   focus_protection         → hero_single (one dominant element)
+      //   context_reconstruction   → summary_grid (2-col info tiles)
+      //   flow_continuity          → continuity_stream (hero + middle + action)
+      //   multi_party_coordination → modal_stack (centered dialog)
       const interactionZone = (layout && layout.zones && layout.zones.interaction) ||
         { x: 18, y: 140, w: 415, h: 600 };
-      let stackY = interactionZone.y;
-      const defaultH = {
-        'focus-block': 160,
-        'focus-block-group': 240,
-        'now-bar': 64,
-        'media-card': 180,
-        'media-half': 144,
-        'notif-card': 80,
-        'notif-card-ai': 80,
-        'list': 200,
-        'list-item': 80,
-        'paragraph': 52,
-        'action-row': 48,
-        'toggle-chip': 56,
-        'toggle-grid': 180,
-        'slider-pill': 56,
-        'slider-panel': 240,
-        'single-toggle': 88,
-        'smart-things': 88,
-        'selection-dialog': 360,
-        'dialog-shell': 200,
-        'dialog-site-header': 72,
-        'dialog-browser-bar': 92,
-        'dialog-icon-grid': 202
-      };
+
+      // Collect the AI components that are NOT yet in the plan and belong
+      // to the interaction zone (content, not chrome).
+      const interactionCandidates = [];
+      const otherZoneCandidates = [];
       (normalized.components || []).forEach(function (ac) {
         if (!ac.role) return;
-        if (consumedRoles.has(ac.role)) return;   // already merged in pass 1
+        if (consumedRoles.has(ac.role)) return;
         const inferredZone = ac.zone || _inferZoneForAgentRole(ac.role);
-        // Only stack content components in interaction; chrome roles
-        // that weren't in the plan can still be added but use the
-        // standard zone resolution (resolveComponentRect will compute
-        // their rect from the zone).
-        const append = {
-          id:      ac.id || ('agent-' + ac.role),
-          role:    ac.role,
-          zone:    inferredZone,
-          text:    ac.text,
-          content: ac.content || {},
-          state:   ac.state,
-          variant: ac.variant,
-          // R2: carry visibility through to renderSurfacePlan
+        const spec = {
+          id:         ac.id || ('agent-' + ac.role),
+          role:       ac.role,
+          zone:       inferredZone,
+          text:       ac.text,
+          content:    ac.content || {},
+          state:      ac.state,
+          variant:    ac.variant,
           visibility: ac.visibility || 'visible'
         };
-        if (inferredZone === 'interaction') {
-          const h = defaultH[ac.role] || 120;
-          const remaining = (interactionZone.y + interactionZone.h) - stackY;
-          if (remaining < h + 12) return;         // ran out of space; skip
-          append._rect = {
-            x: interactionZone.x,
-            y: stackY,
-            w: interactionZone.w,
-            h: h
-          };
-          stackY += h + 12;
-        }
-        plan.components.push(append);
-        consumedRoles.add(ac.role);
+        if (inferredZone === 'interaction') interactionCandidates.push(spec);
+        else                                otherZoneCandidates.push(spec);
+      });
+
+      // Run the purpose-aware layout dispatcher over the interaction-
+      // zone candidates. Each result has `_rect` and `_emphasis` set.
+      const purposeType = (normalized._orchestration &&
+                           normalized._orchestration.purpose &&
+                           normalized._orchestration.purpose.primary) || null;
+      const mustShowList = (normalized._informationPriority &&
+                            normalized._informationPriority.must_show) || [];
+      const placed = _layoutForPurpose(purposeType, interactionCandidates, interactionZone, mustShowList);
+
+      placed.forEach(function (spec) {
+        plan.components.push(spec);
+        consumedRoles.add(spec.role);
+      });
+      otherZoneCandidates.forEach(function (spec) {
+        // Chrome / non-interaction items get standard zone positioning
+        // via resolveComponentRect (no _rect needed).
+        plan.components.push(spec);
+        consumedRoles.add(spec.role);
       });
 
       // Expand list / focus-block-group / detail-content with agent content

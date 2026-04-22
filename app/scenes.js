@@ -366,10 +366,14 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
   showAgentLoading(`Generating Variant ${v}...`);
 
   // Live log in the pipelineOutput panel so the user can watch progress.
+  // Skeleton surface is an internal pre-render for loading feedback —
+  // the real surface is chosen by the classifier step, so we don't
+  // surface the skeleton guess here (used to confuse: "Surface skeleton:
+  // first-depth-list" followed seconds later by "Surface classified:
+  // tab-root" — reader can't tell which one is the real result).
   _pipelineStart('AI generation \u2014 Variant ' + v);
   _pipelineInfo('Prompt: "' + prompt.slice(0, 80) + (prompt.length > 80 ? '\u2026' : '') + '"');
   if (scenarioHint) _pipelineInfo('Scenario hint: ' + scenarioHint);
-  _pipelineInfo('Surface skeleton: ' + skeletonSurfaceType);
   _pipelineStatus('ai-step', '\u2022 Calling AI\u2026', 'var(--text-3)');
   const _tStart = Date.now();
 
@@ -419,6 +423,16 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
     const canvas = document.getElementById('canvas');
     if (canvas) canvas.classList.remove('skeleton-loading');
 
+    // R3-B: thread the decision packet into renderModel so the layout
+    // dispatcher inside renderFromModel can select a purpose-specific
+    // strategy (hero_single / summary_grid / continuity_stream /
+    // modal_stack) rather than the old uniform vertical stack.
+    if (res && res.renderModel && res.layoutTree) {
+      res.renderModel._orchestration       = res.layoutTree.orchestration       || null;
+      res.renderModel._interpretation      = res.layoutTree.interpretation      || null;
+      res.renderModel._statePacket         = res.layoutTree.statePacket         || null;
+      res.renderModel._informationPriority = res.layoutTree.informationPriority || null;
+    }
     RenderEngine.renderFromModel(res.renderModel);
     _saveCurrentVariant();
     variants[v].generated = true;
@@ -747,7 +761,7 @@ var _PURPOSE_META = {
   flow_continuity:        { label: '\uD750\uB984 \uC5F0\uC18D\uD615', en: 'Flow Continuity',
     color: '#4ade80', bg: 'rgba(74,222,128,0.12)', border: 'rgba(74,222,128,0.35)',
     icon: '\u2192' },
-  focus_protection:       { label: '\uBABB\uC785 \uBCF4\uD638\uD615', en: 'Focus Protection',
+  focus_protection:       { label: '\uBAB0\uC785 \uBCF4\uD638\uD615', en: 'Focus Protection',
     color: '#60a5fa', bg: 'rgba(96,165,250,0.12)', border: 'rgba(96,165,250,0.35)',
     icon: '\u25CE' },
   multi_party_coordination: { label: '\uB2E4\uC790\uAC04 \uC870\uC728\uD615', en: 'Multi-party Coordination',
