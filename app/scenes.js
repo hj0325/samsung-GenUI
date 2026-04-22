@@ -290,7 +290,56 @@ window.retryLastGenerate = function () {
   generateVariantsFromAgent(_lastGenerateAttempt.prompt, _lastGenerateAttempt.scenarioHint);
 };
 
+// Hard reset everything that could "bleed through" into an AI-generated
+// screen: the overlay layer, Screens / Overlays active highlights, and
+// the state flags that the overlay flow reads (window.currentOverlay,
+// window.currentBaseSurface, canvas-frame data-overlay-active /
+// data-overlay-base, the overlay-hides-* classes on maskHost). Chat
+// Send represents a fresh intent — the last Lock + Notification combo
+// has nothing to do with "pick a browser to share this page".
+function _fullResetForGeneration() {
+  // 1. Remove overlay DOM + reset frame flags
+  if (typeof _removeOverlayLayer === 'function') {
+    try { _removeOverlayLayer(); } catch (e) { /* ignore */ }
+  }
+  window.currentOverlay     = null;
+  window.currentBaseSurface = null;
+
+  var frame = document.getElementById('canvasFrame');
+  if (frame) {
+    delete frame.dataset.overlayActive;
+    delete frame.dataset.overlayBase;
+  }
+
+  // 2. Clear Screens / Overlays active highlights so the sidebar
+  //    doesn't falsely suggest the canvas is showing canned Lock/Home/etc.
+  document.querySelectorAll('.scene-btn.active').forEach(function (b) {
+    b.classList.remove('active');
+  });
+
+  // 3. Drop overlay-hides-* classes off the mask host (canvas/rulesInner)
+  var canvas = document.getElementById('canvas');
+  if (canvas) {
+    canvas.classList.remove('overlay-hides-all', 'overlay-hides-statusbar',
+      'overlay-hides-lock-content');
+    if (canvas._rulesInner && canvas._rulesInner !== canvas) {
+      canvas._rulesInner.classList.remove('overlay-hides-all',
+        'overlay-hides-statusbar', 'overlay-hides-lock-content');
+    }
+  }
+
+  // 4. Refresh the Overlay hint text so it no longer says "Base: lock · Overlay: notif"
+  if (typeof _refreshOverlayHint === 'function') {
+    try { _refreshOverlayHint(); } catch (e) { /* ignore */ }
+  }
+}
+
 async function generateVariantsFromAgent(prompt, scenarioHint) {
+  // Blank the slate first — overlay layer, active scene-btn highlights,
+  // and overlay state flags from a previous click all get wiped so the
+  // AI render doesn't sit on top of stale scenario state.
+  _fullResetForGeneration();
+
   showVariantBar();
   const v = activeVariant;
   _lastGenerateAttempt = { prompt: prompt, scenarioHint: scenarioHint };
@@ -1891,10 +1940,12 @@ function generateFromPrompt() {
   }
 
   if (agentSession.mode === 'agent') {
-    // Agent Mode: generate for selected variants via API
+    // Agent Mode: full reset happens inside generateVariantsFromAgent
     generateVariantsFromAgent(prompt, scenarioHint);
   } else {
-    // Local Mode: generate for selected variants locally
+    // Local Mode: same blank-slate rule so the canvas doesn't show
+    // previous overlay/screen state under the new scenario.
+    _fullResetForGeneration();
     const matched = scenarioHint || (promptLower ? 'feed' : 'login');
     _pipelineStart('Local mode');
     _pipelineInfo('Prompt: "' + prompt.slice(0, 80) + (prompt.length > 80 ? '\u2026' : '') + '"');
