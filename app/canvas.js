@@ -394,13 +394,12 @@ function setGroupPadding(v) {
 function clearCanvas() {
   const canvas = document.getElementById('canvas');
   canvas.innerHTML = '';
-  // Show hint outside canvas
+  // Clean up any legacy canvasHint element lingering from prior builds.
+  // The "Click a component or scenario to start" affordance was removed
+  // per user feedback — the sidebar palette + top-bar already signal
+  // entry points, so the floating hint was noise.
   const oldHint = document.getElementById('canvasHint');
   if (oldHint) oldHint.remove();
-  const hint = document.createElement('div');
-  hint.className = 'canvas-hint'; hint.id = 'canvasHint';
-  hint.textContent = 'Click a component or scenario to start';
-  document.getElementById('canvasFrame').parentElement.prepend(hint);
   selectedItems.clear();
 }
 
