@@ -348,8 +348,12 @@ async function generateVariantsFromAgent(prompt, scenarioHint) {
         if (info) {
           if (info.surfaceType) _pipelineLog('\u2022 Surface classified: <b>' + info.surfaceType + '</b>');
           if (info.intent)      _pipelineLog('\u2022 Intent: ' + info.intent);
-          // 4+2+1 orchestration block (purpose type, modulations, governance)
-          if (info.orchestration) _renderClassificationBlock(info);
+          // R1: 4+2+1 orchestration block (purpose type, modulations, governance)
+          if (info.orchestration)       _renderClassificationBlock(info);
+          // R2: interpretation layer, state packet, information priority
+          if (info.interpretation)      _renderInterpretationBlock(info);
+          if (info.statePacket)         _renderStatePacketBlock(info);
+          if (info.informationPriority) _renderPriorityBlock(info);
         }
       },
       // Progressive component count — updates the loader message
@@ -786,6 +790,158 @@ function _renderClassificationBlock(payload) {
         '<summary style="cursor:pointer;font-size:10px;color:var(--text-3);padding:2px 0;">details</summary>' +
         details +
       '</details>' +
+    '</div>';
+  o.appendChild(wrap.firstElementChild);
+  o.scrollTop = o.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+//  R2 — Interpretation Layer renderer (6-question answer block)
+// ---------------------------------------------------------------------------
+function _renderInterpretationBlock(payload) {
+  var o = _pipelineOutput();
+  if (!o || !payload || !payload.interpretation) return;
+  var i = payload.interpretation;
+
+  var qaRows = '';
+  var rows = [
+    ['what user is doing',         i.what_user_doing],
+    ['real goal',                  i.real_goal],
+    ['most lacking',               i.most_lacking],
+    ['what interferes',            i.what_interferes],
+    ['system role',                (i.system_role && i.system_role.length) ? i.system_role.join(' + ') : null],
+    ['interaction complexity',     i.interaction_complexity]
+  ];
+  rows.forEach(function (r) {
+    if (!r[1]) return;
+    qaRows += '<div style="display:flex;gap:8px;padding:2px 0;font-size:10px;line-height:1.4;">' +
+      '<span style="color:var(--text-3);min-width:130px;flex-shrink:0;">' + _escapeHtml(r[0]) + '</span>' +
+      '<span style="color:#fff;">' + _escapeHtml(r[1]) + '</span>' +
+      '</div>';
+  });
+
+  var wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
+      'border-radius:8px;background:rgba(255,255,255,0.02);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+          '\uD83D\uDD0D INTERPRETATION' +
+        '</span>' +
+      '</div>' +
+      qaRows +
+    '</div>';
+  o.appendChild(wrap.firstElementChild);
+  o.scrollTop = o.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+//  R2 — State Packet renderer (compressed machine-readable decision state)
+// ---------------------------------------------------------------------------
+function _renderStatePacketBlock(payload) {
+  var o = _pipelineOutput();
+  if (!o || !payload || !payload.statePacket) return;
+  var sp = payload.statePacket;
+  var fields = [
+    ['purpose_type',        sp.purpose_type],
+    ['primary_goal',        sp.primary_goal],
+    ['journey_stage',       sp.journey_stage],
+    ['urgency',             sp.urgency],
+    ['attention_capacity',  sp.attention_capacity],
+    ['interaction_budget',  sp.interaction_budget],
+    ['coordination_need',   sp.coordination_need],
+    ['device_role',         sp.device_role],
+    ['system_role',         sp.system_role],
+    ['autonomy_level',      sp.autonomy_level],
+    ['privacy_level',       sp.privacy_level]
+  ];
+  var rowsHtml = '';
+  fields.forEach(function (f) {
+    if (!f[1]) return;
+    rowsHtml += '<div style="display:flex;gap:8px;padding:1px 0;font-size:10px;font-family:ui-monospace,monospace;">' +
+      '<span style="color:var(--text-3);min-width:150px;">' + _escapeHtml(f[0]) + '</span>' +
+      '<span style="color:#fff;">' + _escapeHtml(f[1]) + '</span>' +
+      '</div>';
+  });
+  var flags = [];
+  if (sp.explanation_needed) flags.push('explanation_needed');
+  if (sp.override_needed)    flags.push('override_needed');
+  if (sp.handoff_required)   flags.push('handoff_required');
+  var flagsHtml = flags.length
+    ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">' +
+        flags.map(function (f) {
+          return '<span style="font-size:9px;padding:1px 6px;border-radius:8px;' +
+            'background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.35);">' +
+            _escapeHtml(f) + '</span>';
+        }).join('') +
+      '</div>'
+    : '';
+
+  var wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
+      'border-radius:8px;background:rgba(255,255,255,0.02);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+          '\uD83D\uDCE6 STATE PACKET' +
+        '</span>' +
+      '</div>' +
+      rowsHtml +
+      flagsHtml +
+    '</div>';
+  o.appendChild(wrap.firstElementChild);
+  o.scrollTop = o.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+//  R2 — Information Priority renderer (4-column must/should/suppress/defer)
+// ---------------------------------------------------------------------------
+function _renderPriorityBlock(payload) {
+  var o = _pipelineOutput();
+  if (!o || !payload || !payload.informationPriority) return;
+  var ip = payload.informationPriority;
+
+  function renderColumn(title, items, color, bg, border, emoji) {
+    var chips = (items && items.length)
+      ? items.map(function (c) {
+          return '<div style="padding:2px 6px;margin:1px 0;border-radius:5px;' +
+            'background:' + bg + ';color:' + color + ';border:1px solid ' + border + ';' +
+            'font-size:10px;line-height:1.3;word-break:break-word;">' + _escapeHtml(c) + '</div>';
+        }).join('')
+      : '<div style="padding:2px 0;color:var(--text-3);font-size:10px;font-style:italic;">\u2014</div>';
+    return '<div style="flex:1;min-width:0;">' +
+      '<div style="font-size:9px;color:' + color + ';letter-spacing:0.4px;font-weight:700;margin-bottom:3px;">' +
+        emoji + ' ' + title + ' <span style="color:var(--text-3);font-weight:400;">(' + (items ? items.length : 0) + ')</span>' +
+      '</div>' +
+      chips +
+      '</div>';
+  }
+
+  var columns =
+    renderColumn('MUST',    ip.must_show,    '#4ade80', 'rgba(74,222,128,0.10)',  'rgba(74,222,128,0.30)',  '\u25CF') +
+    renderColumn('SHOULD',  ip.should_show,  '#60a5fa', 'rgba(96,165,250,0.10)',  'rgba(96,165,250,0.30)',  '\u25CB') +
+    renderColumn('SUPPRESS',ip.suppress,     '#f87171', 'rgba(248,113,113,0.10)', 'rgba(248,113,113,0.30)', '\u2298') +
+    renderColumn('DEFER',   ip.defer,        '#fbbf24', 'rgba(251,191,36,0.10)',  'rgba(251,191,36,0.30)',  '\u23F8');
+
+  var reasoning = '';
+  if (ip.why_must || ip.why_suppress) {
+    reasoning = '<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.05);font-size:10px;color:var(--text-2);font-style:italic;line-height:1.4;">';
+    if (ip.why_must)     reasoning += '<div>\u2022 <span style="color:#4ade80;">MUST:</span> ' + _escapeHtml(ip.why_must) + '</div>';
+    if (ip.why_suppress) reasoning += '<div>\u2022 <span style="color:#f87171;">SUPPRESS:</span> ' + _escapeHtml(ip.why_suppress) + '</div>';
+    reasoning += '</div>';
+  }
+
+  var wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
+      'border-radius:8px;background:rgba(255,255,255,0.02);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+          '\uD83C\uDFAF INFORMATION PRIORITY' +
+        '</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;align-items:flex-start;">' + columns + '</div>' +
+      reasoning +
     '</div>';
   o.appendChild(wrap.firstElementChild);
   o.scrollTop = o.scrollHeight;

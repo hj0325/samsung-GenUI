@@ -115,13 +115,19 @@ const AgentAPI = {
     // Cache hit — short-circuit with synthetic events
     const cached = _promptCache.get(payload);
     if (cached) {
+      const lt = cached.layoutTree || {};
       if (handlers.onClassified) handlers.onClassified({
         surfaceType: cached.renderModel && cached.renderModel.surfaceType,
-        intent: cached.layoutTree && cached.layoutTree.intent,
-        hierarchy: cached.layoutTree && cached.layoutTree.hierarchy,
-        // Preserve 4+2+1 orchestration across cached replays so the
-        // pipelineOutput block renders identically on repeat generations.
-        orchestration: (cached.layoutTree && cached.layoutTree.orchestration) || null
+        intent: lt.intent,
+        hierarchy: lt.hierarchy,
+        // Preserve the full decision packet across cached replays so
+        // the pipelineOutput blocks (classification / interpretation /
+        // statePacket / informationPriority) render identically on
+        // repeat generations.
+        orchestration:        lt.orchestration        || null,
+        interpretation:       lt.interpretation       || null,
+        statePacket:          lt.statePacket          || null,
+        informationPriority:  lt.informationPriority  || null
       });
       const res = Object.assign({}, cached, { __cached: true });
       if (handlers.onDone) handlers.onDone(res);
@@ -382,6 +388,10 @@ const RenderEngine = {
       fullWidth: !!comp.fullWidth,
       state: comp.state || null,
       zone: comp.zone || null,
+      // R2: information-priority enforcement. Server sets
+      // visibility="collapsed" on defer-matched components; renderer
+      // displays them dimmed / pointer-events disabled / scaled down.
+      visibility: comp.visibility || 'visible',
       // Preserve semantic content + variant so renderers downstream
       // (renderAtomicForRole, focus-block kind:secondary, now-bar
       // type:media, etc.) can use them. Earlier this was stripped,
@@ -471,6 +481,8 @@ const RenderEngine = {
         if (ac.content) pc.content = Object.assign({}, pc.content || {}, ac.content);
         if (ac.styles)  pc.styles  = Object.assign({}, pc.styles  || {}, ac.styles);
         if (ac.variant) pc.variant = Object.assign({}, pc.variant || {}, ac.variant);
+        // R2: propagate visibility (collapsed for defer-matched items)
+        if (ac.visibility && ac.visibility !== 'visible') pc.visibility = ac.visibility;
       });
 
       // Before Pass 2: if the AI is providing rich interaction-zone
@@ -538,7 +550,9 @@ const RenderEngine = {
           text:    ac.text,
           content: ac.content || {},
           state:   ac.state,
-          variant: ac.variant
+          variant: ac.variant,
+          // R2: carry visibility through to renderSurfacePlan
+          visibility: ac.visibility || 'visible'
         };
         if (inferredZone === 'interaction') {
           const h = defaultH[ac.role] || 120;

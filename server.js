@@ -969,17 +969,18 @@ function buildGenerateUserPrompt(payload) {
     payload.intent    ? `intent="${payload.intent}"`     : null
   ].filter(Boolean).join(', ');
 
-  // Build a 4+2+1 decision brief the generator can reason with. Each
-  // purpose type implies a DIFFERENT component-selection policy:
-  //   context_reconstruction → must_show = consolidated summary
-  //   flow_continuity        → must_show = continuity-critical state
-  //   focus_protection       → must_show = only the one thing; suppress rest
-  //   multi_party_coordinat. → must_show = conflict / alignment actions
-  // The prompt surfaces this brief so the generator asks itself "given
-  // THIS purpose, what's the minimum set of components" instead of
-  // reflexively emitting a full template.
+  // Build a full decision brief the generator can reason with. The
+  // brief stacks the four upstream layers the classifier produced:
+  //   (1) 4+2+1 orchestration    → purpose policy
+  //   (2) interpretation         → what the user is really trying to do
+  //   (3) state packet           → compressed decision state
+  //   (4) information priority   → must_show / suppress / defer lists
+  // The generator reads these in order BEFORE choosing components.
   const orch = payload.orchestration || null;
-  const orchBlock = orch ? buildOrchestrationBrief(orch) : '';
+  const orchBlock     = orch ? buildOrchestrationBrief(orch) : '';
+  const interpBlock   = payload.interpretation      ? buildInterpretationBrief(payload.interpretation) : '';
+  const stateBlock    = payload.statePacket         ? buildStatePacketBrief(payload.statePacket)       : '';
+  const priorityBlock = payload.informationPriority ? buildPriorityBrief(payload.informationPriority)  : '';
 
   return `
 Requested surfaceType: ${payload.surfaceType || 'first-depth-list'}
@@ -990,7 +991,7 @@ Brand: ${payload.surface || 'samsung'}
 Mode: ${payload.mode || 'dark'}
 Device: ${payload.device || 'Galaxy S26'}
 
-${orchBlock}Constraints:
+${orchBlock}${interpBlock}${stateBlock}${priorityBlock}Constraints:
 ${JSON.stringify(payload.constraints || {}, null, 2)}
 
 Design tokens (for copy/color/typography reference only — do not quote coordinates):
@@ -1100,6 +1101,85 @@ function buildOrchestrationBrief(orch) {
     }
   }
   lines.push('==== END BRIEF ====');
+  lines.push('');
+  return lines.join('\n');
+}
+
+// R2: interpretation layer brief. Forces the generator to remember the
+// 6 question answers before choosing components — the "what is the user
+// actually trying to do" context that shouldn't be lost between the
+// classifier and the component selector.
+function buildInterpretationBrief(interp) {
+  if (!interp) return '';
+  const lines = [];
+  lines.push('==== INTERPRETATION ====');
+  if (interp.what_user_doing)  lines.push('user_doing:  ' + interp.what_user_doing);
+  if (interp.real_goal)        lines.push('real_goal:   ' + interp.real_goal);
+  if (interp.most_lacking)     lines.push('lacking:     ' + interp.most_lacking);
+  if (interp.what_interferes)  lines.push('interferes:  ' + interp.what_interferes);
+  if (interp.system_role && interp.system_role.length) {
+    lines.push('system_role: ' + interp.system_role.join(' + '));
+  }
+  if (interp.interaction_complexity) {
+    lines.push('complexity:  ' + interp.interaction_complexity);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+// R2: compressed state packet brief — machine-readable decision packet.
+// The generator treats this as a set of HARD constraints on component
+// selection (attention_capacity=low → reject dense grids, etc.).
+function buildStatePacketBrief(sp) {
+  if (!sp) return '';
+  const lines = [];
+  lines.push('==== STATE PACKET ====');
+  const pairs = [
+    ['purpose_type',       sp.purpose_type],
+    ['primary_goal',       sp.primary_goal],
+    ['journey_stage',      sp.journey_stage],
+    ['urgency',            sp.urgency],
+    ['attention_capacity', sp.attention_capacity],
+    ['interaction_budget', sp.interaction_budget],
+    ['coordination_need',  sp.coordination_need],
+    ['device_role',        sp.device_role],
+    ['system_role',        sp.system_role],
+    ['autonomy_level',     sp.autonomy_level]
+  ];
+  pairs.forEach(p => { if (p[1]) lines.push(p[0].padEnd(20) + ': ' + p[1]); });
+  if (sp.privacy_level)       lines.push('privacy_level       : ' + sp.privacy_level);
+  if (sp.explanation_needed)  lines.push('explanation_needed  : yes');
+  if (sp.override_needed)     lines.push('override_needed     : yes');
+  if (sp.handoff_required)    lines.push('handoff_required    : yes');
+  lines.push('');
+  return lines.join('\n');
+}
+
+// R2: information priority brief — the CONTRACT the generator must
+// honor. must_show entries should map to actual components in the
+// output. suppress entries must NOT appear. defer entries may appear
+// marked with visibility="collapsed".
+function buildPriorityBrief(ip) {
+  if (!ip) return '';
+  const lines = [];
+  lines.push('==== INFORMATION PRIORITY (contract) ====');
+  if (ip.must_show.length) {
+    lines.push('MUST_SHOW   : ' + ip.must_show.join(', '));
+    lines.push('              → Each of these MUST correspond to an emitted component.');
+  }
+  if (ip.should_show.length) {
+    lines.push('should_show : ' + ip.should_show.join(', '));
+  }
+  if (ip.suppress.length) {
+    lines.push('SUPPRESS    : ' + ip.suppress.join(', '));
+    lines.push('              → NONE of these may appear in the emitted components.');
+  }
+  if (ip.defer.length) {
+    lines.push('defer       : ' + ip.defer.join(', '));
+    lines.push('              → If emitted, mark visibility="collapsed".');
+  }
+  if (ip.why_must)     lines.push('why_must    : ' + ip.why_must);
+  if (ip.why_suppress) lines.push('why_suppress: ' + ip.why_suppress);
   lines.push('');
   return lines.join('\n');
 }
@@ -1545,6 +1625,72 @@ function sanitizePatchPlan(patchPlan, fallbackSurfaceType = 'first-depth-list') 
   };
 }
 
+// R2 information-priority enforcement. The classifier produced a
+// contract of must_show / should_show / suppress / defer CONCEPTS.
+// The generator LLM received this contract in its prompt but LLMs
+// leak — sometimes they emit a suppressed role anyway. This function
+// is the backstop: after sanitization, drop any component whose role
+// matches a suppress concept, and mark any component whose role
+// matches a defer concept with visibility="collapsed".
+function enforceInformationPriority(renderModel, ip) {
+  if (!renderModel || !Array.isArray(renderModel.components)) {
+    return { renderModel, suppressed: [], deferred: [] };
+  }
+  if (!ip) return { renderModel, suppressed: [], deferred: [] };
+
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const suppressSet = new Set((ip.suppress || []).map(norm));
+  const deferSet    = new Set((ip.defer    || []).map(norm));
+
+  // Role ↔ semantic-concept aliases. Classifier emits "app_grid",
+  // "promo_banner", "dense_list" etc. — these are concepts, not our
+  // internal role names. Map each role to the concepts it fulfills
+  // so matching is reliable in both directions.
+  const ROLE_CONCEPTS = {
+    'app-grid':           ['app_grid', 'grid', 'app_icons', 'launcher_grid'],
+    'app-icon':           ['app_grid', 'app_icon', 'grid'],
+    'app-dock':           ['app_dock', 'dock'],
+    'notif-card':         ['notification_noise', 'unread_badges', 'notifications'],
+    'notif-card-ai':      ['notification_noise', 'unread_badges', 'notifications'],
+    'list':               ['dense_list', 'raw_list', 'raw_source_list'],
+    'notification-list':  ['notification_noise', 'notifications'],
+    'focus-block-group':  ['dense_widget_row', 'widget_grid', 'widget_row'],
+    'toggle-grid':        ['dense_toggles', 'toggle_grid'],
+    'smart-things':       ['iot_controls', 'smart_home'],
+    'media-card':         ['full_media_controls', 'playlist_detail', 'media_detail'],
+    'selection-dialog':   ['menu_list', 'option_picker'],
+    'search-bar':         ['search'],
+    'expandable-app-bar': ['app_bar_expanded'],
+    'list-top-bar':       ['list_header'],
+    'bottom-navigation':  ['bottom_nav', 'navigation_chrome'],
+    'bottom-bar':         ['bottom_bar']
+  };
+
+  const roleMatchesSet = (role, set) => {
+    if (!role) return false;
+    if (set.has(norm(role))) return true;
+    const aliases = ROLE_CONCEPTS[role] || [];
+    return aliases.some(a => set.has(a));
+  };
+
+  const kept = [];
+  const suppressed = [];
+  const deferred = [];
+  renderModel.components.forEach(c => {
+    if (roleMatchesSet(c.role, suppressSet)) {
+      suppressed.push({ id: c.id, role: c.role });
+      return;                         // drop
+    }
+    if (roleMatchesSet(c.role, deferSet)) {
+      c.visibility = 'collapsed';
+      deferred.push({ id: c.id, role: c.role });
+    }
+    kept.push(c);
+  });
+  renderModel.components = kept;
+  return { renderModel, suppressed, deferred };
+}
+
 function coerceGenerateResponse(modelJson, requestedSurfaceType) {
   modelJson = modelJson || {};
   const renderModel = sanitizeRenderModel({
@@ -1664,12 +1810,17 @@ async function classifyIntent(userPrompt) {
 
   const systemPrompt = `
 You are the ORCHESTRATION CLASSIFIER for a state-based generative UI system
-for Samsung One UI 8.5. You do NOT design screens. You classify the user's
-scenario into a structured decision packet that a downstream component
+for Samsung One UI 8.5. You do NOT design screens. You analyze the user's
+scenario into a FOUR-PART decision packet that a downstream component
 selector uses to reason about what should be shown, suppressed, deferred,
-or handed off.
+or handed off:
 
-Read the user's prompt and return STRICT JSON with the following shape:
+  (1) 4+2+1 classification        — purpose type, modulations, governance
+  (2) interpretation layer        — 6 questions about the user's situation
+  (3) state packet                — compressed machine-readable decision state
+  (4) information priority        — must_show / should_show / suppress / defer
+
+Return STRICT JSON with the following shape:
 
 {
   "surfaceType": "lockscreen | first-depth-list | second-depth-detail | tab-root | dialog-bottom | dialog-center | quick-settings | notification-shade | selection-mode",
@@ -1707,6 +1858,41 @@ Read the user's prompt and return STRICT JSON with the following shape:
       "explanation_needed":  true | false,
       "override_needed":     true | false
     }
+  },
+
+  "interpretation": {
+    "what_user_doing":        "<one sentence — what is the user literally doing right now>",
+    "real_goal":              "<one sentence — what is the REAL underlying goal>",
+    "most_lacking":           "time | info | confidence | coordination",
+    "what_interferes":        "<one sentence — what is blocking the user>",
+    "system_role":            ["show", "reduce", "connect", "decide"],
+    "interaction_complexity": "low | medium | high"
+  },
+
+  "statePacket": {
+    "purpose_type":        "<same enum as orchestration.purpose.primary>",
+    "primary_goal":        "<short phrase — the main task to accomplish>",
+    "journey_stage":       "entry | active | transition | completion | ambient",
+    "urgency":             "low | medium | high",
+    "attention_capacity":  "low | medium | high",
+    "interaction_budget":  "minimal | normal | rich",
+    "coordination_need":   "none | low | medium | high",
+    "device_role":         "primary-single | primary-multi | secondary | auxiliary",
+    "system_role":         "show | reduce | connect | decide",
+    "autonomy_level":      "advise | execute_with_confirm | execute",
+    "explanation_needed":  true | false,
+    "override_needed":     true | false,
+    "privacy_level":       "public | private | mixed | null",
+    "handoff_required":    true | false
+  },
+
+  "informationPriority": {
+    "must_show":   ["<semantic concept — what ABSOLUTELY must appear>", ...],
+    "should_show": ["<concept — nice to have>", ...],
+    "suppress":    ["<concept — must NOT appear in this context>", ...],
+    "defer":       ["<concept — collapse / show on demand, not now>", ...],
+    "why_suppress": "<one sentence explaining the core suppressions>",
+    "why_must":     "<one sentence explaining the core must_show choices>"
   }
 }
 
@@ -1756,41 +1942,107 @@ If NONE apply, triggers = [].
 autonomy_level: default "advise" unless scenario clearly says system
 should act.
 
+== INTERPRETATION LAYER ==
+Before committing to a state packet, answer these 6 questions honestly.
+Keep each answer to ONE sentence. They shape the rest of the packet:
+
+- what_user_doing         : literal description of the moment
+- real_goal               : the underlying intent (often different from the literal action)
+- most_lacking            : what is the user SHORT on right now — time / info / confidence / coordination
+- what_interferes         : what's in the way (attention, noise, device, other people, ambiguity)
+- system_role             : one or more of show / reduce / connect / decide
+   show    = surface what exists and is relevant
+   reduce  = strip noise, keep only what's necessary
+   connect = bridge states, surfaces, or people
+   decide  = take action on behalf of the user
+- interaction_complexity  : how much interaction the user can handle right now
+
+== STATE PACKET ==
+A compressed, machine-readable representation of your interpretation.
+This is what downstream code reads to make decisions. Keep it tight —
+every field should directly drive a UI decision. Align the values with
+the interpretation layer (system_role, primary_goal, etc. should not
+contradict what you said there).
+
+== INFORMATION PRIORITY (CRITICAL) ==
+This is the heart of the packet. Before any components are proposed,
+sort the candidate content concepts into 4 buckets:
+
+- must_show   : user cannot accomplish their real_goal without this
+- should_show : helps, but not strictly required
+- suppress    : would actively harm the user's state (noise, distraction,
+                privacy leak, cognitive load). MUST NOT appear.
+- defer       : relevant but belongs to a later moment (collapse /
+                behind gesture / next screen)
+
+Rules:
+- focus_protection          → must_show SHORT (1-2 concepts). Large
+                              suppress list (app-grid, promotional,
+                              dense lists, badges, non-critical chrome).
+- context_reconstruction    → must_show centers on the UNIFIED CONCLUSION
+                              (summary cards), suppress raw per-source
+                              lists that are covered by the summary.
+- flow_continuity           → must_show includes continuity-critical
+                              state (current step, next step, session
+                              identifier). Suppress anything that breaks
+                              the thread.
+- multi_party_coordination  → must_show includes conflict visibility +
+                              alignment actions. Suppress personal
+                              preference UI until coordination resolves.
+
+Use SEMANTIC CONCEPTS here, not role names. Examples of good entries:
+  must_show:  ["current_playback_status", "weather_glance", "conflict_summary"]
+  suppress:   ["app_grid", "promo_banner", "unread_badges", "raw_source_list"]
+  defer:      ["message_history", "full_calendar", "detailed_stats"]
+
 == STRICT RULES ==
-- Always return ALL top-level fields including orchestration.
+- Always return ALL top-level fields (orchestration, interpretation,
+  statePacket, informationPriority).
 - Never invent enum values outside the allowed sets above.
 - If a field is unknowable from the prompt, use null.
 - Purpose primary MUST be one of the 4 types.
+- The state packet must not contradict the interpretation layer.
+- informationPriority MUST reflect the purpose type's policy (see rules above).
 - Return JSON only, no prose before or after.
 
-EXAMPLES
-
-Prompt: "Samsung Galaxy Home at night with music playing"
-→ purpose.primary = focus_protection
-  purpose.secondary = context_reconstruction
-  reasoning: "night ambient context + ongoing background activity → UI
-              should be low-density with playback awareness, not feature-rich"
-  modulationA: attention=glanceable, mobility=stationary, interaction=
-               minimal-touch, privacy=private, time_of_day=night
-  modulationB: single device, no handoff
-  governance:  no triggers
-
-Prompt: "Pick a browser to share this page"
-→ purpose.primary = multi_party_coordination
-  secondary:        null
-  reasoning: "user must choose between multiple candidate targets"
-  modulationA: attention=focused, interaction=touch
-  modulationB: single device
-  governance:  explanation_needed=true (user needs to know what each
-               option does)
-
-Prompt: "Check morning calendar on lockscreen"
-→ purpose.primary = context_reconstruction
-  reasoning: "pulling today's schedule together for a glanceable read"
-  modulationA: attention=glanceable, time_of_day=morning, interaction=
-               minimal-touch
-  modulationB: single device (phone)
-  governance:  none`;
+EXAMPLE — "Samsung Galaxy Home at night with music playing"
+{
+  "surfaceType": "tab-root",
+  "intent": "evening ambient home with playback",
+  "orchestration": { ... purpose.primary = focus_protection ... },
+  "interpretation": {
+    "what_user_doing":        "checking phone briefly while music plays in the background at night",
+    "real_goal":              "confirm playback is going fine without disrupting the ambient mood",
+    "most_lacking":           "confidence",
+    "what_interferes":        "low attention, dim light, not actively focused on the screen",
+    "system_role":            ["reduce", "show"],
+    "interaction_complexity": "low"
+  },
+  "statePacket": {
+    "purpose_type":        "focus_protection",
+    "primary_goal":        "glanceable_playback_status",
+    "journey_stage":       "ambient",
+    "urgency":             "low",
+    "attention_capacity":  "low",
+    "interaction_budget":  "minimal",
+    "coordination_need":   "none",
+    "device_role":         "primary-single",
+    "system_role":         "reduce",
+    "autonomy_level":      "advise",
+    "explanation_needed":  false,
+    "override_needed":     false,
+    "privacy_level":       "private",
+    "handoff_required":    false
+  },
+  "informationPriority": {
+    "must_show":   ["current_playback_status", "time"],
+    "should_show": ["next_track_hint"],
+    "suppress":    ["app_grid", "promo_banner", "unread_badges", "dense_widget_row"],
+    "defer":       ["full_media_controls", "playlist_detail"],
+    "why_must":    "user needs playback confirmation at a glance — time stays as chrome",
+    "why_suppress":"night ambient + low attention forbids dense grids and notification noise"
+  }
+}`;
 
   try {
     const result = await callOpenAI(systemPrompt, userPrompt.slice(0, 800), 0.1);
@@ -1840,6 +2092,54 @@ Prompt: "Check morning calendar on lockscreen"
       }
     };
 
+    // ─── R2: normalize interpretation + state packet + information priority ───
+    const interp = (result && result.interpretation) || {};
+    const ALLOWED_SYSROLE = new Set(['show', 'reduce', 'connect', 'decide']);
+    const sysRoleArr = Array.isArray(interp.system_role) ? interp.system_role : [];
+    const normalizedInterpretation = {
+      what_user_doing:        interp.what_user_doing        || '',
+      real_goal:              interp.real_goal              || '',
+      most_lacking:           ['time','info','confidence','coordination'].includes(interp.most_lacking)
+                                ? interp.most_lacking : 'info',
+      what_interferes:        interp.what_interferes        || '',
+      system_role:            sysRoleArr.filter(r => ALLOWED_SYSROLE.has(r)),
+      interaction_complexity: ['low','medium','high'].includes(interp.interaction_complexity)
+                                ? interp.interaction_complexity : 'medium'
+    };
+
+    const sp = (result && result.statePacket) || {};
+    const normalizedStatePacket = {
+      purpose_type:        ALLOWED_PURPOSE.has(sp.purpose_type) ? sp.purpose_type : normalizedOrch.purpose.primary,
+      primary_goal:        sp.primary_goal        || '',
+      journey_stage:       ['entry','active','transition','completion','ambient'].includes(sp.journey_stage)
+                             ? sp.journey_stage : 'active',
+      urgency:             ['low','medium','high'].includes(sp.urgency) ? sp.urgency : 'low',
+      attention_capacity:  ['low','medium','high'].includes(sp.attention_capacity)
+                             ? sp.attention_capacity : 'medium',
+      interaction_budget:  ['minimal','normal','rich'].includes(sp.interaction_budget)
+                             ? sp.interaction_budget : 'normal',
+      coordination_need:   ['none','low','medium','high'].includes(sp.coordination_need)
+                             ? sp.coordination_need : 'none',
+      device_role:         sp.device_role   || 'primary-single',
+      system_role:         ALLOWED_SYSROLE.has(sp.system_role) ? sp.system_role : 'show',
+      autonomy_level:      sp.autonomy_level  || normalizedOrch.governance.autonomy_level,
+      explanation_needed:  !!sp.explanation_needed,
+      override_needed:     !!sp.override_needed,
+      privacy_level:       sp.privacy_level   || normalizedOrch.modulationA.privacy,
+      handoff_required:    !!sp.handoff_required
+    };
+
+    const ip = (result && result.informationPriority) || {};
+    const asStrArray = v => (Array.isArray(v) ? v.filter(x => typeof x === 'string' && x.trim().length > 0) : []);
+    const normalizedInformationPriority = {
+      must_show:    asStrArray(ip.must_show),
+      should_show:  asStrArray(ip.should_show),
+      suppress:     asStrArray(ip.suppress),
+      defer:        asStrArray(ip.defer),
+      why_must:     ip.why_must     || '',
+      why_suppress: ip.why_suppress || ''
+    };
+
     return {
       surfaceType: surfaceType,
       intent: (result && result.intent) || 'generated',
@@ -1847,7 +2147,10 @@ Prompt: "Check morning calendar on lockscreen"
       timeOfDay: (result && result.timeOfDay) || normalizedOrch.modulationA.time_of_day,
       activity:  (result && result.activity)  || null,
       confidence: result && result.surfaceType ? 1 : 0,
-      orchestration: normalizedOrch
+      orchestration:        normalizedOrch,
+      interpretation:       normalizedInterpretation,
+      statePacket:          normalizedStatePacket,
+      informationPriority:  normalizedInformationPriority
     };
   } catch (err) {
     console.warn('  [classify] failed:', err.message, '— falling back to client guess');
@@ -1859,12 +2162,16 @@ async function handleGenerate(body, res) {
   try {
     const clientGuess = safeSurfaceType(body.surfaceType || 'first-depth-list');
 
-    // ── Step 1: Intent classification (4+2+1 orchestration classifier) ──
+    // ── Step 1: Intent classification (4+2+1 + interpretation + state
+    //                                   packet + information priority) ──
     let requestedSurfaceType = clientGuess;
     let intent = null;
     let timeOfDay = null;
     let activity = null;
     let orchestration = null;
+    let interpretation = null;
+    let statePacket = null;
+    let informationPriority = null;
     if (body.prompt && body.prompt.trim().length >= 6) {
       const classification = await classifyIntent(body.prompt);
       if (classification && classification.surfaceType) {
@@ -1880,11 +2187,18 @@ async function handleGenerate(body, res) {
             ` · devices=${classification.orchestration.modulationB.device_count}` +
             ` · gov_triggers=${classification.orchestration.governance.triggers.length}`);
         }
+        if (classification.informationPriority) {
+          const ip = classification.informationPriority;
+          console.log(`  [priority] must=${ip.must_show.length}, should=${ip.should_show.length}, suppress=${ip.suppress.length}, defer=${ip.defer.length}`);
+        }
         requestedSurfaceType = classification.surfaceType;
         intent = classification.intent;
         timeOfDay = classification.timeOfDay;
         activity  = classification.activity;
-        orchestration = classification.orchestration || null;
+        orchestration       = classification.orchestration      || null;
+        interpretation      = classification.interpretation     || null;
+        statePacket         = classification.statePacket        || null;
+        informationPriority = classification.informationPriority || null;
       }
     }
 
@@ -1896,7 +2210,10 @@ async function handleGenerate(body, res) {
       intent: intent,
       timeOfDay: timeOfDay,
       activity:  activity,
-      orchestration: orchestration
+      orchestration: orchestration,
+      interpretation: interpretation,
+      statePacket: statePacket,
+      informationPriority: informationPriority
     });
 
     const promptSize = ((systemPrompt.length + userPrompt.length) / 1024).toFixed(1);
@@ -1918,6 +2235,27 @@ async function handleGenerate(body, res) {
     // Attach the classifier's intent to the layoutTree so clients can show it
     if (intent && response.layoutTree && !response.layoutTree.intent) {
       response.layoutTree.intent = intent;
+    }
+
+    // R2: enforce suppress / defer contract on non-stream path too
+    if (informationPriority && response.renderModel) {
+      const enforced = enforceInformationPriority(response.renderModel, informationPriority);
+      if (enforced.suppressed.length) {
+        console.log(`  [enforce] SUPPRESSED ${enforced.suppressed.length}: ` +
+          enforced.suppressed.map(x => x.role).join(', '));
+      }
+      if (enforced.deferred.length) {
+        console.log(`  [enforce] DEFERRED ${enforced.deferred.length}: ` +
+          enforced.deferred.map(x => x.role).join(', '));
+      }
+    }
+
+    // Attach the full decision packet to the layoutTree for caching / inspection.
+    if (response.layoutTree) {
+      if (orchestration)       response.layoutTree.orchestration       = orchestration;
+      if (interpretation)      response.layoutTree.interpretation      = interpretation;
+      if (statePacket)         response.layoutTree.statePacket         = statePacket;
+      if (informationPriority) response.layoutTree.informationPriority = informationPriority;
     }
 
     sendJSON(res, 200, response);
@@ -1954,36 +2292,56 @@ async function handleGenerateStream(body, req, res) {
   try {
     const clientGuess = safeSurfaceType(body.surfaceType || 'first-depth-list');
 
-    // ── Step 1: classify (4+2+1 orchestration classifier) ──
+    // ── Step 1: classify (4+2+1 orchestration + interpretation + state
+    //                     packet + information priority) ──
     let surfaceType = clientGuess;
     let intent = null;
     let hierarchy = null;
     let timeOfDay = null;
     let activity = null;
     let orchestration = null;
+    let interpretation = null;
+    let statePacket = null;
+    let informationPriority = null;
     if (body.prompt && body.prompt.trim().length >= 6) {
       const classification = await classifyIntent(body.prompt);
       if (classification && classification.surfaceType) {
-        surfaceType = classification.surfaceType;
-        intent = classification.intent;
-        hierarchy = classification.hierarchy;
-        timeOfDay = classification.timeOfDay;
-        activity  = classification.activity;
-        orchestration = classification.orchestration || null;
+        surfaceType         = classification.surfaceType;
+        intent              = classification.intent;
+        hierarchy           = classification.hierarchy;
+        timeOfDay           = classification.timeOfDay;
+        activity            = classification.activity;
+        orchestration       = classification.orchestration      || null;
+        interpretation      = classification.interpretation     || null;
+        statePacket         = classification.statePacket        || null;
+        informationPriority = classification.informationPriority || null;
+        if (orchestration) {
+          console.log(`  [stream/4+2+1] purpose=${orchestration.purpose.primary}` +
+            ` · attn=${orchestration.modulationA.attention}` +
+            ` · devices=${orchestration.modulationB.device_count}`);
+        }
+        if (informationPriority) {
+          console.log(`  [stream/priority] must=${informationPriority.must_show.length}, ` +
+            `should=${informationPriority.should_show.length}, ` +
+            `suppress=${informationPriority.suppress.length}, ` +
+            `defer=${informationPriority.defer.length}`);
+        }
       }
     }
-    // Emit the 4+2+1 decision packet alongside backward-compat fields so
-    // the client can render a structured "why this UI" block in the log.
+    // Emit the full orchestration decision packet (classification +
+    // interpretation + state packet + information priority) so the
+    // client log can render each layer explicitly and the generator
+    // step downstream can consume them.
     emit('classified', {
       surfaceType, intent, hierarchy, timeOfDay, activity,
-      orchestration
+      orchestration, interpretation, statePacket, informationPriority
     });
 
     // ── Step 2: stream generate ──
     const systemPrompt = buildGenerateSystemPrompt();
     const userPrompt = buildGenerateUserPrompt({
       ...body, surfaceType, intent, timeOfDay, activity,
-      orchestration
+      orchestration, interpretation, statePacket, informationPriority
     });
 
     console.log(`  [stream] generate surfaceType=${surfaceType}`);
@@ -2016,12 +2374,30 @@ async function handleGenerateStream(body, req, res) {
     if (intent && response.layoutTree && !response.layoutTree.intent) {
       response.layoutTree.intent = intent;
     }
-    // Attach the 4+2+1 orchestration packet to the layoutTree so it
-    // persists in cached responses — when a client replays from the
-    // LRU cache, the synthetic `classified` event can still render the
-    // classification block in the log.
-    if (orchestration && response.layoutTree) {
-      response.layoutTree.orchestration = orchestration;
+
+    // R2: enforce the information priority contract. If the generator
+    // slipped in any role that matches a suppress concept, strip it.
+    // Mark defer matches with visibility:"collapsed".
+    if (informationPriority && response.renderModel) {
+      const enforced = enforceInformationPriority(response.renderModel, informationPriority);
+      if (enforced.suppressed.length) {
+        console.log(`  [enforce/stream] SUPPRESSED ${enforced.suppressed.length}: ` +
+          enforced.suppressed.map(x => x.role).join(', '));
+      }
+      if (enforced.deferred.length) {
+        console.log(`  [enforce/stream] DEFERRED ${enforced.deferred.length}: ` +
+          enforced.deferred.map(x => x.role).join(', '));
+      }
+    }
+
+    // Attach the full decision packet to the layoutTree so it persists
+    // in cached responses — when a client replays from the LRU cache,
+    // the synthetic `classified` event still renders every layer block.
+    if (response.layoutTree) {
+      if (orchestration)       response.layoutTree.orchestration       = orchestration;
+      if (interpretation)      response.layoutTree.interpretation      = interpretation;
+      if (statePacket)         response.layoutTree.statePacket         = statePacket;
+      if (informationPriority) response.layoutTree.informationPriority = informationPriority;
     }
 
     emit('done', response);

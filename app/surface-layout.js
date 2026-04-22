@@ -2413,6 +2413,16 @@ window.renderSurfacePlan = function renderSurfacePlan(canvas, plan, layout) {
       wrapper.style.pointerEvents = 'none';
     }
 
+    // R2: information-priority "defer" components carry
+    // visibility="collapsed" — they render but dimmed, non-interactive,
+    // and slightly scaled so the user can tell at a glance this is
+    // context (not a primary action). Full hide would lose continuity.
+    if (comp.visibility === 'collapsed') {
+      wrapper.classList.add('priority-collapsed');
+    } else if (comp.visibility === 'hidden') {
+      wrapper.style.display = 'none';
+    }
+
     wrapper.innerHTML = window.renderAtomicForRole(comp, rect);
 
     // Expanded children (list-item, focus-block cells, paragraphs, etc.)

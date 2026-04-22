@@ -676,6 +676,27 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .surface-item {
   box-sizing: border-box;
 }
+
+/* R2 information-priority: "defer" components render but collapsed
+   (dimmed, scaled, non-interactive) so the user can tell at a glance
+   that this is peripheral context, not a primary action. Full hide
+   would lose continuity and break the spatial model. */
+.surface-item.priority-collapsed,
+.rules-item.priority-collapsed,
+.canvas-item.priority-collapsed {
+  opacity: 0.35;
+  transform: scale(0.92);
+  transform-origin: top left;
+  pointer-events: none;
+  filter: saturate(0.6);
+  transition: opacity 220ms ease, transform 220ms ease, filter 220ms ease;
+}
+.surface-item.priority-collapsed:hover,
+.rules-item.priority-collapsed:hover,
+.canvas-item.priority-collapsed:hover {
+  opacity: 0.7;
+  transform: scale(0.96);
+}
 .surface-item > * {
   width: 100%;
   height: 100%;
