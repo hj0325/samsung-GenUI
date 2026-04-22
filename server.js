@@ -829,6 +829,28 @@ BAD:
   - focus-block.content.title = ""           (empty)
   - focus-block.content.sub = "Card content" (placeholder)
 
+=== FORBIDDEN PLACEHOLDER STRINGS ===
+Never write any of these into text / title / sub / body / label. The
+server REJECTS components that contain placeholder text and the
+component is silently dropped from the output:
+
+  "Focus block"                  "Title"              "Subtitle"
+  "Important content goes here"  "Content goes here"  "Card content"
+  "Generic card"                 "Placeholder"        "Label"
+  "Primary action"               "Secondary action"   "Lorem ipsum"
+  "Sample text"                  "Your content"       "TBD" / "TODO"
+
+If you don't have a specific value for a field derived from the user's
+prompt, OMIT that field or OMIT the entire component. Never fill it
+with a design-system-demo string.
+
+For a health-coach prompt, WRONG:
+  focus-block.content.title = "Focus block"
+  focus-block.content.sub   = "Important content goes here"
+RIGHT:
+  focus-block.content.title = "Heart rate \u2014 72 bpm resting"
+  focus-block.content.sub   = "Steady for the last 3 hours"
+
 === COMPONENT SELECTION HINTS ===
 Pick components that MATCH the activity in the prompt:
 - "music playing", "listening", "podcast"     → include now-bar with type="media"
@@ -1782,16 +1804,50 @@ function sanitizeRenderModel(renderModel) {
     'focus-block', 'focus-block-group', 'paragraph', 'notif-card',
     'notif-card-ai', 'list-item', 'media-card', 'media-half'
   ]);
+  // Common placeholder strings the AI uses when it's being lazy or
+  // treating the screen like a design-system demo. These must be
+  // rejected as "meaningful content" even if they're non-empty, or we
+  // end up with half the canvas saying "Focus block" / "Title" /
+  // "Important content goes here" (the atomic's own default copy
+  // echoed back by the LLM).
+  const PLACEHOLDER_PATTERNS = [
+    /^focus block$/i,
+    /^focus block\s*\u00b7\s*/i,
+    /^important content goes here$/i,
+    /^content goes here$/i,
+    /^(generic )?card(\s+content)?$/i,
+    /^title$/i,
+    /^subtitle$/i,
+    /^label$/i,
+    /^placeholder$/i,
+    /^lorem\s+ipsum/i,
+    /^sample\s+(text|content)/i,
+    /^(primary|secondary)\s+action$/i,
+    /^(your|my)\s+(content|text)$/i,
+    /^\.\.\.$/,
+    /^(todo|tbd|tbc)$/i
+  ];
+  function _isPlaceholderText(s) {
+    if (typeof s !== 'string') return false;
+    const t = s.trim();
+    if (t.length < 2) return true;
+    return PLACEHOLDER_PATTERNS.some(p => p.test(t));
+  }
   function _hasMeaningfulContent(c) {
-    if (c.text && c.text.trim().length >= 2) return true;
+    const check = (v) => typeof v === 'string' && v.trim().length >= 2 && !_isPlaceholderText(v);
+    if (check(c.text)) return true;
     const ct = c.content && typeof c.content === 'object' ? c.content : null;
     if (!ct) return false;
     const fields = ['title', 'sub', 'subtitle', 'body', 'value', 'label',
-                    'description', 'items'];
+                    'description'];
     for (const k of fields) {
-      const v = ct[k];
-      if (typeof v === 'string' && v.trim().length >= 2) return true;
-      if (Array.isArray(v) && v.length > 0) return true;
+      if (check(ct[k])) return true;
+    }
+    // `items` array only counts if at least one entry has real text.
+    if (Array.isArray(ct.items)) {
+      for (const it of ct.items) {
+        if (it && (check(it.title) || check(it.label) || check(it.text))) return true;
+      }
     }
     return false;
   }
