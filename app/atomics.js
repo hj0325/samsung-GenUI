@@ -22,7 +22,11 @@
   var FONT_BOLD    = "'One UI Sans APP VF', Inter, system-ui, sans-serif";
   var FONT_SEMI    = "'One UI Sans APP VF', Inter, system-ui, sans-serif";
   var FONT_REGULAR = "'One UI Sans APP VF', Inter, system-ui, sans-serif";
-  var FONT_CLOCK   = "'SamsungNrDefault-V6', Inter, system-ui, sans-serif";
+  // FONT_CLOCK — Space Grotesk (display-geometric sans) paired with Inter
+  // as structural fallback. Matches the Inter + Space Grotesk pair the
+  // project standardizes on for Lock-screen clock display. Loaded via
+  // genui.html Google Fonts link.
+  var FONT_CLOCK   = "'Space Grotesk', Inter, system-ui, sans-serif";
 
   // Renders an absolutely-positioned DIV at the given inset, with an <img>
   // filling it 100%. Mirrors Figma's structure:

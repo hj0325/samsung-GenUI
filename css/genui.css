@@ -1,20 +1,75 @@
 :root {
-  --primary: #0381FE;
-  --primary-light: #3E91FF;
-  --primary-10: rgba(3,129,254,0.10);
-  --bg: #0a0a0a;
-  --sidebar-bg: #111111;
-  --surface: #1a1a1a;
-  --surface-2: #222222;
-  --text: #FAFAFA;
-  --text-2: rgba(255,255,255,0.6);
-  --text-3: rgba(255,255,255,0.35);
+  /* Legacy tokens — bridged to theme tokens below so a /customize theme
+     swap also affects the surrounding page chrome (sidebar excluded —
+     it stays --sidebar-bg for app shell stability). */
+  --primary:        var(--accent-primary, #0381FE);
+  --primary-light:  #3E91FF;
+  --primary-10:     rgba(3,129,254,0.10);
+  --bg:             var(--page-bg, #0a0a0a);
+  --sidebar-bg:     #111111;
+  --surface:        #1a1a1a;
+  --surface-2:      #222222;
+  --text:           var(--text-primary,   #FAFAFA);
+  --text-2:         var(--text-secondary, rgba(255,255,255,0.6));
+  --text-3:         var(--text-tertiary,  rgba(255,255,255,0.35));
   --divider: rgba(255,255,255,0.08);
   --glass-bg: rgba(255,255,255,0.06);
   --glass-border: rgba(255,255,255,0.10);
   --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --canvas-bg-light: #FCFCFC;
   --canvas-bg-dark: #171717;
+
+  /* ── Theme variables (used by /customize dropdown) ─────────────────
+     These defaults match the "Default · One UI 8.5" theme in
+     figma-refs/themes.json. The customize page applies overrides via
+     :root { --xxx: …; } in a runtime <style> block. Renderer cards in
+     app/surface-layout.js read these via var(--name, fallback) so any
+     theme switch is purely cosmetic and doesn't require restart. */
+  --page-bg:                          #0a0a0c;
+  --text-primary:                     #efeef2;
+  --text-secondary:                   rgba(239,238,242,0.7);
+  --text-tertiary:                    rgba(239,238,242,0.45);
+  --accent-primary:                   #0381FE;
+
+  --card-radius:                      20px;
+  /* Spacing tokens — kept consistent across all themes per user
+     direction: theme identity is conveyed via radius/typography/color,
+     not via padding. Aligned to Minimal Flat values for a tighter
+     One UI feel. Individual themes can still override these vars but
+     the canonical defaults match. */
+  --card-padding-v:                   14px;
+  --card-padding-h:                   16px;
+  --card-gap:                         6px;
+
+  --card-weather-accent:              #FBBF24;
+  --card-weather-temp-size:           52px;
+  --card-weather-temp-weight:         600;
+  --card-weather-temp-color:          #fff;
+  --card-weather-temp-letterspacing:  -1.5px;
+  --card-weather-icon-size:           44px;
+
+  --card-calendar-accent:             #A78BFA;
+  --card-calendar-time-size:          22px;
+  --card-calendar-time-weight:        600;
+
+  --card-reminder-accent:             #F59E0B;
+  --card-reminder-task-size:          16px;
+
+  --card-message-avatar-grad:         linear-gradient(135deg,#34D399,#10B981);
+  --card-message-avatar-size:         32px;
+
+  --card-eta-accent:                  #14B8A6;
+  --card-eta-size:                    40px;
+  --card-eta-icon-size:               32px;
+
+  --card-nav-accent:                  #14B8A6;
+  --card-nav-distance-size:           22px;
+  --card-nav-arrow-bg:                rgba(20,184,166,0.25);
+
+  --card-ai-grad:                     linear-gradient(120deg, rgba(102,161,243,0.45) 0%, rgba(167,139,250,0.45) 50%, rgba(34,201,166,0.45) 100%);
+  --card-ai-shimmer-speed:            3.6s;
+
+  --card-input-topic-size:            20px;
 }
 * { margin:0; padding:0; box-sizing:border-box; }
 body { background:var(--bg); color:var(--text); font-family:var(--font); font-size:13px; overflow:hidden; height:100vh; display:flex; flex-direction:column; -webkit-font-smoothing:antialiased; }
@@ -886,6 +941,19 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
   flex: 1; font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Group rows — a row that represents a CONTAINER (primary-task,
+   supporting, etc.). Visually marked as the parent of the child rows
+   below it: dashed-style hint already on the indicator chip; here we
+   add a subtle row-level bg so a glance distinguishes container from
+   leaf. Children inherit normal row styling but get padding-left from
+   their depth (set inline in scene-inspector). */
+.scene-layer-row.is-group {
+  background: rgba(255,255,255,0.025);
+  border-color: rgba(255,255,255,0.06);
+}
+.scene-layer-row.is-group:hover {
+  background: rgba(255,255,255,0.06);
+}
 .scene-layer-size {
   font-size: 9px; color: var(--text-3);
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
@@ -1027,6 +1095,317 @@ body.cmd-interact-mode [data-node-id]:hover {
   display:flex; flex-direction:column; gap:8px;
 }
 
+/* === ROLE-AWARE COMPOSITION (pipeline path) ===
+   Group-level roles communicate the JOB of a cluster of components.
+   Child-level roles communicate the FUNCTION of each component within
+   its cluster. The visual treatment makes the semantic hierarchy
+   readable at a glance:
+     primary-task   → unified inner surface, visibly ONE unit
+     supporting     → recedes, lower contrast
+     chrome         → flush to frame, no decoration
+     subject        → dominant typography, full width
+     state/action   → attached to subject visually
+     context        → muted
+   Only the pipeline renderer sets data-group-role / data-pipeline-role;
+   legacy surface scenarios are unaffected. */
+
+/* group: chrome — purely structural. NOTE: chrome groups never actually
+   reach the DOM as a .canvas-group wrapper anymore — renderPipelineResponse
+   detects group.role==="chrome" and absolute-positions each child into
+   the device frame's chrome zones (topSystem / bottomNav) computed from
+   window.createOneUILayout. This rule is kept defensively in case any
+   chrome group does fall through, so it doesn't get the dev-mode dashed
+   border. */
+.canvas-group[data-group-role="chrome"] {
+  border:none !important;
+  background:none !important;
+  padding:0 !important;
+  gap:0 !important;
+}
+
+/* Chrome items rendered via Path B's renderAtomicForRole bridge. They are
+   absolute-positioned by renderPipelineResponse using zone coordinates,
+   so we strip the .canvas-item card decoration and let the atomic HTML
+   fill its zone exactly. */
+.canvas-item.chrome-item {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+/* Body atomics — focus-block / now-bar / action-row / etc. — also rendered
+   via the Path B atomic bridge but flow inline in the canvas content
+   (NOT absolute-positioned). The atomic HTML already includes its own
+   card / pill / surface treatment, so we strip the .canvas-item card
+   shell to avoid double decoration. */
+.canvas-item.body-atomic {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  /* Make wrapper a flex column so the inner rendered card div (which
+     uses inline `height:100%`) actually stretches to fill the
+     wrapper's min-height. Without this, hero cards with min-height:
+     144px showed 80px of content and 64px of empty space at the
+     bottom (the inner div's `height:100%` resolved to `auto` because
+     the wrapper had no explicit height). flex:1 on the child makes
+     it grow vertically regardless of the inline height value. */
+  display: flex;
+  flex-direction: column;
+}
+.canvas-item.body-atomic > * {
+  flex: 1 1 auto;
+  min-height: 0;   /* allow flex shrink for nested overflow:hidden */
+}
+/* now-bar atomic is a 64-tall pill — let it center horizontally in its
+   group rather than stretching full-width. */
+.canvas-item.body-atomic[data-atomic-role="now-bar"] {
+  align-self: center;
+  width: auto !important;
+  min-width: 248px;
+}
+.canvas-item.chrome-item[data-atomic-role="status-bar"] {
+  /* Sits in the topSystem zone — keep the atomic flush. */
+  z-index: 50;
+}
+.canvas-item.chrome-item[data-atomic-role="collapsed-app-bar"],
+.canvas-item.chrome-item[data-atomic-role="expandable-app-bar"],
+.canvas-item.chrome-item[data-atomic-role="list-top-bar"] {
+  z-index: 49;
+  padding: 0 16px !important;  /* horizontal inset for the title text */
+  display: flex;
+  align-items: center;
+}
+.canvas-item.chrome-item[data-atomic-role="gesture-bar"],
+.canvas-item.chrome-item[data-atomic-role="nav-buttons"] {
+  z-index: 50;
+}
+
+/* group: primary-task — the screen's main task unit. Subject + state +
+   action belong here. Substantial card-like surface so the children
+   read as ONE coherent unit rather than three separate stacked cards.
+   Tier 1.4 — added a stronger inset highlight + a subtle outer glow so
+   the primary group reads as the focal layer in the visual stack. */
+.canvas-group[data-group-role="primary-task"] {
+  border:1px solid rgba(255,255,255,0.12) !important;
+  background:linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04)) !important;
+  border-radius:28px !important;
+  padding:20px !important;
+  gap:14px !important;
+  box-shadow:
+    0 8px 28px rgba(0,0,0,0.22),
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 0 0 1px rgba(255,255,255,0.03);
+}
+
+/* Tier 1.1 — HERO variant for priority=1 children inside primary-task.
+   Real Samsung One UI hero cards are 1.5-1.8× the size of supporting
+   ones with visibly more presence — bigger numbers, taller surface,
+   stronger shadow. Driven by data-priority="1" on the canvas-item
+   wrapper (set in scenes.js) plus body-atomic (so we only target
+   rendered cards). The accent stripe at the top is a hero marker —
+   makes the hero state visible at a glance even if size differences
+   blend with screen variance. */
+/* Hero variant — scoped to RICH CARD atomics only (focus-block and
+   now-bar). action-row / toggle-chip / notif-card are intrinsically
+   short (48-86dp) — applying hero min-height to them produces a tall
+   wrapper with a small button floating at the top and 100px of empty
+   space below (visible bug in the Fitness screenshot). The selector
+   chain explicitly opts in by atomic-role so future atomic types
+   default to NO hero treatment unless added here. */
+.canvas-group[data-group-role="primary-task"] .canvas-item.body-atomic[data-priority="1"][data-atomic-role="focus-block"],
+.canvas-group[data-group-role="primary-task"] .canvas-item.body-atomic[data-priority="1"][data-atomic-role="now-bar"] {
+  /* No min-height — earlier we forced 144px to give hero presence,
+     but for sparse cards (section + facets only, no topic) it left a
+     tall wrapper with content clustered at the top and 60-80px of
+     empty space below. Hero distinction now comes from typography +
+     radius + padding + shadow + accent stripe — those read as "hero"
+     without forcing a fixed height; cards size naturally to content. */
+  position: relative;
+  --card-radius: 24px;
+  --card-padding-v: 20px;
+  --card-padding-h: 22px;
+  --card-weather-temp-size: 68px;
+  --card-weather-icon-size: 56px;
+  --card-calendar-time-size: 28px;
+  --card-eta-size: 50px;
+  --card-eta-icon-size: 40px;
+  --card-nav-distance-size: 28px;
+  --card-input-topic-size: 24px;
+  --card-reminder-task-size: 18px;
+  --card-message-avatar-size: 38px;
+  box-shadow:
+    0 10px 28px rgba(0,0,0,0.28),
+    0 0 0 1px rgba(255,255,255,0.05);
+}
+/* Hero accent stripe — thin gradient line at the very top of the card.
+   Uses an ::after so it doesn't interfere with the card's own padding /
+   contents. The gradient picks up whatever per-card accent color the
+   theme defines (weather=amber, calendar=purple, etc.). */
+.canvas-group[data-group-role="primary-task"] .canvas-item.body-atomic[data-priority="1"]::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 14px; right: 14px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg,
+    var(--card-weather-accent, var(--card-calendar-accent, var(--accent-primary, #0381FE))),
+    transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Priority 2 cards stay default size. */
+/* Priority 3 — visually receded (smaller, dimmer). */
+.canvas-item.body-atomic[data-priority="3"] {
+  opacity: 0.74;
+  --card-radius: 14px;
+  --card-padding-v: 14px;
+  --card-padding-h: 16px;
+}
+
+/* === URGENCY → ACCENT COLOR (R3-A) ===
+   Applied to the device frame's canvas based on interpretation.context.urgency.
+   "low" gets no special treatment (default surface). "medium" gets a Samsung
+   blue ring around the primary-task group. "high" escalates to a warning red
+   ring + ambient red glow on the canvas — used for urgent contexts (driving,
+   safety alerts, high-stakes confirmations). Set by renderPipelineResponse. */
+#canvas[data-urgency="medium"] .canvas-group[data-group-role="primary-task"] {
+  border-color: rgba(51, 136, 233, 0.48) !important;       /* Samsung blue 40% */
+  box-shadow:
+    0 0 0 1px rgba(51, 136, 233, 0.20),
+    0 6px 20px rgba(0,0,0,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+#canvas[data-urgency="medium"] .canvas-item[data-pipeline-role="subject"] .oui-card-title {
+  color: #5DA8F5;                                          /* subtle blue title */
+}
+
+#canvas[data-urgency="high"] .canvas-group[data-group-role="primary-task"] {
+  border-color: rgba(239, 68, 68, 0.55) !important;        /* warning red */
+  box-shadow:
+    0 0 0 2px rgba(239, 68, 68, 0.28),
+    0 0 24px rgba(239, 68, 68, 0.18),
+    0 6px 20px rgba(0,0,0,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+#canvas[data-urgency="high"] .canvas-item[data-pipeline-role="subject"] .oui-card-title {
+  color: #FCA5A5;                                          /* warning red title */
+}
+#canvas[data-urgency="high"] .canvas-item[data-pipeline-role="action"] .oui-chip,
+#canvas[data-urgency="high"] .canvas-item[data-pipeline-role="action"] .oui-btn-contained {
+  /* High-urgency actions get red accent on their primary affordance. */
+  background: rgba(239, 68, 68, 0.85) !important;
+  color: #fff !important;
+}
+
+/* group: supporting — context that frames the primary task. Tier 1.2:
+   visibly subordinate to primary-task — flatter surface (no inset),
+   slightly thinner border, no outer shadow. Kept at the same outer
+   width / padding so cards align horizontally edge-to-edge across
+   groups (regression fix from earlier rounds). */
+.canvas-group[data-group-role="supporting"] {
+  border:1px dashed rgba(255,255,255,0.08) !important;
+  background:rgba(255,255,255,0.018) !important;
+  border-radius:24px !important;
+  padding:20px !important;
+  gap:14px !important;
+  opacity:0.94;
+}
+
+/* group: tertiary — even less weight (badges, quiet notifications). */
+.canvas-group[data-group-role="tertiary"] {
+  border:none !important;
+  background:none !important;
+  padding:4px 16px !important;
+  gap:6px !important;
+  margin: 0 12px;
+  opacity:0.72;
+  font-size:0.94em;
+}
+
+/* group: meta — overflow / settings / help shortcuts. */
+.canvas-group[data-group-role="meta"] {
+  border:none !important;
+  background:rgba(255,255,255,0.02) !important;
+  border-radius:14px !important;
+  padding:6px 14px !important;
+  margin: 0 16px;
+  opacity:0.84;
+  font-size:0.93em;
+}
+
+/* === Child role emphasis ===
+   Within ANY group, role lets us scale the visual weight of each child.
+   Subject is the dominant artifact; state and action attach to it;
+   context recedes; feedback is transient. */
+
+/* subject — dominant. Bigger title type, brighter text, full visual weight. */
+.canvas-item[data-pipeline-role="subject"] .oui-card-title,
+.canvas-item[data-pipeline-role="subject"] .oui-list-title,
+.canvas-item[data-pipeline-role="subject"] .oui-dialog-title,
+.canvas-item[data-pipeline-role="subject"] .oui-appbar-title {
+  font-size: 19px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+.canvas-item[data-pipeline-role="subject"] .oui-card {
+  padding: 22px !important;
+}
+
+/* state — visually attached to the subject above (negative top margin
+   pulls them into a single unit when stacked). Slightly muted. */
+.canvas-item[data-pipeline-role="state"] {
+  margin-top: -6px !important;
+  opacity: 0.95;
+}
+.canvas-item[data-pipeline-role="state"] .oui-card-title {
+  font-size: 13px !important;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+/* action — strong label, stretched to fill its row inside primary-task. */
+.canvas-item[data-pipeline-role="action"] .oui-chip,
+.canvas-item[data-pipeline-role="action"] .oui-btn-contained,
+.canvas-item[data-pipeline-role="action"] .oui-btn-outlined,
+.canvas-item[data-pipeline-role="action"] .oui-card-title {
+  font-weight: 600 !important;
+}
+.canvas-group[data-group-role="primary-task"] .canvas-item[data-pipeline-role="action"] {
+  align-self: stretch;
+  margin-top: 4px;
+}
+
+/* context — clearly subordinate (smaller, dimmer). */
+.canvas-item[data-pipeline-role="context"] {
+  opacity: 0.82 !important;
+}
+.canvas-item[data-pipeline-role="context"] .oui-card {
+  padding: 14px 16px !important;
+}
+.canvas-item[data-pipeline-role="context"] .oui-card-title {
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+/* feedback — light, transient, slightly italic. */
+.canvas-item[data-pipeline-role="feedback"] {
+  opacity: 0.90;
+  font-style: italic;
+}
+
+/* navigation — neutral. */
+.canvas-item[data-pipeline-role="navigation"] {
+  opacity: 0.96;
+}
+
 /* === ONE UI COMPONENT STYLES (for canvas rendering) === */
 .oui-btn-contained { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:0 24px; border-radius:18px; background:#0072DE; color:#FAFAFA; font-size:15px; font-weight:500; border:none; font-family:var(--font); }
 .oui-btn-outlined { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:0 24px; border-radius:18px; background:transparent; color:#FAFAFA; font-size:15px; font-weight:500; border:1.5px solid #FAFAFA; font-family:var(--font); }
@@ -1137,6 +1516,12 @@ body.cmd-interact-mode [data-node-id]:hover {
 @keyframes shake { 0%,100% { transform:translateX(0); } 20%,60% { transform:translateX(-6px); } 40%,80% { transform:translateX(6px); } }
 @keyframes glassMat { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
 @keyframes chromeFade { from { opacity:1; } to { opacity:0.2; } }
+/* Now-bar single-line voice listening waveform — five bars pulse at staggered phases */
+@keyframes slPulse { 0%, 100% { transform: scaleY(0.4); opacity: 0.7; } 50% { transform: scaleY(1); opacity: 1; } }
+/* AI notification sparkle accent — slow shimmer across the gradient bg */
+@keyframes aiShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+/* Subtle scale-in for newly-rendered cards (microinteraction polish) */
+@keyframes cardSlideUp { 0% { opacity: 0; transform: translateY(8px); } 100% { opacity: 1; transform: translateY(0); } }
 /* Now-bar media marquee — scrolls the song title track from 0% to -50%
    (the track duplicates the text so the loop is seamless). 14s loop
    speed matches Samsung's subtle Lock-screen Music Now-bar scroll. */
@@ -1274,3 +1659,23 @@ input[id^="searchbar-"]::placeholder {
 .refine-compare-canvas { flex:1; overflow-y:auto; padding:0; }
 .refine-compare-canvas .canvas-inner-clone { display:flex; flex-direction:column; gap:0; padding:28px 0 0; zoom:0.78; font-family:'Inter',sans-serif; }
 .refine-close-compare { position:absolute; top:8px; right:8px; z-index:101; width:28px; height:28px; border-radius:50%; background:rgba(0,0,0,0.5); color:#fff; border:none; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+
+/* ============================================================================
+   R4: Flow Navigator — compact controller above the canvas for multi-node
+   flow graphs. Shows the shape of the flow (entry → action → completion)
+   as labeled dots with prev/next arrows. Click a dot to swap the canvas
+   to that node's renderModel. Hidden entirely for single-node flows.
+   ============================================================================ */
+.flow-navigator { display:none; align-items:center; gap:8px; padding:8px 14px; margin:0 auto 12px; max-width:fit-content; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:999px; font-family:'Inter',sans-serif; }
+.flow-navigator[hidden] { display:none !important; }
+.flow-navigator.is-visible { display:inline-flex; }
+.flow-navigator .fn-arrow { width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,0.08); color:var(--text-2); border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; line-height:1; transition:background 0.15s; }
+.flow-navigator .fn-arrow:hover:not(:disabled) { background:rgba(255,255,255,0.14); color:#fff; }
+.flow-navigator .fn-arrow:disabled { opacity:0.3; cursor:not-allowed; }
+.flow-navigator .fn-nodes { display:flex; align-items:center; gap:6px; }
+.flow-navigator .fn-node { padding:4px 10px; border-radius:999px; font-size:10px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase; color:var(--text-2); background:rgba(255,255,255,0.04); cursor:pointer; border:1px solid rgba(255,255,255,0.08); transition:background 0.15s, color 0.15s; white-space:nowrap; }
+.flow-navigator .fn-node:hover { background:rgba(255,255,255,0.08); color:#fff; }
+.flow-navigator .fn-node.is-current { background:#3E91FF; color:#fff; border-color:#3E91FF; }
+.flow-navigator .fn-node.is-loading { opacity:0.5; cursor:wait; }
+.flow-navigator .fn-edge { color:var(--text-3); font-size:10px; user-select:none; }
+.flow-navigator .fn-meta { font-size:10px; color:var(--text-3); margin-left:4px; }

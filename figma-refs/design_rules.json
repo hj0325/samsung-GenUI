@@ -9,7 +9,7 @@
   "typography": {
     "family": {
       "system": "'One UI Sans APP VF', Inter, system-ui, sans-serif",
-      "clock":  "'SamsungNrDefault-V6', Inter, system-ui, sans-serif"
+      "clock":  "'Space Grotesk', Inter, system-ui, sans-serif"
     },
     "weight": {
       "regular":  400,

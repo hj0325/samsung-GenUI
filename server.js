@@ -2,6 +2,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const pipeline = require('./pipeline');           // genui_pipeline_v1 step_1 + step_3
+const normalizer = require('./schema_normalizer'); // for fallback telemetry (getFallbackStats, withCollector)
+const improvementEngine = require('./improvement_engine'); // self-improving system: test suite + scoring + (Phase B/C/D wip)
 const UIState = require('./ui-state.js') || (global.UIState);  // step_2 resolver (Node CJS export)
 // layout_composer is consumed indirectly by pipeline.runComposeLayout
 
@@ -16,7 +18,46 @@ if (fs.existsSync(envPath)) {
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
+// Per-stage model selection. Each stage has different reasoning needs, so
+// we route each to a model matched to its job:
+//   OPENAI_MODEL          → select (Step 3) — vocabulary + constraint
+//                                              reasoning + content authoring
+//   OPENAI_MODEL_FAST     → merged interpret+normalize (Steps 1+2)
+//                                            — simple JSON extraction
+//   OPENAI_MODEL_COMPOSE  → compose (Step 4) — most complex stage,
+//                                              spatial+structural+token
+//                                              reasoning. Often deserves
+//                                              the strongest model.
+//   OPENAI_MODEL_EXPLAIN  → explain (Step 7) — light paraphrasing,
+//                                              fastest mini works.
+// All three default to OPENAI_MODEL when unset, so behavior is unchanged
+// for users who haven't configured per-stage models.
+const OPENAI_MODEL_FAST    = process.env.OPENAI_MODEL_FAST    || OPENAI_MODEL;
+const OPENAI_MODEL_COMPOSE = process.env.OPENAI_MODEL_COMPOSE || OPENAI_MODEL;
+const OPENAI_MODEL_EXPLAIN = process.env.OPENAI_MODEL_EXPLAIN || OPENAI_MODEL_FAST;
+// Phase-1 parallel content bag (Stage 3.5). Runs in parallel with the
+// selector to materialize rich, varied content fragments (weather facts,
+// reminder list, message previews, calendar entries, etc.) so the swap
+// pass can fill empty / duplicated slots in the plan with diverse text.
+// Cheap mini model is fine — this is enrichment, not selection.
+const OPENAI_MODEL_CONTENT_BAG = process.env.OPENAI_MODEL_CONTENT_BAG || OPENAI_MODEL_EXPLAIN;
 const PORT = parseInt(process.env.PORT) || 3001;
+// Host-bind: loopback-only by default so the API key + static files are not
+// reachable from other devices on the network. Override with BIND_HOST=0.0.0.0
+// only if you know what you are doing (no auth / CORS on these endpoints).
+const BIND_HOST = process.env.BIND_HOST || '127.0.0.1';
+// Static-file containment root. Resolved once at boot; every request's
+// resolved path must remain under this prefix (see static-file handler).
+const SAFE_ROOT = path.resolve(__dirname) + path.sep;
+// Request body cap — protects against malicious/accidental giant POSTs
+// that would otherwise accumulate in memory. 1 MiB covers any reasonable
+// scenario_text; raise via env if you have a real use case.
+const MAX_BODY_BYTES = parseInt(process.env.MAX_BODY_BYTES) || 1048576;  // 1 MiB
+// LLM concurrency + rate limits — bound runaway clients so a looping
+// browser tab can't drain the OpenAI budget. Applied to any endpoint
+// that invokes callOpenAI[Stream]. Tune per your plan.
+const MAX_CONCURRENT_LLM = parseInt(process.env.MAX_CONCURRENT_LLM) || 4;
+const MAX_LLM_PER_MIN    = parseInt(process.env.MAX_LLM_PER_MIN)    || 60;
 
 if (!OPENAI_API_KEY) {
   console.error('\x1b[31m[ERROR]\x1b[0m OPENAI_API_KEY not set in .env file');
@@ -46,6 +87,25 @@ const evolveMdPath = path.join(__dirname, 'evolve.md');
 const DESIGN_MD_RAW = fs.existsSync(designMdPath) ? fs.readFileSync(designMdPath, 'utf8') : '';
 const GENUI_MD_RAW = fs.existsSync(genuiMdPath) ? fs.readFileSync(genuiMdPath, 'utf8') : '';
 const ORCH_MD_RAW = fs.existsSync(orchMdPath) ? fs.readFileSync(orchMdPath, 'utf8') : '';
+
+// --- Structured design-rules JSON (typography scale, glass tiers,
+//     radius ladder, spacing grid, touch target minimums). These were
+//     previously gated behind keyword triggers in extractConstraints()
+//     which meant the AI only saw them when the prompt literally said
+//     "glass" / "typography" / etc. Now loaded once at startup and
+//     always included in the generate user prompt (see
+//     buildDesignRulesBrief below). Kept compact — the full files are
+//     ~4KB combined, easy to carry per request.
+const designRulesPath = path.join(__dirname, 'figma-refs/design_rules.json');
+const globalRulesPath = path.join(__dirname, 'figma-refs/global_rules.json');
+let DESIGN_RULES = null;
+let GLOBAL_RULES = null;
+try {
+  if (fs.existsSync(designRulesPath)) DESIGN_RULES = JSON.parse(fs.readFileSync(designRulesPath, 'utf8'));
+} catch (e) { console.warn('  design_rules.json parse failed:', e.message); }
+try {
+  if (fs.existsSync(globalRulesPath)) GLOBAL_RULES = JSON.parse(fs.readFileSync(globalRulesPath, 'utf8'));
+} catch (e) { console.warn('  global_rules.json parse failed:', e.message); }
 
 // --- Parse markdown documents into indexed sections ---
 function parseSections(raw, regex) {
@@ -138,6 +198,8 @@ const totalRawKB = ((DESIGN_MD_RAW.length + GENUI_MD_RAW.length + ORCH_MD_RAW.le
 console.log(`  \x1b[32m✓\x1b[0m DESIGN.md    ${DESIGN_MD_RAW ? (DESIGN_MD_RAW.length / 1024).toFixed(1) + 'KB → ' + Object.keys(DESIGN_SECTIONS).length + ' sections' : 'NOT FOUND'}`);
 console.log(`  \x1b[32m✓\x1b[0m GENUI.md     ${GENUI_MD_RAW ? (GENUI_MD_RAW.length / 1024).toFixed(1) + 'KB → ' + Object.keys(GENUI_SECTIONS).length + ' sections' : 'NOT FOUND'}`);
 console.log(`  \x1b[32m✓\x1b[0m ORCH.md      ${ORCH_MD_RAW ? (ORCH_MD_RAW.length / 1024).toFixed(1) + 'KB → ' + Object.keys(ORCH_SECTIONS).length + ' sections' : 'NOT FOUND'}`);
+console.log(`  \x1b[32m✓\x1b[0m design_rules.json  ${DESIGN_RULES ? Object.keys(DESIGN_RULES).length + ' token families' : 'NOT FOUND'}`);
+console.log(`  \x1b[32m✓\x1b[0m global_rules.json  ${GLOBAL_RULES ? (GLOBAL_RULES.rules || []).length + ' rules' : 'NOT FOUND'}`);
 console.log(`  \x1b[32m✓\x1b[0m evolve.md    ${EVOLVE_CONSTRAINTS ? EVOLVE_CONSTRAINTS.length + ' learned constraints' : '0 entries (will grow from refinement)'}`);
 console.log(`  \x1b[32m✓\x1b[0m Total raw    ${totalRawKB}KB (never sent to API)`);
 
@@ -622,16 +684,32 @@ function formatConstraintsForPrompt(constraints) {
 // OpenAI proxy
 // ============================================================================
 
-async function callOpenAI(systemPrompt, userMessage, temperature = 0.7) {
-  const body = JSON.stringify({
-    model: OPENAI_MODEL,
+// Some OpenAI models (gpt-5 mini/nano variants, o1/o3/o4 reasoning family)
+// reject any non-default temperature with a 400. Detect by model id pattern.
+// Pattern matches:
+//   gpt-5-mini       gpt-5-nano
+//   gpt-5.4-mini     gpt-5.5-mini    (any minor version)
+//   gpt-5.4-nano     gpt-5.5-nano
+//   o1*  o3*  o4*    (reasoning families)
+// Models NOT matching this pattern (gpt-4o, gpt-4o-mini, gpt-5.x main, etc.)
+// get the requested temperature passed through normally.
+const _NO_CUSTOM_TEMP_MODELS = /^(gpt-5(\.\d+)?-(mini|nano)|o1|o3|o4)/i;
+function _supportsCustomTemp(model) {
+  return !_NO_CUSTOM_TEMP_MODELS.test(model || '');
+}
+
+async function callOpenAI(systemPrompt, userMessage, temperature = 0.7, modelOverride) {
+  const useModel = modelOverride || OPENAI_MODEL;
+  const bodyObj = {
+    model: useModel,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage }
     ],
-    temperature,
     response_format: { type: 'json_object' }
-  });
+  };
+  if (_supportsCustomTemp(useModel)) bodyObj.temperature = temperature;
+  const body = JSON.stringify(bodyObj);
 
   const url = new URL('https://api.openai.com/v1/chat/completions');
   const options = {
@@ -659,12 +737,104 @@ async function callOpenAI(systemPrompt, userMessage, temperature = 0.7) {
         try {
           const parsed = JSON.parse(data);
           const content = parsed.choices?.[0]?.message?.content;
+          // Cache telemetry: OpenAI returns prompt_tokens_details.cached_tokens
+          // when an automatic prefix-cache hit was used. Logging this lets us
+          // verify the cache-friendly prompt reorder is actually paying off.
+          // Only log when there's a meaningful prompt size (>500 tokens) so
+          // tiny calls don't spam.
+          try {
+            const pt   = parsed.usage?.prompt_tokens || 0;
+            const cached = parsed.usage?.prompt_tokens_details?.cached_tokens || 0;
+            if (pt >= 500) {
+              const pct = pt > 0 ? Math.round((cached / pt) * 100) : 0;
+              console.log(`[openai] ${useModel}  prompt=${pt}  cached=${cached} (${pct}%)`);
+            }
+          } catch (_) { /* ignore telemetry errors */ }
           resolve(JSON.parse(content));
         } catch (e) { reject(new Error('Failed to parse OpenAI response: ' + e.message)); }
       });
     });
     req.on('error', reject);
     req.setTimeout(120000, () => { req.destroy(); reject(new Error('OpenAI request timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+// Convenience: routes to OPENAI_MODEL_FAST. Used for the merged
+// interpret+normalize stage where TTFT matters most and the work is
+// simple JSON extraction.
+async function callOpenAIFast(systemPrompt, userMessage, temperature = 0.4) {
+  return callOpenAI(systemPrompt, userMessage, temperature, OPENAI_MODEL_FAST);
+}
+
+// Convenience: routes to OPENAI_MODEL_EXPLAIN. Used for the final
+// explanation stage which paraphrases the pipeline result. The
+// _supportsCustomTemp regex above will silently drop the temperature
+// arg if the configured explain model rejects custom temperatures
+// (gpt-5-mini, o1/o3/o4 reasoning models).
+async function callOpenAIExplain(systemPrompt, userMessage, temperature = 0.6) {
+  return callOpenAI(systemPrompt, userMessage, temperature, OPENAI_MODEL_EXPLAIN);
+}
+
+// Convenience: routes to OPENAI_MODEL_COMPOSE. Used for the layout
+// composer (Step 4) — the most complex pipeline stage (spatial reasoning
+// + token alignment + ~17-validator avoidance). Often deserves a stronger
+// model than OPENAI_MODEL when select doesn't need the same depth.
+async function callOpenAICompose(systemPrompt, userMessage, temperature = 0.55) {
+  return callOpenAI(systemPrompt, userMessage, temperature, OPENAI_MODEL_COMPOSE);
+}
+
+// Convenience: routes to OPENAI_MODEL_CONTENT_BAG. Used by the parallel
+// content-bag stage (3.5) which fires alongside runSelect so it does not
+// extend critical-path latency. The output is consumed by applyContentSwap
+// to fill empty / duplicated content slots in the selector plan.
+async function callOpenAIContentBag(systemPrompt, userMessage, temperature = 0.5) {
+  return callOpenAI(systemPrompt, userMessage, temperature, OPENAI_MODEL_CONTENT_BAG);
+}
+
+// ============================================================================
+//  Embeddings — used by Stage 3 RAG shortlist (pipeline.runSelect).
+//  Single-input, single-output. Returns a 1536-dim Float64 array.
+//  Latency: ~30-80ms per call. Cost: ~$0.000004 per call.
+// ============================================================================
+async function callOpenAIEmbedding(text) {
+  const url = new URL('https://api.openai.com/v1/embeddings');
+  const body = JSON.stringify({
+    model: 'text-embedding-3-small',
+    input: typeof text === 'string' ? text : String(text || '')
+  });
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Length': Buffer.byteLength(body)
+    }
+  };
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const req = https.request(url, options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          try {
+            const err = JSON.parse(data);
+            reject(new Error(err.error?.message || `Embeddings ${res.statusCode}`));
+          } catch { reject(new Error(`Embeddings ${res.statusCode}: ${data.substring(0, 200)}`)); }
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          const vec = parsed.data?.[0]?.embedding;
+          if (!Array.isArray(vec)) reject(new Error('Embedding response missing data[0].embedding'));
+          else resolve(vec);
+        } catch (e) { reject(new Error('Failed to parse embedding response: ' + e.message)); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Embedding request timeout')); });
     req.write(body);
     req.end();
   });
@@ -780,6 +950,134 @@ function extractStreamedComponents(fullText, alreadyEmitted) {
 // System Prompt Builders (constraint-driven, NOT raw document injection)
 // ============================================================================
 
+// Compact per-role contract the AI can consume when choosing components.
+// Each entry names: the role, its legal variant cardinality (when one
+// exists), and the content fields it REQUIRES vs OPTIONALLY supports.
+// Without this block the AI sees a flat enum of 60 roles and emits them
+// as empty shells — the dummy-label problem. With it, the AI knows:
+// "if I pick now-bar type=media, I must supply content.title + content.sub;
+//  if I pick notif-card, I must supply content.title + content.body".
+//
+// Field names intentionally use both `content.*` and `variant.*`; the
+// renderers read from both channels depending on the role (rich atomics
+// like now-bar/notif-card read variant.*, chrome like app-bar/list-item
+// reads content.*). Emitting under `content` is always safe because the
+// server + client both merge content → variant before render.
+function buildRoleSchemaHints() {
+  return `=== ROLE CONTRACTS (what each role MUST and MAY carry) ===
+Every role you emit MUST satisfy its REQUIRED fields. If you cannot
+produce specific content for a REQUIRED field from the user's prompt,
+omit the component entirely — do NOT fill with placeholder strings.
+
+LAYOUT WIDTH HINT (for content cards — focus-block, notif-card, media-
+card, information_glance_tile, etc.)
+Every content card MAY set variant.width to control its layout:
+  variant.width = "full"  → spans the full row (1-col, editorial hero)
+  variant.width = "half"  → half-width, pairs with the adjacent half
+  (omitted)               → sensible role default (focus-block=full;
+                            information_glance_tile=half; media-half=half)
+
+You CAN mix full + half in the same screen. Typical patterns:
+  • 1 hero (full) + 2 glance tiles (half, half)     → overview with headline
+  • 4 glance tiles (half × 4)                       → symmetric grid
+  • 2 full cards stacked                            → editorial column
+  • 1 full CTA card at top, 1 full summary below    → linear flow
+Emit half ONLY in pairs (even count) OR the packer will render a
+stranded half as a centered half-width card — still intentional-looking
+but avoid unless you want that.
+
+Chrome / app bars:
+  expandable-app-bar   state ∈ {expanded, collapsed}. REQ content.title.
+                       OPT content.sub (shown only when expanded).
+  collapsed-app-bar    REQ content.title. OPT trailing ⋮ action is rendered.
+  selection-app-bar    REQ content.title (e.g. "3 selected").
+  search-bar           OPT content.placeholder (else a random Figma variant).
+  list-top-bar         OPT content.title + auto time + date line.
+  bottom-navigation    OPT content.tabs = [{label, icon}, …] (2–5 items).
+  bottom-bar           OPT content.actions = [{label, icon}, …].
+  app-dock             OPT content.apps = [{name, icon}, …] (typically 4).
+  app-grid             OPT content.apps = [{name, icon}, …] (up to 20).
+
+Lock screen:
+  lock-clock           No required content — renderer uses current time.
+  weather-date         OPT content.temperature + content.condition + content.date.
+  unlock-hint          OPT content.text (default "Swipe up to open").
+  lock-shortcuts       OPT content.shortcuts = [{icon, label}] (2 items).
+
+Content containers:
+  focus-block          variant.kind ∈ {hero, secondary, widget, (default)}.
+                       REQ content.title. OPT content.sub, content.body,
+                       content.value, content.accent (hex).
+                       • kind=hero      → minimal art card, no text content
+                       • kind=secondary → title + body paragraph (editorial)
+                       • kind=widget    → title + value + sub (dashboard cell)
+                       • (default)      → title + sub (single-source card)
+  focus-block-group    REQ content.items = [ {title, value, sub, accent?} … ].
+                       Each item renders as a kind=widget cell in a grid.
+  list-item            REQ content.title. OPT content.sub, content.icon,
+                       content.trailing (right-side value/chevron).
+  list                 REQ content.items = [{title, sub?, icon?}] (3+ items).
+  paragraph            REQ content.body (1–3 sentences of real prose).
+  action-row           REQ content.actions = [{label, icon?}] (2–4 items).
+
+Media / live activity:
+  now-bar              variant.type ∈ {media, timer, charging, navigation}.
+                       • type=media     → REQ content.title (song), OPT
+                                          content.artist, content.marquee
+                       • type=timer     → REQ content.time (e.g. "12:34")
+                                          or content.value (e.g. "27 min")
+                       • type=charging  → REQ content.percent ∈ 0..100
+                       • type=navigation→ REQ content.title (turn text)
+                                          OPT content.sub (ETA / distance)
+  media-card           REQ content.title + content.artist. OPT content.album,
+                       content.image.
+  media-half           REQ content.title. OPT content.sub (half-width media).
+  progress-track       REQ content.value ∈ 0..100. OPT content.label.
+
+Notifications / AI:
+  notif-card           variant.urgency ∈ {low, medium, high}. REQ content.title
+                       (sender/app), content.body (message preview).
+                       OPT content.time, content.accent, content.icon.
+  notif-card-ai        REQ content.summary (AI-condensed 1-line). OPT
+                       content.source (which apps summarized), content.icon.
+
+Quick Settings / controls:
+  toggle-chip          variant.state ∈ {on, off}. REQ content.label
+                       (e.g. "Wi-Fi", "Bluetooth").
+  toggle-grid          REQ content.toggles = [{label, state, icon?}] (4–8).
+  slider-panel         variant.type ∈ {brightness, volume, (custom)}. REQ
+                       content.value ∈ 0..100. OPT content.label.
+  slider-pill          REQ content.value ∈ 0..100. OPT content.label.
+  single-toggle        variant.kind ∈ {toggle, shortcut}. REQ content.label.
+                       OPT variant.width ∈ {half, full}.
+  smart-things         REQ content.title. OPT content.status + content.devices.
+  qs-action-tile       REQ content.label + content.icon. OPT content.value.
+
+Dialogs:
+  selection-dialog     variant.theme ∈ {light, dark}. REQ variant.title +
+                       variant.options = [string, …] (2+ options).
+  bottom-dialog        REQ content.title. OPT content.body + content.actions.
+  center-dialog        REQ content.title + content.body. OPT content.actions.
+  dialog-shell         No required content (pure glass container).
+  dialog-site-header   REQ variant.siteName + variant.url.
+  dialog-browser-bar   Renders a fixed 5-action row (History, Downloads,
+                       Galaxy AI, Add page, Settings). No content needed.
+  dialog-icon-grid     Renders a fixed 2×4 app grid. No content needed.
+
+CONTENT AUTHORING DISCIPLINE:
+- If the prompt says "transfer $200 to my sister": emit recipient name,
+  exact amount, funding account IF the prompt hints at one — never "Sister"
+  or "Account" as the literal string.
+- If the prompt says "tonight weather on lockscreen" and no temperature
+  is given: YOU MAY hallucinate a plausible weather state (e.g. "68°
+  cloudy, low 52°") — users expect filled screens, not blanks. Invent
+  realistic specifics; never write "72°" + "sample weather".
+- Numbers, proper nouns, and units make a screen feel alive. Emit them
+  wherever the schema allows, even if you have to generate plausible
+  values.
+`;
+}
+
 function buildGenerateSystemPrompt() {
   return `
 You are generating semantic UI plans for Samsung One UI 8.5 mobile surfaces.
@@ -802,15 +1100,25 @@ Decision order (always):
 1. Read the orchestration brief → understand what purpose this UI serves.
 2. Based on the purpose + modulation, decide which components MUST show
    and which must be SUPPRESSED or deferred.
-3. Choose roles from ALLOWED_ROLES that match those decisions.
-4. Fill content with SPECIFIC detail from the prompt (never placeholder).
-5. Pick the surfaceType that best carries the resulting component set.
+3. **Prefer SEMANTIC IDs over raw atomic roles** — see
+   "SEMANTIC COMPONENT VOCABULARY" below. A semantic id like
+   "contextual_summary_card" carries design INTENT and resolves to an
+   atomic role + variant automatically; a bare "focus-block" has none of
+   that signal. Fall back to a raw atomic role ONLY when no semantic
+   id genuinely fits the intent.
+4. Read each chosen role's contract in "ROLE CONTRACTS" below. Fill
+   every REQUIRED content field. If the prompt genuinely lacks a value
+   you need, hallucinate a PLAUSIBLE specific (not "Title" / "Body") —
+   users expect a complete screen, not blanks.
+5. Fill content with SPECIFIC detail from the prompt (never placeholder).
+6. Pick the surfaceType that best carries the resulting component set.
 
 Always determine:
 1. surfaceType (one of ALLOWED_SURFACE_TYPES)
 2. user intent (a specific phrase derived from the prompt — not generic)
-3. content hierarchy (what leads, what supports)
-4. component roles (pick the RICHEST roles that fit the prompt)
+3. content hierarchy (what leads, what supports — drive it with typography
+   scale: hero > headline > large > title > body > label > caption > micro)
+4. component roles — PREFER semantic ids; pick the RICHEST role that fits
 5. role-specific content (use SPECIFIC detail from the prompt — never placeholder text)
 6. allowed state values (expandable-app-bar = expanded|collapsed only)
 
@@ -852,18 +1160,100 @@ RIGHT:
   focus-block.content.sub   = "Steady for the last 3 hours"
 
 === COMPONENT SELECTION HINTS ===
-Pick components that MATCH the activity in the prompt:
-- "music playing", "listening", "podcast"     → include now-bar with type="media"
-- "charging", "low battery"                    → include now-bar with type="charging"
-- "timer", "cooking", "workout duration"       → include now-bar with type="timer"
-- "notifications pending", "messages from X"   → include notif-card / notif-card-ai
+These are atomic-role hints for when you drop to raw roles (see "SEMANTIC
+COMPONENT VOCABULARY" first — semantic ids are the PREFERRED path and
+cover most of these intents at a higher level of expression).
+
+Pick components that MATCH the activity in the prompt. When emitting a
+now-bar (directly or via continuity_bridge_panel / ambient_status_line),
+variant.type is REQUIRED and must match the scenario — pick from
+{media, timer, charging, navigation, delivery, dual-line}. Emitting a
+music-player (type="media") now-bar for a cooking / workout / navigation
+scenario looks broken.
+
+- "music playing", "listening", "podcast"     → continuity_bridge_panel
+                                                 + variant.type="media"
+                                                 (play/prev/next controls)
+- "charging", "low battery"                    → ambient_status_line
+                                                 + variant.type="charging"
+                                                 (battery % + bolt icon)
+- "cooking", "pasta timer", "recipe step"      → continuity_bridge_panel
+                                                 + variant.type="timer"
+                                                 (stopwatch icon + MM:SS label)
+                                                 plus a focus-block kind=hero
+                                                 for the current step text
+- "workout duration", "running time"           → continuity_bridge_panel
+                                                 + variant.type="timer"
+- "timer", stopwatch"                          → now-bar variant.type="timer"
+- "navigation", "turn-by-turn", "directions"   → continuity_bridge_panel
+                                                 + variant.type="navigation"
+                                                 (turn arrow + street name)
+- "delivery ETA", "package arriving"           → now-bar variant.type="delivery"
+- "notifications pending", "messages from X"   → notification_summary (preferred)
+                                                 or notif-card / notif-card-ai
 - "toggle wifi", "bluetooth", "airplane"       → include toggle-chip or toggle-grid
-- "lock screen"                                → lock-clock + weather-date + optionally now-bar
+- "lock screen"                                → lock-clock + weather-date + optionally
+                                                 continuity_bridge_panel or now-bar
 - "quick settings"                             → slider-panel (brightness/volume) + toggle-grid
-- "share sheet", "pick browser"                → dialog-shell + dialog-icon-grid
-- "menu", "pick one of", "choose option"       → selection-dialog
-- Ambient, glanceable, minimal-touch contexts  → prefer focus-block with kind="secondary"
+- "share sheet", "pick browser"                → target_picker (preferred)
+                                                 or dialog-shell + dialog-icon-grid
+- "menu", "pick one of", "choose option"       → coordination_sheet (preferred)
+                                                 or selection-dialog
+- morning brief / status glance                → intent_header + information_glance_tile x2-3
+                                                 + notification_summary (preferred over
+                                                 app-bar + focus-block stack)
+- Confirm/commit/pay moments                   → primary_action_pill + explanation_footer
+                                                 + override_action
+- Ambient, glanceable, minimal-touch contexts  → focus_protection_overlay (preferred)
+                                                 or focus-block with kind="secondary"
                                                  (title + body text), avoid dense lists
+
+=== SAMSUNG DESIGN VOICE — DO'S & DON'TS ===
+These are the voice + shape + typography rules that separate a Samsung
+screen from a generic "design-system demo". Emitted output must
+respect them; content that violates these rules will feel wrong even
+when the surface grammar is correct.
+
+DO:
+- Use SamsungSharpSans for HEADLINES, SamsungOne for body/UI text — assume
+  the renderer picks the right family by role, but WRITE copy that suits
+  its family (short punchy for sharp-sans, conversational for sans).
+- Apply 700 weight to every SamsungSharpSans headline (e.g. lock-clock,
+  hero focus-block titles, expandable-app-bar.text when state="expanded").
+- Prefer GLASS treatment on floating system surfaces (now-bar,
+  bottom-navigation, notif-card, quick-settings panel). These are
+  frosted blur + thin outline + wallpaper-reactive tint — never solid.
+- Use PILL radius for floating bars, CTAs, navigation — and 26dp SQUIRCLE
+  for cards, dialogs, containers. Pick component roles that align with
+  the intended shape language (now-bar = pill; focus-block = squircle).
+- Layer depth using the three-layer system:
+  Blur (emphasis, e.g. focus-block in hero) ·
+  Dim  (hierarchy, e.g. overlay behind dialog) ·
+  Shadow (connection, e.g. raised cards). Pick ONE per component.
+- Reserve the Galaxy AI gradient (#64E9E3 → #9FFAC7) and Galaxy Yellow
+  (#FFF01F) ONLY for AI moments — notif-card-ai, Bixby / AI summary
+  blocks, AI-recommended actions. Don't spray them on generic cards.
+- Use Samsung Blue (#1428A0) ONLY as a brand accent — tab indicator, CTA
+  outline, key link color. Never as a background fill.
+- Keep body / UI text LEFT-aligned. Centering reads as "marketing", not
+  Samsung system UI.
+
+DON'T:
+- Don't mix SamsungSharpSans into body copy (list subtitles, help text,
+  caption), and don't use SamsungOne for display headlines.
+- Don't emit weights below 400 — ultralight is off-brand for Samsung UI.
+- Don't combine Dim AND Shadow on the same component (pick one).
+- Don't use Samsung Blue as a large background fill — it belongs as an
+  accent only.
+- Don't introduce 0px-radius corners on Gen components — Samsung's
+  Gen-component language is always rounded (pill or 26dp squircle).
+- Don't apply decorative letter-spacing to SamsungSharpSans headlines.
+- Don't give floating system elements OPAQUE backgrounds — now-bar,
+  toolbar, quick-settings MUST be glass (alpha + blur).
+- Don't center-align body text. Left-align only (RTL locales are
+  mirrored by the renderer, you don't need to think about that).
+- Don't treat decorative illustrations as content — if a screen needs
+  hero art, it goes in the wallpaper layer, not a focus-block.
 
 === ONE UI STRUCTURAL RULES ===
 - viewing area and interaction area are distinct
@@ -931,6 +1321,8 @@ Concrete output example — a morning-brief screen using SEMANTIC ids
 === ALLOWED_SURFACE_TYPES ===
 lockscreen, first-depth-list, second-depth-detail, tab-root,
 dialog-bottom, dialog-center, quick-settings, notification-shade, selection-mode
+
+${buildRoleSchemaHints()}
 
 === ALLOWED_ROLES ===
 Chrome / layout:
@@ -1031,6 +1423,61 @@ EMIT RULE
   array. If you use a semantic id, the server resolves it for you —
   you don't need to set variant/role manually. If the semantic list
   doesn't cover what you need, fall back to the raw atomic role.
+
+AVOID COLLISIONS — only ONE semantic id that resolves to a given
+atomic role per screen. The following ids all resolve to the SAME
+atomic; pick EXACTLY ONE:
+  • continuity_bridge_panel / ambient_status_line / (raw) now-bar
+        → all become now-bar with variant.type=media
+        → pick continuity_bridge_panel when it represents the ACTIVE
+          session hero; pick ambient_status_line only when NO
+          continuity panel is appropriate; never emit both.
+  • contextual_summary_card / information_glance_tile /
+    focus_protection_overlay / handoff_affordance / (raw) focus-block
+        → all become focus-block variants
+        → fine to emit MULTIPLE focus-blocks with DIFFERENT titles
+          (they're not collisions — they render as a grid / stack).
+          Just don't emit two focus-blocks with the same title.
+  • intent_header / (raw) expandable-app-bar
+        → both become expandable-app-bar; pick ONE.
+
+If you emit multiple colliders, the server will drop all but one
+and you will get a sparser-than-intended screen.
+
+LOCKSCREEN CONTEXT — BASE LAYERS ALREADY RENDERED
+When surfaceType === "lockscreen", the renderer starts from the
+canonical Samsung Screen/Lock template as the BASE LAYER. These
+atomics are ALREADY on canvas before your output is applied:
+  • status-bar     (top system bar with signal / battery / carrier)
+  • lockIndicator  (padlock icon at top center)
+  • weatherDate    (condition + temp + date thin line above the clock)
+  • clock          (huge center clock — auto-fills current time)
+  • shortcutLeft   (phone glass circle, bottom-left)
+  • shortcutRight  (camera glass circle, bottom-right)
+  • gestureBar     (full-width home indicator at very bottom)
+
+DO NOT re-emit these — they're already there. Your job on lockscreen
+is to add CONTEXTUAL OVERLAYS that answer the specific prompt:
+  • now-bar        (variant.type ∈ media|timer|charging|navigation)
+                   for active media / timers / charging / turn-by-turn
+  • notif-card /
+    notif-card-ai  for a pending message / AI summary
+  • focus-block
+    kind=secondary for a narrative caption ("Heart rate steady", etc.)
+  • media-card     for album art + play controls
+  • progress-track for a visible progress bar (run / workout / download)
+
+The overlays land in the INTERACTION zone (below the huge clock), so
+you don't need to worry about collisions with the base chrome. Emit
+only what the prompt actually calls for — a glance-only lockscreen
+might just be the base with ONE focus-block caption; a music
+lockscreen is the base + a now-bar + optional focus-block narrative.
+
+CONTEXT-AWARE CONTENT UPDATES to base atomics are fine — if you want
+the weatherDate to show "Rain tonight · 52°" you MAY emit a
+weatherDate with content.{condition, temperature, date} and the
+server will merge it into the base slot. But don't emit an empty
+clock / lockIndicator / shortcut just for the sake of it.
 `;
 }
 
@@ -1095,6 +1542,18 @@ function buildGenerateUserPrompt(payload) {
   const interpBlock   = payload.interpretation      ? buildInterpretationBrief(payload.interpretation) : '';
   const stateBlock    = payload.statePacket         ? buildStatePacketBrief(payload.statePacket)       : '';
   const priorityBlock = payload.informationPriority ? buildPriorityBrief(payload.informationPriority)  : '';
+  // R4: per-node FLOW brief. When this payload represents ONE node of a
+  // multi-node flow graph, tell the generator which moment in the flow it
+  // is rendering so it produces content appropriate for THIS node only
+  // (e.g. "entry = glance", "action = decisive choice", "completion =
+  // outcome+handoff"). When absent, the generator behaves exactly as the
+  // single-screen path.
+  const flowBlock = payload.flowNode ? buildFlowNodeBrief(payload.flowNode) : '';
+  // Design tokens ladder (typography / glass / radius / spacing / touch
+  // target minimum). Always-on — independent of prompt keywords — so
+  // every generation gets the full visual-hierarchy vocabulary to reason
+  // about. See buildDesignRulesBrief comment for background.
+  const designRulesBlock = buildDesignRulesBrief();
 
   return `
 Requested surfaceType: ${payload.surfaceType || 'first-depth-list'}
@@ -1105,7 +1564,7 @@ Brand: ${payload.surface || 'samsung'}
 Mode: ${payload.mode || 'dark'}
 Device: ${payload.device || 'Galaxy S26'}
 
-${orchBlock}${interpBlock}${stateBlock}${priorityBlock}Constraints:
+${flowBlock}${orchBlock}${interpBlock}${stateBlock}${priorityBlock}${designRulesBlock}Constraints:
 ${JSON.stringify(payload.constraints || {}, null, 2)}
 
 Design tokens (for copy/color/typography reference only — do not quote coordinates):
@@ -1294,6 +1753,143 @@ function buildPriorityBrief(ip) {
   }
   if (ip.why_must)     lines.push('why_must    : ' + ip.why_must);
   if (ip.why_suppress) lines.push('why_suppress: ' + ip.why_suppress);
+  lines.push('');
+  return lines.join('\n');
+}
+
+// Compact, always-on brief of the project's structured design tokens —
+// typography ladder, glass tier scale, radius ladder, 4dp spacing grid,
+// touch target minimum. Previously these were gated behind keyword
+// triggers in extractConstraints() which meant the AI only saw them
+// when the prompt literally said "glass" / "typography". Now they travel
+// with EVERY request so the AI can reason about visual hierarchy
+// (weight ladder, size progression, glass depth stratification) on any
+// scenario. Source: figma-refs/design_rules.json + global_rules.json.
+function buildDesignRulesBrief() {
+  if (!DESIGN_RULES && !GLOBAL_RULES) return '';
+  const lines = [];
+  lines.push('==== DESIGN TOKENS (use these scales for hierarchy) ====');
+
+  if (DESIGN_RULES && DESIGN_RULES.typography) {
+    const t = DESIGN_RULES.typography;
+    const sizes = t.size || {};
+    const weights = t.weight || {};
+    // Typography ladder — ordered so the AI sees it as a visible hierarchy.
+    const ladder = ['hero', 'headline', 'large', 'date', 'heading', 'title', 'body', 'label', 'caption', 'micro']
+      .filter(k => sizes[k] != null)
+      .map(k => `${k}=${sizes[k]}`)
+      .join(', ');
+    lines.push(`typography.size  : ${ladder} (use the ladder — 112 hero → 10 micro — for visual weight)`);
+    if (Object.keys(weights).length) {
+      lines.push(`typography.weight: ${Object.entries(weights).map(([k, v]) => `${k}=${v}`).join(', ')} (700 for all SamsungSharpSans headlines)`);
+    }
+    if (t.family) {
+      lines.push(`typography.family: system=${t.family.system || ''}; clock=${t.family.clock || ''}`);
+    }
+  }
+
+  if (DESIGN_RULES && DESIGN_RULES.glass) {
+    const g = DESIGN_RULES.glass;
+    const tiers = Object.entries(g).filter(([k]) => k !== '_usage').map(([k, v]) => {
+      const blur = v.blur != null ? v.blur + 'px blur' : '';
+      const alpha = (v.bg || '').match(/rgba\([^)]+,(0\.\d+)\)/);
+      return `${k}(${blur}${alpha ? ', α=' + alpha[1] : ''})`;
+    });
+    lines.push(`glass tiers      : ${tiers.join(' / ')} — pick the tier that matches the role (shortcutCircle/widgetPill/nowBar/panel)`);
+  }
+
+  if (DESIGN_RULES && DESIGN_RULES.radius) {
+    const r = DESIGN_RULES.radius;
+    const ladder = ['small', 'card', 'medium', 'widget', 'pill', 'dialog', 'panel', 'container', 'circle']
+      .filter(k => r[k] != null)
+      .map(k => `${k}=${r[k]}`)
+      .join(', ');
+    lines.push(`radius           : ${ladder}  (pill for floating bars/CTAs; widget=20 for cards; container=50 for QS tiles)`);
+  }
+
+  if (DESIGN_RULES && DESIGN_RULES.spacing) {
+    const s = DESIGN_RULES.spacing;
+    const ladder = ['xs', 'sm', 'md', 'base', 'lg', 'xl', 'xxl', '3xl', '4xl']
+      .filter(k => s[k] != null)
+      .map(k => `${k}=${s[k]}`)
+      .join(', ');
+    lines.push(`spacing          : ${ladder}  (all gaps/paddings snap to these values)`);
+  }
+
+  if (GLOBAL_RULES && Array.isArray(GLOBAL_RULES.rules)) {
+    const touchRule = GLOBAL_RULES.rules.find(r => r.id === 'touch_target_min');
+    const spaceRule = GLOBAL_RULES.rules.find(r => r.id === 'spacing_scale_rule');
+    if (touchRule) lines.push(`touch_target_min : ${touchRule.min}dp on both axes (Samsung minimum — enforced)`);
+    if (spaceRule) {
+      const values = (spaceRule.allowedValues || []).slice(0, 14).join(', ');
+      lines.push(`spacing.grid     : [${values}, …] (4dp grid — any gap/padding MUST land on this ladder)`);
+    }
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+// R4: describe ONE node of a multi-node flow graph. The classifier decides
+// the graph (entry / action / completion / …); the generator uses this brief
+// to render content appropriate for THIS moment only. When `flowNode` is
+// absent (single-screen path), the generator ignores this block entirely.
+//
+// node.kind mapping — what content the renderer should produce:
+//   entry      : glance / current state / invite to act
+//   action     : a decisive choice (button cluster, selection-dialog, cta)
+//   confirm    : review surface before committing
+//   completion : outcome + handoff / return to ambient
+//   detail     : expanded info about an entry item
+//   alternate  : side branch (dismiss, cancel, different mode)
+//   ambient    : passive reminder / status line only
+function buildFlowNodeBrief(node) {
+  if (!node || typeof node !== 'object') return '';
+  const KIND_GUIDE = {
+    entry:
+      'entry     — first contact. Show the user CURRENT STATE and invite action.\n' +
+      '            Components lean on contextual_summary_card / information_glance_tile /\n' +
+      '            ambient_status_line. Do NOT render a confirm/completion view here.',
+    action:
+      'action    — a DECISIVE moment. The user is choosing. Surface MUST show\n' +
+      '            the primary_action_pill (or override_action / coordination_sheet).\n' +
+      '            Do not over-summarize; keep context minimal, choice obvious.',
+    confirm:
+      'confirm   — last-check BEFORE commit. Show what is ABOUT to happen and\n' +
+      '            give a confirm/cancel pair. Do not repeat onboarding.',
+    completion:
+      'completion — outcome AFTER the decisive action. Show success state,\n' +
+      '            then a handoff_affordance (continue elsewhere) or return\n' +
+      '            to ambient. Do NOT show the action CTA again.',
+    detail:
+      'detail    — expanded read-only view of one item from the entry screen.\n' +
+      '            Focus on content, not actions.',
+    alternate:
+      'alternate — a SIDE branch (dismiss / cancel / different mode). Keep it\n' +
+      '            minimal; this is not the happy path.',
+    ambient:
+      'ambient   — passive, low-attention reminder. Status line + one summary tile,\n' +
+      '            no action pill.'
+  };
+  const kind = typeof node.kind === 'string' ? node.kind : 'entry';
+  const guide = KIND_GUIDE[kind] || KIND_GUIDE.entry;
+  const trigger = node.triggered_by
+    ? `arrived via "${node.triggered_by}" from the previous node.`
+    : 'is the ENTRY point of the flow (no prior node).';
+
+  const lines = [];
+  lines.push('==== FLOW NODE BRIEF (you render ONE moment in a flow) ====');
+  lines.push(`node id      : ${node.id || 'n1'}`);
+  lines.push(`node kind    : ${kind}`);
+  lines.push(`node intent  : ${node.intent || '(unspecified)'}`);
+  lines.push(`arrival      : this node ${trigger}`);
+  lines.push('kind guide   :');
+  lines.push('  ' + guide.replace(/\n/g, '\n  '));
+  lines.push('');
+  lines.push('IMPORTANT:');
+  lines.push('- Render ONLY this node. Do NOT cram the entire flow into one screen.');
+  lines.push('- Downstream nodes are rendered by sibling generators running in parallel.');
+  lines.push('- Do NOT duplicate the action CTA on completion/confirm nodes.');
   lines.push('');
   return lines.join('\n');
 }
@@ -1586,14 +2182,24 @@ const ALLOWED_ROLES = new Set([
   'app-icon',
   'paragraph',
   'action-row',
-  // Lockscreen atomics
-  'lock-time',            // legacy alias for lock-clock
+  // Lockscreen atomics — canonical Scene/Lock template names
+  // (camelCase) + legacy kebab-case aliases (kept so existing code
+  // + AI emissions keep working; they alias in the client-side
+  // Pass 1 merge via ROLE_ALIASES in app/agent.js).
+  'clock',
+  'weatherDate',
+  'lockIndicator',
+  'shortcutLeft',
+  'shortcutRight',
+  'gestureBar',
+  // Legacy / kebab synonyms:
+  'lock-time',            // alias for clock
+  'lock-clock',           // alias for clock
   'lock-date',
   'lock-shortcuts',
-  'lock-clock',
-  'weather-date',
-  'lock-indicator',
-  'unlock-hint',
+  'weather-date',         // alias for weatherDate
+  'lock-indicator',       // alias for lockIndicator
+  'unlock-hint',          // maps to gestureBar in agent merge
   // OneUI 8.5 atomic library — enables AI to pick rich, context-aware
   // components: now-bar for ongoing media/timer/charging, media cards,
   // toggle rows, sliders, etc. Previously the AI couldn't surface any
@@ -1677,15 +2283,23 @@ const SEMANTIC_COMPONENT_VOCAB = {
   },
 
   // ── Continuity / live activity ──────────────────────────────────
+  // NOTE: these semantic ids DO NOT hardcode variant.type anymore.
+  // Earlier revision set {type:'media'} as a default, which caused the
+  // now-bar to render as a MUSIC PLAYER (teal bg, prev/pause/next) on
+  // every generation that used the semantic id — even when the prompt
+  // was about cooking / workout / navigation. The AI must now set
+  // variant.type based on the scenario; the renderer falls back to
+  // 'timer' (stopwatch UI) when unset, which is a safer generic default
+  // than a music-player UI.
   continuity_bridge_panel: {
     role: 'now-bar',
-    variant: { type: 'media' },
-    note: 'Active session continuation indicator (flow_continuity primary hero).'
+    variant: {},
+    note: 'Active session continuation indicator (flow_continuity primary hero). REQUIRES variant.type: media (music), timer (cooking/workout), charging (battery), navigation (turn-by-turn), delivery (ETA), dual-line (generic 2-line). Pick by scenario — do NOT default to media.'
   },
   ambient_status_line: {
     role: 'now-bar',
-    variant: { type: 'media' },
-    note: 'Glanceable one-line status (media / timer / charging pill).'
+    variant: {},
+    note: 'Glanceable one-line status pill. REQUIRES variant.type matching what is being reported (media / timer / charging / navigation).'
   },
   progress_trail: {
     role: 'progress-track',
@@ -1802,7 +2416,12 @@ function sanitizeRenderModel(renderModel) {
   // looks broken on canvas. Drop them rather than let them through.
   const CONTENT_REQUIRED_ROLES = new Set([
     'focus-block', 'focus-block-group', 'paragraph', 'notif-card',
-    'notif-card-ai', 'list-item', 'media-card', 'media-half'
+    'notif-card-ai', 'list-item', 'media-card', 'media-half',
+    // action-row with no labels used to render literal "Primary" /
+    // "Secondary" dummy buttons because the renderer hardcoded those
+    // as fallbacks. The renderer is now empty-safe, but we also drop
+    // empty action-rows here so they don't occupy layout space at all.
+    'action-row'
   ]);
   // Common placeholder strings the AI uses when it's being lazy or
   // treating the screen like a design-system demo. These must be
@@ -1823,6 +2442,7 @@ function sanitizeRenderModel(renderModel) {
     /^lorem\s+ipsum/i,
     /^sample\s+(text|content)/i,
     /^(primary|secondary)\s+action$/i,
+    /^(primary|secondary)$/i,          // bare "Primary" / "Secondary" dummies
     /^(your|my)\s+(content|text)$/i,
     /^\.\.\.$/,
     /^(todo|tbd|tbc)$/i
@@ -1836,31 +2456,144 @@ function sanitizeRenderModel(renderModel) {
   function _hasMeaningfulContent(c) {
     const check = (v) => typeof v === 'string' && v.trim().length >= 2 && !_isPlaceholderText(v);
     if (check(c.text)) return true;
-    const ct = c.content && typeof c.content === 'object' ? c.content : null;
-    if (!ct) return false;
+    // Content fields live on BOTH channels depending on the atomic's
+    // renderer — `focus-block`, `notif-card`, `now-bar`, `selection-
+    // dialog`, `media-card` etc. all read from `variant.*`; `app-bar`,
+    // `list-item`, `paragraph` read from `content.*`. Earlier revision
+    // only scanned `content.*`, which silently dropped every AI
+    // component that put its real content into `variant.*` (the
+    // "1-2 components appear" symptom).
     const fields = ['title', 'sub', 'subtitle', 'body', 'value', 'label',
-                    'description'];
-    for (const k of fields) {
-      if (check(ct[k])) return true;
-    }
-    // `items` array only counts if at least one entry has real text.
-    if (Array.isArray(ct.items)) {
-      for (const it of ct.items) {
-        if (it && (check(it.title) || check(it.label) || check(it.text))) return true;
+                    'description', 'song', 'artist', 'album',
+                    'summary', 'text', 'placeholder', 'siteName', 'url'];
+    const sources = [
+      c.content && typeof c.content === 'object' ? c.content : null,
+      c.variant && typeof c.variant === 'object' ? c.variant : null
+    ].filter(Boolean);
+    for (const src of sources) {
+      for (const k of fields) {
+        if (check(src[k])) return true;
       }
+      // `items` / `options` arrays count if any entry has real text.
+      if (Array.isArray(src.items)) {
+        for (const it of src.items) {
+          if (it && (check(it.title) || check(it.label) || check(it.text))) return true;
+        }
+      }
+      if (Array.isArray(src.options)) {
+        for (const opt of src.options) {
+          if (typeof opt === 'string' ? check(opt) : (opt && check(opt.title || opt.label))) return true;
+        }
+      }
+      // action-row's actions: each entry is {label, icon?}. At least
+      // one real label is required for the row to count as meaningful.
+      if (Array.isArray(src.actions)) {
+        for (const a of src.actions) {
+          if (typeof a === 'string' ? check(a) : (a && check(a.label || a.text))) return true;
+        }
+      }
+      // Legacy 2-button action-row form: variant.primary / variant.secondary.
+      // Must be real strings, not the literal "Primary"/"Secondary" dummies.
+      if (check(src.primary) || check(src.secondary)) return true;
     }
     return false;
   }
 
-  const components = Array.isArray(renderModel.components)
-    ? renderModel.components
-        // R3-C: resolve semantic component IDs (e.g. 'contextual_summary_card'
-        // → { role: 'focus-block', variant: { kind: 'secondary' } }) BEFORE
-        // the atomic-role allowlist + content-required gates run, otherwise
-        // every semantic emission gets dropped for "unknown role".
-        .map(c => c && typeof c === 'object' ? resolveSemanticComponent(c) : c)
-        .filter(c => c && ALLOWED_ROLES.has(c.role))
-        .filter(c => !CONTENT_REQUIRED_ROLES.has(c.role) || _hasMeaningfulContent(c))
+  const rawInput = Array.isArray(renderModel.components) ? renderModel.components : [];
+  const afterResolve = rawInput
+    .map(c => c && typeof c === 'object' ? resolveSemanticComponent(c) : c);
+  const afterAllowlist = afterResolve.filter(c => c && ALLOWED_ROLES.has(c.role));
+  const afterContentGate = afterAllowlist.filter(c =>
+    !CONTENT_REQUIRED_ROLES.has(c.role) || _hasMeaningfulContent(c));
+
+  // Diagnostic so we can see at a glance why a screen came back sparse.
+  const droppedByAllowlist  = afterResolve.length - afterAllowlist.length;
+  const droppedByContent    = afterAllowlist.length - afterContentGate.length;
+  if (droppedByAllowlist || droppedByContent) {
+    const contentDrops = afterAllowlist
+      .filter(c => CONTENT_REQUIRED_ROLES.has(c.role) && !_hasMeaningfulContent(c))
+      .map(c => c.role).join(', ');
+    console.log(`  [sanitize] AI emitted=${rawInput.length} → kept=${afterContentGate.length}` +
+      (droppedByAllowlist ? ` · ${droppedByAllowlist} dropped (bad role)` : '') +
+      (droppedByContent ? ` · ${droppedByContent} dropped (empty content: ${contentDrops})` : ''));
+  }
+
+  // Atomic renderers that read content from `variant.*` (not `content.*`).
+  // These are the rich roles whose Figma spec sits on variant properties.
+  // For these, we COPY selected content.* fields into variant.* on
+  // sanitize, so the AI can keep writing into content.* (which is what
+  // the system prompt's Role Contract says is always safe) and the
+  // renderer still reads its expected channel.
+  //
+  // Without this merge, a now-bar emitted by the AI with
+  //   content: { title: "Midnight City", artist: "M83", marquee: "..." }
+  // would lose all of it — the renderer reads variant.title / variant.song
+  // / variant.marquee, finds them undefined, and falls back to the
+  // hardcoded Figma placeholder "Never Gonna Give You Up". THIS was the
+  // "dummy labels" root cause on lockscreen music / notif / media prompts.
+  const VARIANT_DRIVEN_ROLES = new Set([
+    'now-bar', 'media-card', 'media-half', 'notif-card', 'notif-card-ai',
+    'focus-block', 'focus-block-group', 'selection-dialog',
+    'toggle-chip', 'single-toggle', 'slider-panel', 'slider-pill',
+    'progress-track', 'smart-things', 'dialog-site-header',
+    // Lockscreen canonical chrome — their renderers read variant.*
+    // (see surface-layout.js cases for clock / weatherDate /
+    // lockIndicator / shortcutLeft / shortcutRight / gestureBar /
+    // unlock-hint). Listed in BOTH canonical camelCase (Scene
+    // template names) and legacy kebab-case aliases so that content
+    // → variant mirroring works regardless of which name the AI or
+    // the canned plan emits.
+    'clock', 'weatherDate', 'lockIndicator', 'gestureBar',
+    'shortcutLeft', 'shortcutRight',
+    'lock-clock', 'weather-date', 'lock-indicator', 'unlock-hint',
+    'lock-date', 'lock-time', 'lock-shortcuts'
+  ]);
+  const VARIANT_MIRRORED_FIELDS = [
+    'title', 'sub', 'subtitle', 'body', 'value', 'label', 'description',
+    'song', 'artist', 'album', 'marquee', 'time', 'percent',
+    'summary', 'text', 'accent', 'icon', 'image', 'source',
+    'siteName', 'siteDesc', 'url', 'options', 'items',
+    'theme', 'showTitle', 'state', 'urgency',
+    // Lockscreen chrome reads these: weather-date wants condition/temp/
+    // date; lock-indicator wants state; unlock-hint wants text; lock-
+    // clock wants time/weight/size.
+    'condition', 'temp', 'temperature', 'date', 'weight', 'size',
+    'showArrow', 'left', 'right',
+    // LAYOUT width hint ("full" | "half") — the dispatcher's mixed
+    // packer reads variant.width; mirroring from content.width lets
+    // the AI set it in either channel.
+    'width'
+  ];
+  // Field synonyms the AI uses naturally vs. what renderers read.
+  // e.g. AI emits `temperature` (natural language) but the weather-date
+  // renderer reads `temp` (short). Normalize here so both sides of the
+  // contract can stay comfortable.
+  const FIELD_SYNONYMS = {
+    'temperature': 'temp',
+    'subtitle':    'sub'
+  };
+  function _mergeContentIntoVariant(c) {
+    if (!VARIANT_DRIVEN_ROLES.has(c.role)) return c;
+    const content = c.content && typeof c.content === 'object' ? c.content : {};
+    const variant = c.variant && typeof c.variant === 'object' ? { ...c.variant } : {};
+    let changed = false;
+    for (const k of VARIANT_MIRRORED_FIELDS) {
+      if (variant[k] == null && content[k] != null) {
+        variant[k] = content[k];
+        changed = true;
+      }
+      // Mirror synonyms too (content.temperature → variant.temp).
+      const syn = FIELD_SYNONYMS[k];
+      if (syn && variant[syn] == null && content[k] != null) {
+        variant[syn] = content[k];
+        changed = true;
+      }
+    }
+    return changed ? { ...c, variant } : c;
+  }
+
+  const components = afterContentGate
+        .map(_mergeContentIntoVariant)
         .map((c, idx) => ({
           id: c.id || `comp-${idx + 1}`,
           role: c.role,
@@ -1881,8 +2614,68 @@ function sanitizeRenderModel(renderModel) {
           // (semantic) vs what it became (atomic).
           _semanticId:   c._semanticId   || null,
           _semanticNote: c._semanticNote || null
-        }))
-    : [];
+        }));
+
+  // De-duplicate "collision emissions" — multiple semantic ids
+  // resolving to the same (role + variant.type + variant.kind) signature.
+  // The canonical case: the AI picks `continuity_bridge_panel`,
+  // `ambient_status_line`, AND a raw `now-bar` for a music-playing
+  // lockscreen — all three resolve to `now-bar type=media` and render
+  // as visible duplicates. We keep the RICHEST (most content keys
+  // populated) and drop the others. Does NOT collapse genuine
+  // differences (e.g. 3 focus-blocks with different content survive
+  // because their titles/sub differ, so the signature differs).
+  const seen = new Map();
+  const dedupedCollisions = [];
+  let collisionDrops = 0;
+  components.forEach(function (c) {
+    // Signature: role + a couple of structural discriminators. Text
+    // content is NOT part of the signature so different focus-blocks
+    // with different titles survive.
+    const v = c.variant || {};
+    const ct = c.content || {};
+    const discriminator = [v.type || '', v.kind || '', v.urgency || '']
+      .filter(Boolean).join('|');
+    // Singleton roles appear AT MOST ONCE per screen — even across
+    // different type variants. Earlier revision included `discriminator`
+    // in the singleton signature, which let the AI accidentally emit
+    // BOTH a `now-bar` (type missing) AND a `now-bar` (type=timer) and
+    // have both survive dedup. For now-bar / status-bar / app-bars /
+    // app-dock / bottom-nav there is no legitimate scenario where the
+    // same screen should render two — signature is just the role.
+    const SINGLETON_ROLES = new Set([
+      'now-bar', 'lock-clock', 'weather-date', 'lock-indicator',
+      'unlock-hint', 'status-bar', 'expandable-app-bar',
+      'collapsed-app-bar', 'selection-app-bar', 'list-top-bar',
+      'app-dock', 'bottom-navigation', 'bottom-bar'
+    ]);
+    const sig = SINGLETON_ROLES.has(c.role)
+      ? c.role
+      : c.role + '|' + discriminator + '|' + (ct.title || '') + '|' + (v.title || '');
+    if (seen.has(sig)) {
+      // Keep whichever candidate has more populated content fields.
+      const prev = seen.get(sig);
+      const countKeys = function (x) {
+        let n = 0;
+        ['title', 'sub', 'subtitle', 'body', 'artist', 'marquee', 'summary'].forEach(function (k) {
+          if ((x.content && x.content[k]) || (x.variant && x.variant[k])) n++;
+        });
+        return n;
+      };
+      if (countKeys(c) > countKeys(prev)) {
+        const idx = dedupedCollisions.indexOf(prev);
+        if (idx >= 0) dedupedCollisions[idx] = c;
+        seen.set(sig, c);
+      }
+      collisionDrops++;
+      return;
+    }
+    seen.set(sig, c);
+    dedupedCollisions.push(c);
+  });
+  if (collisionDrops) {
+    console.log('  [sanitize] deduped ' + collisionDrops + ' semantic-collision component(s) (same role+variant)');
+  }
 
   return {
     surfaceType,
@@ -1890,7 +2683,7 @@ function sanitizeRenderModel(renderModel) {
       ...(renderModel.layout || {}),
       surfaceType
     },
-    components
+    components: dedupedCollisions
   };
 }
 
@@ -2030,12 +2823,32 @@ function coerceGenerateResponse(modelJson, requestedSurfaceType) {
       hierarchy: (modelJson.layoutTree && modelJson.layoutTree.hierarchy) || 'default'
     },
     renderModel,
-    critic: {
-      score: (modelJson.critic && modelJson.critic.score != null) ? modelJson.critic.score : 80,
-      issues: Array.isArray(modelJson.critic && modelJson.critic.issues) ? modelJson.critic.issues : [],
-      suggestions: Array.isArray(modelJson.critic && modelJson.critic.suggestions) ? modelJson.critic.suggestions : []
-    }
+    critic: _normalizeCritic(modelJson.critic)
   };
+}
+
+// The AI sometimes returns `critic.issues` as plain strings and
+// sometimes as `{ type, message }` objects. Same for suggestions.
+// The renderer expects the object shape, so anything that arrives as a
+// string becomes `{ type: 'critique', message: <string> }`. Without
+// this normalization the critic panel renders literal "undefined
+// undefined" text for each flagged issue.
+function _normalizeCritic(raw) {
+  const score = (raw && typeof raw.score === 'number') ? raw.score : 80;
+  const rawIssues = Array.isArray(raw && raw.issues) ? raw.issues : [];
+  const rawSuggs  = Array.isArray(raw && raw.suggestions) ? raw.suggestions : [];
+  const issues = rawIssues.map(function (i) {
+    if (typeof i === 'string') return { type: 'critique', message: i };
+    if (!i || typeof i !== 'object') return { type: 'critique', message: String(i || '') };
+    return {
+      type:    i.type    || 'critique',
+      message: i.message || i.text || (typeof i === 'string' ? i : JSON.stringify(i))
+    };
+  });
+  const suggestions = rawSuggs.map(function (s) {
+    return typeof s === 'string' ? s : (s && (s.message || s.text)) || String(s || '');
+  });
+  return { score, issues, suggestions };
 }
 
 function coerceRefineResponse(modelJson, fallbackSurfaceType) {
@@ -2207,6 +3020,24 @@ Return STRICT JSON with the following shape:
     "defer":       ["<concept — collapse / show on demand, not now>", ...],
     "why_suppress": "<one sentence explaining the core suppressions>",
     "why_must":     "<one sentence explaining the core must_show choices>"
+  },
+
+  "flowPlan": {
+    "nodes": [
+      {
+        "id":            "<short id like 'n1'>",
+        "kind":          "entry | action | confirm | completion | detail | alternate | ambient",
+        "intent":        "<one-sentence purpose of THIS node only>",
+        "triggered_by":  "<semantic id or atomic role of the component whose tap arrived at this node, or null for the entry node>"
+      }
+    ],
+    "edges": [
+      {
+        "from":    "<node id>",
+        "trigger": "<semantic id or role of the component that, when tapped on 'from', advances to 'to'>",
+        "to":      "<node id>"
+      }
+    ]
   }
 }
 
@@ -2308,6 +3139,58 @@ Use SEMANTIC CONCEPTS here, not role names. Examples of good entries:
   must_show:  ["current_playback_status", "weather_glance", "conflict_summary"]
   suppress:   ["app_grid", "promo_banner", "unread_badges", "raw_source_list"]
   defer:      ["message_history", "full_calendar", "detailed_stats"]
+
+== FLOW PLAN (temporal UI — single node vs multi-node flow) ==
+
+This project generates TEMPORAL UI, not just single static screens.
+For each scenario, decide whether the orchestration lives in ONE
+moment or across a SEQUENCE of moments (entry → action → completion,
+glance → detail, ambient → interrupt → ambient, etc.).
+
+Rules for nodes count:
+
+  1 node   — static glance / ambient / single screen that doesn't
+             naturally advance.
+             Examples: "Home at night with music playing"  (ambient),
+                       "Morning brief at a glance"         (glance).
+             → flowPlan.nodes = [{id:"n1", kind:"entry", ...}]
+                flowPlan.edges = []
+
+  2 nodes  — single decisive action arrives at a result.
+             Examples: "Pick a browser to share this"  (pick → shared),
+                       "Confirm purchase"              (confirm → done).
+             → n1 kind=entry, n2 kind=confirm|completion
+                edge: n1 --primary_action_pill.tap--> n2
+
+  3 nodes  — session with a clear transition moment.
+             Examples: "Continue workout from watch to phone"
+                       (active → handoff → full view),
+                       "Reply to message, then return to feed"
+                       (feed → compose → sent).
+             → n1=entry, n2=action|transition, n3=completion|ambient
+                edges: n1 → n2 (tap primary), n2 → n3 (confirm)
+
+Rules for each node:
+  - id       : short unique string ("n1", "n2", "n3").
+  - kind     : MUST be one of entry | action | confirm | completion |
+               detail | alternate | ambient.
+  - intent   : one-sentence purpose for THIS node only — WHAT this
+               moment accomplishes, distinct from the overall scenario.
+  - triggered_by : the semantic id / role of the component whose tap
+               brought the user here. null for the entry node.
+
+Rules for each edge:
+  - from     : source node id.
+  - trigger  : the semantic id / role of the component on the 'from'
+               node that, when tapped, advances to 'to'.
+               Use primary_action_pill / override_action / target_picker
+               / coordination_sheet etc. — whatever the generator will
+               actually render.
+  - to       : target node id.
+
+If in doubt, prefer FEWER nodes (1 > 2 > 3). Multi-node is for scenarios
+that genuinely have distinct moments — don't invent a flow just to be
+fancy.
 
 == STRICT RULES ==
 - Always return ALL top-level fields (orchestration, interpretation,
@@ -2454,6 +3337,58 @@ EXAMPLE — "Samsung Galaxy Home at night with music playing"
       why_suppress: ip.why_suppress || ''
     };
 
+    // ─── R4: normalize flowPlan (1–3 nodes + edges) ─────────────────────
+    const ALLOWED_NODE_KINDS = new Set([
+      'entry', 'action', 'confirm', 'completion',
+      'detail', 'alternate', 'ambient'
+    ]);
+    const fpRaw = (result && result.flowPlan) || {};
+    let fpNodes = Array.isArray(fpRaw.nodes) ? fpRaw.nodes : [];
+    let fpEdges = Array.isArray(fpRaw.edges) ? fpRaw.edges : [];
+
+    // Cap to 3 nodes max (reject absurd flows the LLM might invent).
+    if (fpNodes.length > 3) fpNodes = fpNodes.slice(0, 3);
+
+    // Every valid flow must have at least one 'entry' node — if the LLM
+    // gave us 0 or malformed nodes, fall back to a single-node flow so
+    // the downstream parallel generator still works uniformly.
+    if (!fpNodes.length) {
+      fpNodes = [{
+        id: 'n1', kind: 'entry',
+        intent: (result && result.intent) || 'generated',
+        triggered_by: null
+      }];
+      fpEdges = [];
+    }
+
+    const seenIds = new Set();
+    const normalizedNodes = fpNodes.map((n, i) => {
+      let id = (n && typeof n.id === 'string' && n.id.trim()) || ('n' + (i + 1));
+      while (seenIds.has(id)) id += '_' + (i + 1);
+      seenIds.add(id);
+      const kind = ALLOWED_NODE_KINDS.has(n && n.kind) ? n.kind : (i === 0 ? 'entry' : 'action');
+      return {
+        id: id,
+        kind: kind,
+        intent: (n && n.intent) || (i === 0 ? 'Initial view' : 'Next moment'),
+        triggered_by: (n && n.triggered_by) || (i === 0 ? null : 'primary_action_pill')
+      };
+    });
+
+    const idSet = new Set(normalizedNodes.map(n => n.id));
+    const normalizedEdges = fpEdges
+      .filter(e => e && idSet.has(e.from) && idSet.has(e.to) && e.from !== e.to)
+      .map(e => ({
+        from:    e.from,
+        trigger: (typeof e.trigger === 'string' && e.trigger.trim()) ? e.trigger : 'primary_action_pill',
+        to:      e.to
+      }));
+
+    const normalizedFlowPlan = {
+      nodes: normalizedNodes,
+      edges: normalizedEdges
+    };
+
     return {
       surfaceType: surfaceType,
       intent: (result && result.intent) || 'generated',
@@ -2464,7 +3399,8 @@ EXAMPLE — "Samsung Galaxy Home at night with music playing"
       orchestration:        normalizedOrch,
       interpretation:       normalizedInterpretation,
       statePacket:          normalizedStatePacket,
-      informationPriority:  normalizedInformationPriority
+      informationPriority:  normalizedInformationPriority,
+      flowPlan:             normalizedFlowPlan
     };
   } catch (err) {
     console.warn('  [classify] failed:', err.message, '— falling back to client guess');
@@ -2723,6 +3659,260 @@ async function handleGenerateStream(body, req, res) {
   }
 }
 
+// ============================================================================
+//  R4: Flow Graph generation — parallel per-node (Promise.all)
+// ----------------------------------------------------------------------------
+//  Event sequence on /api/agent/generate/flow/stream:
+//    event: classified   data: { surfaceType, intent, orchestration, …,
+//                                 flowPlan: { nodes:[…], edges:[…] } }
+//    event: node_done    data: { nodeId, nodeKind, nodeIntent, nodeIndex,
+//                                 renderModel, layoutTree, critic, elapsedMs }
+//                        (×N — fires as each parallel generator resolves)
+//    event: flow_done    data: { sessionId, nodes:[ { id, kind, intent,
+//                                   renderModel, layoutTree, critic } ],
+//                                 edges:[…], totalElapsedMs }
+//    event: error        data: { message }
+//
+//  Shape of each node in flow_done matches the single-screen `done` payload
+//  so the client renderer can reuse the same path unchanged.
+//
+//  NOT streamed: individual components within a node. Per-component
+//  streaming was removed because progressive canvas paint either
+//  degraded visual quality (no layout dispatcher) or flickered
+//  (re-running the dispatcher on every arrival). A node's components
+//  are delivered atomically when its generator resolves.
+// ============================================================================
+
+// Run ONE generator for ONE flow node using the shared classification.
+// Returns a coerced response shape identical to single-screen generate
+// (layoutTree, renderModel, critic) plus the per-node metadata.
+//
+// NOTE: deliberately NON-streaming. An earlier iteration used
+// callOpenAIStream with per-component emits so the client could paint
+// node 0's canvas progressively, but progressive painting either (a)
+// skipped the purpose-aware layout dispatcher + chrome merge + emphasis
+// tiers and looked visually degraded, or (b) re-ran the dispatcher on
+// every arrival and flickered. Both outcomes were worse than waiting
+// one more beat for a clean final render. We still run nodes in
+// parallel (handleFlowGenerateStream uses Promise.all) so wall-clock
+// stays ~= slowest single node.
+async function _generateNodeFromClassification(body, ctx, node) {
+  const t0 = Date.now();
+  const systemPrompt = buildGenerateSystemPrompt();
+  // Only emit the FLOW NODE BRIEF for genuinely multi-node flows. For
+  // single-node "flows" (which is what every simple prompt like "show
+  // weather on my lockscreen" collapses to) the brief used to dial the
+  // model toward minimalism — e.g. ambient's "status line + one summary
+  // tile" produced 4-component screens that the critic rightly flagged
+  // as sparse. Without the brief, the generator behaves exactly like
+  // the pre-R4 single-screen path (full chrome + rich content), which
+  // is what restores the 90+ critic scores.
+  const userPrompt = buildGenerateUserPrompt({
+    ...body,
+    surfaceType:         ctx.surfaceType,
+    intent:              ctx.intent,
+    timeOfDay:           ctx.timeOfDay,
+    activity:            ctx.activity,
+    orchestration:       ctx.orchestration,
+    interpretation:      ctx.interpretation,
+    statePacket:         ctx.statePacket,
+    informationPriority: ctx.informationPriority,
+    flowNode: ctx.isMultiNode ? {
+      id:           node.id,
+      kind:         node.kind,
+      intent:       node.intent,
+      triggered_by: node.triggered_by
+    } : null
+  });
+
+  const modelJson = await callOpenAI(systemPrompt, userPrompt, 0.6);
+  const response = coerceGenerateResponse(modelJson, ctx.surfaceType);
+
+  // Attach the classifier's intent + decision packet to the layoutTree so
+  // the per-node response mirrors the single-screen contract (same caching
+  // + inspection surface).
+  if (ctx.intent && response.layoutTree && !response.layoutTree.intent) {
+    response.layoutTree.intent = ctx.intent;
+  }
+  if (ctx.informationPriority && response.renderModel) {
+    const enforced = enforceInformationPriority(response.renderModel, ctx.informationPriority);
+    if (enforced.suppressed.length) {
+      console.log(`  [flow/${node.id}] SUPPRESSED ${enforced.suppressed.length}: ` +
+        enforced.suppressed.map(x => x.role).join(', '));
+    }
+    if (enforced.deferred.length) {
+      console.log(`  [flow/${node.id}] DEFERRED ${enforced.deferred.length}: ` +
+        enforced.deferred.map(x => x.role).join(', '));
+    }
+  }
+  if (response.layoutTree) {
+    if (ctx.orchestration)       response.layoutTree.orchestration       = ctx.orchestration;
+    if (ctx.interpretation)      response.layoutTree.interpretation      = ctx.interpretation;
+    if (ctx.statePacket)         response.layoutTree.statePacket         = ctx.statePacket;
+    if (ctx.informationPriority) response.layoutTree.informationPriority = ctx.informationPriority;
+    // Per-node markers on the layoutTree, so the client renderer knows
+    // which moment in the flow it's displaying without a lookup.
+    response.layoutTree.flowNodeId     = node.id;
+    response.layoutTree.flowNodeKind   = node.kind;
+    response.layoutTree.flowNodeIntent = node.intent;
+  }
+
+  return {
+    id:        node.id,
+    kind:      node.kind,
+    intent:    node.intent,
+    triggered_by: node.triggered_by || null,
+    layoutTree:  response.layoutTree,
+    renderModel: response.renderModel,
+    critic:      response.critic,
+    elapsedMs: Date.now() - t0
+  };
+}
+
+async function handleFlowGenerateStream(body, req, res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+
+  function emit(event, data) {
+    res.write('event: ' + event + '\n');
+    res.write('data: ' + JSON.stringify(data) + '\n\n');
+  }
+
+  let clientClosed = false;
+  req.on('close', () => { clientClosed = true; });
+
+  const tFlowStart = Date.now();
+
+  try {
+    const clientGuess = safeSurfaceType(body.surfaceType || 'first-depth-list');
+
+    // ── Step 1: classify once (shared across all nodes) ────────────────
+    let ctx = {
+      surfaceType:         clientGuess,
+      intent:              null,
+      hierarchy:           null,
+      timeOfDay:           null,
+      activity:            null,
+      orchestration:       null,
+      interpretation:      null,
+      statePacket:         null,
+      informationPriority: null
+    };
+    let flowPlan = { nodes: [], edges: [] };
+
+    if (body.prompt && body.prompt.trim().length >= 6) {
+      const classification = await classifyIntent(body.prompt);
+      if (classification && classification.surfaceType) {
+        ctx.surfaceType         = classification.surfaceType;
+        ctx.intent              = classification.intent;
+        ctx.hierarchy           = classification.hierarchy;
+        ctx.timeOfDay           = classification.timeOfDay;
+        ctx.activity            = classification.activity;
+        ctx.orchestration       = classification.orchestration      || null;
+        ctx.interpretation      = classification.interpretation     || null;
+        ctx.statePacket         = classification.statePacket        || null;
+        ctx.informationPriority = classification.informationPriority || null;
+        flowPlan = classification.flowPlan || flowPlan;
+        if (ctx.orchestration) {
+          console.log(`  [flow/classify] purpose=${ctx.orchestration.purpose.primary}` +
+            ` · attn=${ctx.orchestration.modulationA.attention}` +
+            ` · nodes=${(flowPlan.nodes || []).length}`);
+        }
+      }
+    }
+
+    // Guarantee at least one node (single-screen equivalent). This also
+    // preserves the fallback path when classification fails completely.
+    if (!flowPlan.nodes || !flowPlan.nodes.length) {
+      flowPlan = {
+        nodes: [{
+          id: 'n1', kind: 'entry',
+          intent: ctx.intent || 'generated',
+          triggered_by: null
+        }],
+        edges: []
+      };
+    }
+
+    // Used by _generateNodeFromClassification to decide whether to emit
+    // the FLOW NODE BRIEF. See the function's comment for why single-
+    // node flows skip the brief (quality parity with pre-R4 path).
+    ctx.isMultiNode = flowPlan.nodes.length > 1;
+
+    // Emit the shared classification + the full flow graph up front so
+    // the client can paint the Flow Navigator skeleton while the per-node
+    // generators are still running.
+    emit('classified', {
+      surfaceType:         ctx.surfaceType,
+      intent:              ctx.intent,
+      hierarchy:           ctx.hierarchy,
+      timeOfDay:           ctx.timeOfDay,
+      activity:            ctx.activity,
+      orchestration:       ctx.orchestration,
+      interpretation:      ctx.interpretation,
+      statePacket:         ctx.statePacket,
+      informationPriority: ctx.informationPriority,
+      flowPlan:            flowPlan
+    });
+
+    // ── Step 2: run per-node generators in parallel ───────────────────
+    console.log(`  [flow] generating ${flowPlan.nodes.length} node(s) in parallel`);
+    const nodePromises = flowPlan.nodes.map((node, idx) => {
+      return _generateNodeFromClassification(body, ctx, node)
+        .then(nodeResult => {
+          if (!clientClosed) {
+            emit('node_done', {
+              nodeId:      nodeResult.id,
+              nodeKind:    nodeResult.kind,
+              nodeIntent:  nodeResult.intent,
+              nodeIndex:   idx,
+              triggered_by: nodeResult.triggered_by,
+              layoutTree:  nodeResult.layoutTree,
+              renderModel: nodeResult.renderModel,
+              critic:      nodeResult.critic,
+              elapsedMs:   nodeResult.elapsedMs
+            });
+            console.log(`  [flow/${nodeResult.id}] done (${nodeResult.kind}) in ${nodeResult.elapsedMs}ms`);
+          }
+          return nodeResult;
+        })
+        .catch(err => {
+          console.error(`  [flow/${node.id}] FAILED: ${err.message}`);
+          // Return a sentinel so Promise.all doesn't abort other nodes —
+          // the flow_done event will contain whatever succeeded.
+          return {
+            id: node.id, kind: node.kind, intent: node.intent,
+            triggered_by: node.triggered_by || null,
+            layoutTree: null, renderModel: null,
+            critic: { score: 0, issues: [{ type: 'error', message: err.message }], suggestions: [] },
+            elapsedMs: 0,
+            error: err.message
+          };
+        });
+    });
+
+    const nodes = await Promise.all(nodePromises);
+    const totalElapsedMs = Date.now() - tFlowStart;
+    console.log(`  [flow] total ${totalElapsedMs}ms for ${nodes.length} node(s)`);
+
+    emit('flow_done', {
+      sessionId: `sess_${Date.now()}`,
+      nodes:     nodes,
+      edges:     flowPlan.edges || [],
+      totalElapsedMs: totalElapsedMs
+    });
+  } catch (err) {
+    console.error('[agent/generate/flow/stream]', err.message);
+    emit('error', { message: err.message || 'Flow stream failed' });
+  } finally {
+    res.end();
+  }
+}
+
 async function handleRefine(body, res) {
   const fallbackSurface = safeSurfaceType(
     (body.currentRenderModel && body.currentRenderModel.surfaceType) ||
@@ -2876,17 +4066,135 @@ function getVariantContext(sessionId) {
 
 function sendJSON(res, status, data) {
   const body = JSON.stringify(data);
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  // Same-origin only: genui.html is served from this same server, so no
+  // Access-Control-Allow-Origin header is needed. Removing `*` prevents
+  // any third-party page your browser visits from silently invoking these
+  // endpoints (which would burn the OpenAI key). If you ever need a
+  // cross-origin client, echo a specific allowed Origin here — never `*`.
+  res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(body);
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', chunk => data += chunk);
-    req.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({}); } });
-    req.on('error', reject);
+// Read a JSON request body with a hard size cap. On oversize:
+//   - responds 413 itself (if `res` was passed and headers weren't sent)
+//   - destroys the socket to stop further reads
+//   - resolves to `null` so the caller can early-return
+// Oversize on Content-Length header is a fast reject (no bytes read).
+// On malformed JSON the contract is preserved: resolves to `{}`.
+function readBody(req, res) {
+  return new Promise((resolve) => {
+    const reject413 = (got) => {
+      if (res && !res.headersSent) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error:    'Request body too large',
+          maxBytes: MAX_BODY_BYTES,
+          got:      got
+        }));
+      }
+      try { req.destroy(); } catch (_) { /* already closed */ }
+      resolve(null);
+    };
+    const cl = parseInt(req.headers['content-length']);
+    if (!isNaN(cl) && cl > MAX_BODY_BYTES) { reject413(cl); return; }
+    let length = 0;
+    const chunks = [];
+    req.on('data', chunk => {
+      length += chunk.length;
+      if (length > MAX_BODY_BYTES) { reject413(length); return; }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      let parsed;
+      try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+      catch (_) { parsed = {}; }
+
+      // Only NOW enter the rate counter — body was successfully read and
+      // (for LLM routes) the request will actually reach the handler.
+      // Re-check because state may have changed since dispatch.
+      const u = (req.url || '').split('?')[0];
+      if (isLLMRoute(u, req.method)) {
+        const check = llmRateCheck();
+        if (!check.ok) {
+          if (res && !res.headersSent) {
+            res.writeHead(check.status, {
+              'Content-Type': 'application/json',
+              'Retry-After':  String(check.retryAfter)
+            });
+            res.end(JSON.stringify(check.body));
+          }
+          resolve(null);
+          return;
+        }
+        llmRateEnter();
+        if (res) res.once('close', llmRateExit);
+      }
+
+      resolve(parsed);
+    });
+    req.on('error', () => resolve(null));
   });
+}
+
+// ---------------------------------------------------------------------------
+//  LLM rate limiting — global concurrency cap + rolling per-minute quota.
+//  Applied in the route dispatcher below to any endpoint that invokes
+//  callOpenAI / callOpenAIStream. Non-LLM endpoints (/health, /evolve,
+//  static files) are NOT throttled.
+// ---------------------------------------------------------------------------
+let _llmInFlight = 0;
+const _llmRecent = [];  // epoch-ms timestamps, pruned on each check
+
+function _pruneRecent(now) {
+  const cutoff = now - 60000;
+  while (_llmRecent.length && _llmRecent[0] < cutoff) _llmRecent.shift();
+}
+
+// Returns { ok: true } or { ok: false, status, body, retryAfter }.
+function llmRateCheck() {
+  const now = Date.now();
+  _pruneRecent(now);
+  if (_llmInFlight >= MAX_CONCURRENT_LLM) {
+    return {
+      ok: false, status: 429, retryAfter: 1,
+      body: { error: 'Too many concurrent LLM requests',
+              limit: MAX_CONCURRENT_LLM, inFlight: _llmInFlight }
+    };
+  }
+  if (_llmRecent.length >= MAX_LLM_PER_MIN) {
+    const retryAfter = Math.max(1, Math.ceil((_llmRecent[0] + 60000 - now) / 1000));
+    return {
+      ok: false, status: 429, retryAfter,
+      body: { error: 'LLM rate limit exceeded',
+              limit: MAX_LLM_PER_MIN + '/min', retryAfterSec: retryAfter }
+    };
+  }
+  return { ok: true };
+}
+
+function llmRateEnter() {
+  _llmInFlight++;
+  _llmRecent.push(Date.now());
+}
+
+function llmRateExit() {
+  _llmInFlight = Math.max(0, _llmInFlight - 1);
+}
+
+// URL prefixes whose POST handlers call OpenAI. Throttle at dispatcher.
+const LLM_ROUTE_PREFIXES = [
+  '/api/pipeline/full',
+  '/api/pipeline/plan',
+  '/api/pipeline/compose',
+  '/api/agent/generate',
+  '/api/agent/refine',
+  '/api/agent/variants',
+  '/api/agent/constraints'
+];
+
+function isLLMRoute(url, method) {
+  if (method !== 'POST') return false;
+  return LLM_ROUTE_PREFIXES.some(p => url === p || url === p + '/stream');
 }
 
 function serveStatic(filePath, res) {
@@ -2894,7 +4202,21 @@ function serveStatic(filePath, res) {
   const mime = MIME[ext] || 'application/octet-stream';
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not Found'); return; }
-    res.writeHead(200, { 'Content-Type': mime });
+    // Development-mode cache policy: force the browser to revalidate
+    // every request. Previously hot edits to app/*.js and css/*.css
+    // wouldn't reach the user until a manual hard-reload (Cmd+Shift+R),
+    // which caused a string of "my fix isn't taking effect" debugging.
+    // `no-store` is the strictest directive — no memory or disk cache.
+    // This is the right default for a design tool in active
+    // development; if we ever cut a release build we can switch to
+    // hashed filenames + long-cache headers instead.
+    const headers = {
+      'Content-Type': mime,
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      'Pragma':        'no-cache',
+      'Expires':       '0'
+    };
+    res.writeHead(200, headers);
     res.end(data);
   });
 }
@@ -2904,18 +4226,35 @@ function serveStatic(filePath, res) {
 // ============================================================================
 
 const server = http.createServer(async (req, res) => {
-  // CORS preflight
+  // CORS preflight: reject by default. Browsers will only send an OPTIONS
+  // preflight for a cross-origin, credentialed, or non-simple request — and
+  // we don't serve any cross-origin clients (genui.html is served from this
+  // same origin). Responding 204 *without* Access-Control-* headers causes
+  // the browser's CORS check to fail, so the follow-up request is blocked.
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
+    res.writeHead(204);
     res.end();
     return;
   }
 
   const url = req.url.split('?')[0];
+
+  // LLM rate limit — FAST REJECT at dispatch only. Entering the counter
+  // is deferred to readBody on successful parse (see readBody below) so
+  // that 413 body-cap rejections do NOT consume rate slots. The counter
+  // is released on `res.close`, which fires on normal end, error, or
+  // client disconnect mid-stream, so the counter is leak-free.
+  if (isLLMRoute(url, req.method)) {
+    const check = llmRateCheck();
+    if (!check.ok) {
+      res.writeHead(check.status, {
+        'Content-Type': 'application/json',
+        'Retry-After':  String(check.retryAfter)
+      });
+      res.end(JSON.stringify(check.body));
+      return;
+    }
+  }
 
   // ── genui_pipeline_v1 endpoints ─────────────────────────────────────────
   //
@@ -2930,12 +4269,16 @@ const server = http.createServer(async (req, res) => {
 
   if (url === '/api/pipeline/plan' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       const scenarioText = body.scenario_text || body.prompt || '';
 
       const planResult = await pipeline.runPlan({
         scenarioText,
-        llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
+        llmCall:           (sys, user) => callOpenAI(sys, user, 0.3),
+        llmCallFast:       (sys, user) => callOpenAIFast(sys, user, 0.3),
+        llmCallContentBag: (sys, user) => callOpenAIContentBag(sys, user, 0.5),
+        embedCall:         callOpenAIEmbedding
       });
 
       const validation = pipeline.rollupValidationResults({
@@ -2960,20 +4303,25 @@ const server = http.createServer(async (req, res) => {
 
   if (url === '/api/pipeline/compose' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       const scenarioText = body.scenario_text || body.prompt || '';
       const viewport     = body.viewport || null;
 
       const planResult = await pipeline.runPlan({
         scenarioText,
-        llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
+        llmCall:           (sys, user) => callOpenAI(sys, user, 0.3),
+        llmCallFast:       (sys, user) => callOpenAIFast(sys, user, 0.3),
+        llmCallContentBag: (sys, user) => callOpenAIContentBag(sys, user, 0.5),
+        embedCall:         callOpenAIEmbedding
       });
 
       const layoutResult = await pipeline.runComposeLayout({
         planningPacket: planResult.planningPacket,
         plan:           planResult.plan,
-        llmCall:        (sys, user) => callOpenAI(sys, user, 0.3),
-        viewport
+        llmCall:        (sys, user) => callOpenAICompose(sys, user, 0.55),
+        viewport,
+        scenarioText
       });
 
       const validation = pipeline.rollupValidationResults({
@@ -3006,9 +4354,38 @@ const server = http.createServer(async (req, res) => {
   //   event: done           data: { /* full bundled result */ }
   //   event: error          data: { step, message, elapsedMs }
   if (url === '/api/pipeline/full/stream' && req.method === 'POST') {
-    const _body = await readBody(req);
+    const _body = await readBody(req, res);
+    if (_body === null) return;  // 413 already sent
     const _scenarioText = _body.scenario_text || _body.prompt || '';
     const _viewport     = _body.viewport || null;
+    // fastMode (A+B+C from the speed-vs-detail tradeoff):
+    //   A — trim verbose reasoning arrays (selectionReasoning,
+    //       whyThisStructure, priorityPreservation, constraints) to
+    //       max 1-2 entries. Keeps the schema shape but reduces tokens.
+    //   B — skip Stage 7 (explain). Saves 2-5 seconds; the prose
+    //       is purely UI-display, no downstream consumer reads it.
+    //   C — strip slim-able metadata fields (collapsedOptionalTasks,
+    //       constraints array) so JSON payload is smaller.
+    // Activated by client when "Output log" checkbox is unchecked.
+    const _fastMode = _body.fastMode === true;
+
+    // Trim helper for fastMode — applied AFTER each step's output is
+    // produced. Only mutates verbose arrays; structural fields stay.
+    function _fastTrim(obj) {
+      if (!obj || typeof obj !== 'object') return obj;
+      // Cap arrays of reasoning strings to 1-2 entries.
+      if (Array.isArray(obj.selectionReasoning))    obj.selectionReasoning    = obj.selectionReasoning.slice(0, 2);
+      if (Array.isArray(obj.whyThisStructure))      obj.whyThisStructure      = obj.whyThisStructure.slice(0, 2);
+      if (Array.isArray(obj.priorityPreservation))  obj.priorityPreservation  = obj.priorityPreservation.slice(0, 2);
+      if (Array.isArray(obj.collapsedOptionalTasks)) obj.collapsedOptionalTasks = obj.collapsedOptionalTasks.slice(0, 1);
+      if (Array.isArray(obj.constraints))           obj.constraints           = obj.constraints.slice(0, 2);
+      // Recurse into known nested holders
+      if (obj.plannerNotes)  _fastTrim(obj.plannerNotes);
+      if (obj.composerNotes) _fastTrim(obj.composerNotes);
+      if (obj.interpretation) _fastTrim(obj.interpretation);
+      if (obj.planningPacket) _fastTrim(obj.planningPacket);
+      return obj;
+    }
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -3022,10 +4399,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     const STEPS = [
-      { id: 'plan',     label: 'interpret \u2192 ui_state \u2192 plan (steps 1-3)' },
-      { id: 'compose',  label: 'LLM layout composer (step 4)' },
-      { id: 'validate', label: 'Rollup validation (step 5)' },
-      { id: 'explain',  label: 'Explanation layer (step 7)' }
+      { id: 'interpret', label: 'merged interpret + normalize (steps 1+2)' },
+      { id: 'select',    label: 'component selector (step 3)' },
+      { id: 'compose',   label: 'LLM layout composer (step 4)' },
+      { id: 'validate',  label: 'Rollup validation (step 5)' },
+      { id: 'explain',   label: 'Explanation layer (step 7)' }
     ];
     const TOTAL = STEPS.length;
     let currentStep = null;
@@ -3041,64 +4419,161 @@ const server = http.createServer(async (req, res) => {
         total: TOTAL
       });
     }
-    function doneStep(idx, output) {
+    function doneStep(idx, output, fallbacks) {
       emit('step_done', {
         step:      STEPS[idx].id,
         output:    output,
+        fallbacks: fallbacks || null,  // { total, byType, events[] } — null if step did no LLM/normalization work
         elapsedMs: Date.now() - stepT0,
         idx:       idx + 1,
         total:     TOTAL
       });
     }
 
-    try {
-      // Step 1: plan (interpret + normalize + select)
-      startStep(0);
-      const planResult = await pipeline.runPlan({
-        scenarioText: _scenarioText,
-        llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
-      });
-      doneStep(0, {
-        interpretation:  planResult.interpretation,
-        planningPacket:  planResult.planningPacket,
-        plan:            planResult.plan,
-        uiState:         planResult.uiState,
-        planViolations:  planResult.planViolations
-      });
+    // Summarize a collector for emission (strip event array if huge)
+    function summarizeCollector(c) {
+      if (!c) return null;
+      const MAX_EVENTS = 50;
+      return {
+        total:  c.total,
+        byType: c.byType,
+        events: Array.isArray(c.events) && c.events.length > MAX_EVENTS
+          ? c.events.slice(0, MAX_EVENTS).concat([{ truncated: c.events.length - MAX_EVENTS }])
+          : (c.events || [])
+      };
+    }
 
-      // Step 2: compose (LLM layout composer)
+    try {
+      // Step 1: merged interpret + normalize (uses fast model)
+      startStep(0);
+      const { result: ipnResult, fallbacks: ipnFallbacks } = await normalizer.withCollector(() => pipeline.runInterpretAndNormalize({
+        scenarioText: _scenarioText,
+        llmCall:     (sys, user) => callOpenAI(sys, user, 0.3),
+        llmCallFast: (sys, user) => callOpenAIFast(sys, user, 0.3),
+        fastMode:    _fastMode
+      }));
+      if (_fastMode) {
+        _fastTrim(ipnResult.interpretation);
+        _fastTrim(ipnResult.planningPacket);
+      }
+      doneStep(0, {
+        interpretation:  ipnResult.interpretation,
+        planningPacket:  ipnResult.planningPacket,
+        uiState:         ipnResult.planningPacket.uiState || ipnResult.interpretation.uiState
+      }, summarizeCollector(ipnFallbacks));
+
+      // Step 2: component selector (uses full model — vocabulary reasoning
+      // matters) running in PARALLEL with the content-bag enrichment stage
+      // (Stage 3.5, mini model). Both fire after step 1 completes; we await
+      // both via Promise.all so the bag adds zero critical-path latency.
+      // After both resolve, applyContentSwap fills empty / duplicated slots
+      // in the selector plan from bag entries.
       startStep(1);
-      const layoutResult = await pipeline.runComposeLayout({
+      const [selPair, bagResult] = await Promise.all([
+        normalizer.withCollector(() => pipeline.runSelect({
+          scenarioText:    _scenarioText,
+          interpretation:  ipnResult.interpretation,
+          planningPacket:  ipnResult.planningPacket,
+          rawCombined:     ipnResult.rawCombined,
+          llmCall:         (sys, user) => callOpenAI(sys, user, 0.3),
+          embedCall:       callOpenAIEmbedding,
+          fastMode:        _fastMode
+        })),
+        pipeline.runContentBag({
+          scenarioText:   _scenarioText,
+          planningPacket: ipnResult.planningPacket,
+          interpretation: ipnResult.interpretation,
+          llmCall:        (sys, user) => callOpenAIContentBag(sys, user, 0.5),
+          fastMode:       _fastMode
+        }).catch(e => {
+          console.warn('[Pipeline] content bag stream failure (non-fatal):', e.message);
+          return null;
+        })
+      ]);
+      const { result: selResult, fallbacks: selFallbacks } = selPair;
+      if (bagResult) pipeline.applyContentSwap(selResult.plan, bagResult);
+      if (_fastMode) _fastTrim(selResult.plan);
+      doneStep(1, {
+        plan:            selResult.plan,
+        planViolations:  selResult.planViolations,
+        contentBag:      bagResult
+      }, summarizeCollector(selFallbacks));
+
+      // Build the back-compat planResult shape (some downstream code still
+      // reads it as a single object).
+      const planResult = {
+        interpretation:  ipnResult.interpretation,
+        planningPacket:  ipnResult.planningPacket,
+        plan:            selResult.plan,
+        uiState:         ipnResult.planningPacket.uiState || ipnResult.interpretation.uiState,
+        planViolations:  selResult.planViolations
+      };
+
+      // Step 3: compose (LLM layout composer — full model)
+      startStep(2);
+      const { result: layoutResult, fallbacks: composeFallbacks } = await normalizer.withCollector(() => pipeline.runComposeLayout({
         planningPacket: planResult.planningPacket,
         plan:           planResult.plan,
-        llmCall:        (sys, user) => callOpenAI(sys, user, 0.3),
-        viewport:       _viewport
-      });
-      doneStep(1, {
+        llmCall:        (sys, user) => callOpenAICompose(sys, user, 0.55),
+        viewport:       _viewport,
+        scenarioText:   _scenarioText,
+        fastMode:       _fastMode
+      }));
+      if (_fastMode) _fastTrim(layoutResult.composed);
+      doneStep(2, {
         layoutPlan:       layoutResult.composed.layoutPlan,
         composerNotes:    layoutResult.composed.composerNotes,
         layoutViolations: layoutResult.violations
-      });
+      }, summarizeCollector(composeFallbacks));
 
-      // Step 3: validate (rollup)
-      startStep(2);
+      // Step 4: validate (rollup — no LLM, no normalizer; fallbacks always zero here)
+      startStep(3);
       const validation = pipeline.rollupValidationResults({
         planViolations:   planResult.planViolations,
         layoutViolations: layoutResult.violations
       });
-      doneStep(2, validation);
+      doneStep(3, validation, null);
 
-      // Step 4: explain
-      startStep(3);
-      const explanation = await pipeline.runExplain({
-        scenarioText:     _scenarioText,
-        uiState:          planResult.uiState,
-        plan:             planResult.plan,
-        layoutPlan:       layoutResult.composed.layoutPlan,
-        validationReport: validation,
-        llmCall:          (sys, user) => callOpenAI(sys, user, 0.4)
-      });
-      doneStep(3, explanation);
+      // Step 5: explain — fastMode SKIPS this step entirely. Saves 2-5
+      // seconds. Path A panels handle missing explanation gracefully
+      // (the "Why this UI" / "What was prioritized" sections just don't
+      // render). Validation already gives the user the full violation
+      // list, which is the only structured signal that matters.
+      let explanation = null;
+      let explainFallbacks = { total: 0, byType: {}, events: [] };
+      if (!_fastMode) {
+        startStep(4);
+        const explainRes = await normalizer.withCollector(() => pipeline.runExplain({
+          scenarioText:     _scenarioText,
+          uiState:          planResult.uiState,
+          plan:             planResult.plan,
+          layoutPlan:       layoutResult.composed.layoutPlan,
+          validationReport: validation,
+          llmCall:          (sys, user) => callOpenAIExplain(sys, user, 0.6)
+        }));
+        explanation      = explainRes.result;
+        explainFallbacks = explainRes.fallbacks;
+        doneStep(4, explanation, summarizeCollector(explainFallbacks));
+      } else {
+        // Emit a step_done with null output so client knows the step
+        // is intentionally skipped (and can render a "fast mode" hint
+        // instead of a missing-data error).
+        emit('step_started', { step: 'explain', label: 'Explanation layer (skipped — fast mode)', idx: 5, total: TOTAL });
+        emit('step_done',    { step: 'explain', output: null, fallbacks: null, elapsedMs: 0, idx: 5, total: TOTAL, skipped: true });
+      }
+
+      const runFallbacks = {
+        total: (ipnFallbacks.total || 0)
+             + (selFallbacks.total || 0)
+             + (composeFallbacks.total || 0)
+             + (explainFallbacks.total || 0),
+        byStep: {
+          interpret: ipnFallbacks.total     || 0,
+          select:    selFallbacks.total     || 0,
+          compose:   composeFallbacks.total || 0,
+          explain:   explainFallbacks.total || 0
+        }
+      };
 
       // Final bundled result (same shape as /api/pipeline/full)
       emit('done', {
@@ -3109,9 +4584,10 @@ const server = http.createServer(async (req, res) => {
         layoutPlan:     layoutResult.composed.layoutPlan,
         composerNotes:  layoutResult.composed.composerNotes,
         explanation,
-        validation
+        validation,
+        fallbacks:      runFallbacks
       });
-      console.log(`[Pipeline/stream] full for "${_scenarioText.substring(0,50)}" → groups:${layoutResult.composed.layoutPlan.groups.length} violations:${validation.summary.total}`);
+      console.log(`[Pipeline/stream] full for "${_scenarioText.substring(0,50)}" → groups:${layoutResult.composed.layoutPlan.groups.length} violations:${validation.summary.total} fallbacks:${runFallbacks.total}`);
     } catch (err) {
       const elapsed = Date.now() - stepT0;
       console.error('[Pipeline/stream]', (currentStep ? currentStep.id : 'init'), err.message);
@@ -3128,20 +4604,30 @@ const server = http.createServer(async (req, res) => {
 
   if (url === '/api/pipeline/full' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       const scenarioText = body.scenario_text || body.prompt || '';
       const viewport     = body.viewport || null;
+      // fastMode: A+B+C from the speed-vs-detail tradeoff. See the
+      // /api/pipeline/full/stream endpoint above for full doc.
+      const fastMode = body.fastMode === true;
 
       const planResult = await pipeline.runPlan({
         scenarioText,
-        llmCall: (sys, user) => callOpenAI(sys, user, 0.3)
+        llmCall:           (sys, user) => callOpenAI(sys, user, 0.3),
+        llmCallFast:       (sys, user) => callOpenAIFast(sys, user, 0.3),
+        llmCallContentBag: (sys, user) => callOpenAIContentBag(sys, user, 0.5),
+        embedCall:         callOpenAIEmbedding,
+        fastMode
       });
 
       const layoutResult = await pipeline.runComposeLayout({
         planningPacket: planResult.planningPacket,
         plan:           planResult.plan,
-        llmCall:        (sys, user) => callOpenAI(sys, user, 0.3),
-        viewport
+        llmCall:        (sys, user) => callOpenAICompose(sys, user, 0.55),
+        viewport,
+        scenarioText,
+        fastMode
       });
 
       const validation = pipeline.rollupValidationResults({
@@ -3149,13 +4635,34 @@ const server = http.createServer(async (req, res) => {
         layoutViolations: layoutResult.violations
       });
 
-      const explanation = await pipeline.runExplain({
+      // fastMode: trim verbose arrays + skip explainer
+      function _fastTrimNS(obj) {
+        if (!obj || typeof obj !== 'object') return obj;
+        if (Array.isArray(obj.selectionReasoning))     obj.selectionReasoning     = obj.selectionReasoning.slice(0, 2);
+        if (Array.isArray(obj.whyThisStructure))       obj.whyThisStructure       = obj.whyThisStructure.slice(0, 2);
+        if (Array.isArray(obj.priorityPreservation))   obj.priorityPreservation   = obj.priorityPreservation.slice(0, 2);
+        if (Array.isArray(obj.collapsedOptionalTasks)) obj.collapsedOptionalTasks = obj.collapsedOptionalTasks.slice(0, 1);
+        if (Array.isArray(obj.constraints))            obj.constraints            = obj.constraints.slice(0, 2);
+        if (obj.plannerNotes)   _fastTrimNS(obj.plannerNotes);
+        if (obj.composerNotes)  _fastTrimNS(obj.composerNotes);
+        if (obj.interpretation) _fastTrimNS(obj.interpretation);
+        if (obj.planningPacket) _fastTrimNS(obj.planningPacket);
+        return obj;
+      }
+      if (fastMode) {
+        _fastTrimNS(planResult.interpretation);
+        _fastTrimNS(planResult.planningPacket);
+        _fastTrimNS(planResult.plan);
+        _fastTrimNS(layoutResult.composed);
+      }
+
+      const explanation = fastMode ? null : await pipeline.runExplain({
         scenarioText,
         uiState:          planResult.uiState,
         plan:             planResult.plan,
         layoutPlan:       layoutResult.composed.layoutPlan,
         validationReport: validation,
-        llmCall:          (sys, user) => callOpenAI(sys, user, 0.4)
+        llmCall:          (sys, user) => callOpenAIExplain(sys, user, 0.6)
       });
 
       console.log(`[Pipeline] full for "${scenarioText.substring(0,50)}" → groups:${layoutResult.composed.layoutPlan.groups.length} violations:${validation.summary.total} explained:${!!explanation}`);
@@ -3176,10 +4683,497 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Theme system endpoints ───────────────────────────────────────────
+  // GET  /api/themes               → loads themes.json + active id
+  // POST /api/themes/active        → { id } sets active theme
+  // POST /api/themes               → { theme } adds a custom theme
+  // The active theme ID is persisted in figma-refs/themes.json so it
+  // survives restarts. Cards render via CSS vars → no rebuild needed.
+  if (url === '/api/themes' && req.method === 'GET') {
+    try {
+      const themesPath = path.join(__dirname, 'figma-refs', 'themes.json');
+      if (!fs.existsSync(themesPath)) {
+        sendJSON(res, 404, { error: 'themes.json not found' });
+        return;
+      }
+      sendJSON(res, 200, JSON.parse(fs.readFileSync(themesPath, 'utf8')));
+    } catch (e) { sendJSON(res, 500, { error: e.message }); }
+    return;
+  }
+
+  if (url === '/api/themes/active' && req.method === 'POST') {
+    try {
+      const body = await readBody(req, res);
+      if (body === null) return;
+      const themesPath = path.join(__dirname, 'figma-refs', 'themes.json');
+      const data = JSON.parse(fs.readFileSync(themesPath, 'utf8'));
+      const id = body && body.id;
+      if (!id || !data.themes.find(t => t.id === id)) {
+        sendJSON(res, 400, { error: 'unknown theme id: ' + id });
+        return;
+      }
+      data._active = id;
+      fs.writeFileSync(themesPath, JSON.stringify(data, null, 2));
+      console.log('[themes] active theme set to: ' + id);
+      sendJSON(res, 200, { active: id });
+    } catch (e) { sendJSON(res, 500, { error: e.message }); }
+    return;
+  }
+
+  if (url === '/api/themes' && req.method === 'POST') {
+    try {
+      const body = await readBody(req, res);
+      if (body === null) return;
+      const theme = body && body.theme;
+      if (!theme || !theme.id || !theme.name || !theme.vars) {
+        sendJSON(res, 400, { error: 'theme requires { id, name, vars }' });
+        return;
+      }
+      const themesPath = path.join(__dirname, 'figma-refs', 'themes.json');
+      const data = JSON.parse(fs.readFileSync(themesPath, 'utf8'));
+      // Reject duplicate IDs (or update if `body.replace=true`)
+      const existing = data.themes.findIndex(t => t.id === theme.id);
+      if (existing >= 0 && !body.replace) {
+        sendJSON(res, 409, { error: 'theme id already exists; pass replace:true to overwrite' });
+        return;
+      }
+      if (existing >= 0) data.themes[existing] = theme;
+      else                data.themes.push(theme);
+      fs.writeFileSync(themesPath, JSON.stringify(data, null, 2));
+      console.log('[themes] saved theme: ' + theme.id);
+      sendJSON(res, 200, { saved: theme.id, total: data.themes.length });
+    } catch (e) { sendJSON(res, 500, { error: e.message }); }
+    return;
+  }
+
+  // ── Self-improving system endpoints (Phase A: test suite + scoring) ──
+  // GET /api/improve/test-suite        → returns the loaded scenarios + scoring config
+  // POST /api/improve/test-suite/run   → runs the entire suite, returns scored runs
+  // GET /api/improve/history           → lists saved cycle reports
+  // GET /api/improve/history/:filename → returns one report
+  if (url === '/api/improve/test-suite' && req.method === 'GET') {
+    sendJSON(res, 200, improvementEngine.getTestSuite() || { error: 'test-suite not loaded' });
+    return;
+  }
+
+  if (url === '/api/improve/test-suite/run' && req.method === 'POST') {
+    try {
+      const body = await readBody(req, res);
+      if (body === null) return;
+      // Build the runner that produces the same output shape as /api/pipeline/full.
+      // The test suite engine is decoupled from server.js; we hand it a closure.
+      const runner = async ({ scenarioText }) => {
+        const planResult = await pipeline.runPlan({
+          scenarioText,
+          llmCall:           (sys, user) => callOpenAI(sys, user, 0.3),
+          llmCallFast:       (sys, user) => callOpenAIFast(sys, user, 0.3),
+          llmCallContentBag: (sys, user) => callOpenAIContentBag(sys, user, 0.5),
+          embedCall:         callOpenAIEmbedding
+        });
+        const layoutResult = await pipeline.runComposeLayout({
+          planningPacket: planResult.planningPacket,
+          plan:           planResult.plan,
+          llmCall:        (sys, user) => callOpenAICompose(sys, user, 0.55),
+          viewport:       body.viewport || null,
+          scenarioText
+        });
+        const validation = pipeline.rollupValidationResults({
+          planViolations:   planResult.planViolations,
+          layoutViolations: layoutResult.violations
+        });
+        // Skip explainer to save time (test suite runs ~10 scenarios — saves
+        // ~30 seconds total, and the explanation isn't used for scoring).
+        return {
+          interpretation: planResult.interpretation,
+          planningPacket: planResult.planningPacket,
+          plan:           planResult.plan,
+          uiState:        planResult.uiState,
+          layoutPlan:     layoutResult.composed.layoutPlan,
+          composerNotes:  layoutResult.composed.composerNotes,
+          validation
+        };
+      };
+      const t0 = Date.now();
+      console.log('[improve] test-suite run starting...');
+      const report = await improvementEngine.runTestSuite({
+        runner,
+        onProgress: ({ idx, total, scenario }) => {
+          console.log(`[improve] [${idx + 1}/${total}] ${scenario.id} — "${scenario.scenarioText.slice(0, 60)}"`);
+        }
+      });
+      report.summary.elapsedMsTotal = Date.now() - t0;
+      const fname = improvementEngine.saveCycleReport(report);
+      report.summary.savedAs = fname;
+      console.log(`[improve] test-suite done: weightedAvg=${report.summary.weightedAvgScore} cumulative=${report.summary.cumulativeScore} elapsed=${(report.summary.elapsedMsTotal/1000).toFixed(1)}s saved=${fname}`);
+      sendJSON(res, 200, report);
+    } catch (e) {
+      console.error('[improve] test-suite error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  if (url === '/api/improve/history' && req.method === 'GET') {
+    sendJSON(res, 200, { reports: improvementEngine.listCycleReports() });
+    return;
+  }
+
+  // POST /api/improve/extract  — Phase B: run LLM pattern extraction on a
+  // saved cycle report (default: latest) and return proposed rules. Body:
+  //   { reportFilename?: "<filename in data/improvement_history>" }
+  if (url === '/api/improve/extract' && req.method === 'POST') {
+    try {
+      const body = await readBody(req, res);
+      if (body === null) return;
+      // Pick report: explicit filename or latest.
+      let reportFilename = body && body.reportFilename;
+      if (!reportFilename) {
+        const all = improvementEngine.listCycleReports();
+        if (all.length === 0) {
+          sendJSON(res, 404, { error: 'no cycle reports found — run /api/improve/test-suite/run first' });
+          return;
+        }
+        reportFilename = all[0];
+      }
+      // Sandbox path
+      if (/[^A-Za-z0-9._\-]/.test(reportFilename) || reportFilename.indexOf('..') >= 0) {
+        sendJSON(res, 400, { error: 'invalid filename' });
+        return;
+      }
+      const filePath = path.join(__dirname, 'data', 'improvement_history', reportFilename);
+      if (!fs.existsSync(filePath)) {
+        sendJSON(res, 404, { error: 'report not found: ' + reportFilename });
+        return;
+      }
+      const report = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      console.log(`[improve] extract starting on ${reportFilename}`);
+      const t0 = Date.now();
+      const extraction = await improvementEngine.runPatternExtraction({
+        report,
+        llmCall: (sys, user) => callOpenAI(sys, user, 0.4)  // standard model — extraction needs reasoning
+      });
+      extraction.elapsedMs = Date.now() - t0;
+      extraction.sourceReport = reportFilename;
+      console.log(`[improve] extract done: ${extraction.proposedRules.length} rules proposed (${extraction.rejectedCount} rejected) in ${(extraction.elapsedMs/1000).toFixed(1)}s`);
+      sendJSON(res, 200, extraction);
+    } catch (e) {
+      console.error('[improve] extract error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // GET /api/improve/rule-schema  — returns the closed rule type schema so
+  // a UI / external tool can present what kinds of rules can be proposed.
+  if (url === '/api/improve/rule-schema' && req.method === 'GET') {
+    sendJSON(res, 200, { ruleTypes: improvementEngine.getRuleSchemaSummary() });
+    return;
+  }
+
+  // GET /api/improve/learned  — current state of learned rules (runtime
+  // and persisted). Used by the UI to display what's active.
+  if (url === '/api/improve/learned' && req.method === 'GET') {
+    sendJSON(res, 200, {
+      runtime:   pipeline.listLearnedRules(),
+      persisted: improvementEngine.loadLearnedRules()
+    });
+    return;
+  }
+
+  // Helper to build a runner closure used by trial / cycle endpoints. The
+  // runner takes { scenarioText } and returns the same shape as
+  // /api/pipeline/full (sans explanation, which we skip for speed).
+  const _buildPipelineRunner = (viewport) => async ({ scenarioText }) => {
+    const planResult = await pipeline.runPlan({
+      scenarioText,
+      llmCall:           (sys, user) => callOpenAI(sys, user, 0.3),
+      llmCallFast:       (sys, user) => callOpenAIFast(sys, user, 0.3),
+      llmCallContentBag: (sys, user) => callOpenAIContentBag(sys, user, 0.5),
+      embedCall:         callOpenAIEmbedding
+    });
+    const layoutResult = await pipeline.runComposeLayout({
+      planningPacket: planResult.planningPacket,
+      plan:           planResult.plan,
+      llmCall:        (sys, user) => callOpenAICompose(sys, user, 0.55),
+      viewport:       viewport || null,
+      scenarioText
+    });
+    const validation = pipeline.rollupValidationResults({
+      planViolations:   planResult.planViolations,
+      layoutViolations: layoutResult.violations
+    });
+    return {
+      interpretation: planResult.interpretation,
+      planningPacket: planResult.planningPacket,
+      plan:           planResult.plan,
+      uiState:        planResult.uiState,
+      layoutPlan:     layoutResult.composed.layoutPlan,
+      composerNotes:  layoutResult.composed.composerNotes,
+      validation
+    };
+  };
+
+  // POST /api/improve/trial  — run trial(s) for one or more rules. Body:
+  //   {
+  //     rules: [{ type, payload, reason?, confidence? }, ...],
+  //     baseline?: { summary: { cumulativeScore } } | null,  // optional cached baseline
+  //     persist?: boolean  // if true, accepted rules survive restart (default true)
+  //   }
+  // Returns: { results: [{ rule, accepted, baseline, trial, deltaPct, ... }], summary }
+  if (url === '/api/improve/trial' && req.method === 'POST') {
+    try {
+      const body = await readBody(req, res);
+      if (body === null) return;
+      const rules = Array.isArray(body && body.rules) ? body.rules : [];
+      if (rules.length === 0) {
+        sendJSON(res, 400, { error: 'body.rules must be a non-empty array' });
+        return;
+      }
+      const persist = body.persist !== false;  // default true
+      const runner = _buildPipelineRunner(body.viewport);
+      console.log(`[improve] trial starting: ${rules.length} rules`);
+      const t0 = Date.now();
+
+      // First baseline (cached or fresh)
+      let baseline = body.baseline || null;
+      if (!baseline) {
+        console.log(`[improve] trial: running baseline (no cache provided)`);
+        baseline = await improvementEngine.runTestSuite({ runner });
+      }
+
+      const results = [];
+      for (let i = 0; i < rules.length; i++) {
+        const rule = rules[i];
+        console.log(`[improve] trial [${i + 1}/${rules.length}] type=${rule.type}`);
+        const r = await improvementEngine.trialRule({
+          rule,
+          runner,
+          baseline,
+          pipelineModule: pipeline,
+          onProgress: ({ stage, idx, total }) => {
+            if (idx != null) console.log(`[improve]   ${stage} ${idx + 1}/${total}`);
+          }
+        });
+        // If rejected, the trialRule already reverted. If accepted, runtime
+        // still has it applied — we'll persist below.
+        results.push({
+          ruleType:   rule.type,
+          ruleId:     r.rule && r.rule.id,
+          accepted:   r.accepted,
+          baseline:   r.baseline,
+          trial:      r.trial,
+          delta:      r.delta,
+          deltaPct:   r.deltaPct,
+          threshold:  r.threshold,
+          reason:     r.reason,
+          confidence: rule.confidence
+        });
+      }
+
+      // Persist
+      const accepted = results.filter(r => r.accepted);
+      const rejected = results.filter(r => !r.accepted);
+      if (persist) {
+        if (accepted.length) {
+          improvementEngine.persistAcceptedRules(
+            accepted.map((a, i) => ({
+              rule:    rules[i],
+              baseline: a.baseline,
+              trial:    a.trial,
+              delta:    a.delta,
+              deltaPct: a.deltaPct
+            }))
+          );
+        }
+        if (rejected.length) {
+          improvementEngine.persistRejectedRules(
+            rejected.map((rj) => {
+              const idx = results.indexOf(rj);
+              return {
+                rule:     rules[idx],
+                baseline: rj.baseline,
+                trial:    rj.trial,
+                delta:    rj.delta,
+                deltaPct: rj.deltaPct,
+                reason:   rj.reason
+              };
+            })
+          );
+        }
+      }
+
+      const elapsed = Date.now() - t0;
+      console.log(`[improve] trial done: accepted=${accepted.length} rejected=${rejected.length} elapsed=${(elapsed / 1000).toFixed(1)}s`);
+      sendJSON(res, 200, {
+        results,
+        summary: {
+          total:    results.length,
+          accepted: accepted.length,
+          rejected: rejected.length,
+          baselineScore: baseline.summary.cumulativeScore,
+          finalScore:    accepted.length ? results[results.length - 1].trial : baseline.summary.cumulativeScore,
+          elapsedMs: elapsed,
+          persisted: persist
+        }
+      });
+    } catch (e) {
+      console.error('[improve] trial error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  // POST /api/improve/cycle  — Phase D: full self-improving loop.
+  //    1. Run baseline test suite
+  //    2. Run pattern extraction (LLM)
+  //    3. Trial each proposed rule
+  //    4. Persist accepted
+  //    5. Return cycle report
+  // Body: { sourceReport?: filename } (optional — if missing, runs fresh
+  // baseline). { dryRun?: boolean } — if true, doesn't persist.
+  if (url === '/api/improve/cycle' && req.method === 'POST') {
+    try {
+      const body = await readBody(req, res);
+      if (body === null) return;
+      const dryRun = !!body.dryRun;
+      const runner = _buildPipelineRunner(body.viewport);
+      console.log('[improve] CYCLE starting (dryRun=' + dryRun + ')');
+      const cycleT0 = Date.now();
+
+      // 1. Baseline
+      let baselineReport;
+      if (body.sourceReport) {
+        const filePath = path.join(__dirname, 'data', 'improvement_history', body.sourceReport);
+        if (!fs.existsSync(filePath)) {
+          sendJSON(res, 404, { error: 'source report not found: ' + body.sourceReport });
+          return;
+        }
+        baselineReport = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        console.log('[improve] cycle: using cached baseline ' + body.sourceReport);
+      } else {
+        console.log('[improve] cycle: running fresh baseline');
+        baselineReport = await improvementEngine.runTestSuite({ runner });
+        improvementEngine.saveCycleReport(baselineReport);
+      }
+      const baselineScore = baselineReport.summary.cumulativeScore;
+
+      // 2. Extract
+      console.log('[improve] cycle: extracting patterns...');
+      const extraction = await improvementEngine.runPatternExtraction({
+        report:  baselineReport,
+        llmCall: (sys, user) => callOpenAI(sys, user, 0.4)
+      });
+      console.log('[improve] cycle: ' + extraction.proposedRules.length + ' rules proposed');
+
+      // 3. Trial each
+      // Generalization knobs:
+      //   body.useVariations=true → trial scores include synthetic variants
+      //                              of each scenario (overfit guard)
+      //   body.variationCount     → how many variants per scenario (default 2)
+      const useVariations = !!body.useVariations;
+      const variationCount = body.variationCount != null ? body.variationCount : 2;
+      const trialLLM = (sys, user) => callOpenAI(sys, user, 0.5);  // for variation gen
+      const results = [];
+      for (let i = 0; i < extraction.proposedRules.length; i++) {
+        const rule = extraction.proposedRules[i];
+        console.log('[improve] cycle: trial [' + (i + 1) + '/' + extraction.proposedRules.length + '] type=' + rule.type +
+          (useVariations ? ' (with ' + variationCount + ' variations)' : ''));
+        const r = await improvementEngine.trialRule({
+          rule,
+          runner,
+          baseline: baselineReport,  // reuse same baseline for fairness
+          pipelineModule: pipeline,
+          useVariations,
+          llmCall: trialLLM,
+          variationCount
+        });
+        results.push({
+          rule,
+          accepted: r.accepted,
+          baseline: r.baseline,
+          trial:    r.trial,
+          delta:    r.delta,
+          deltaPct: r.deltaPct,
+          trainingDeltaPct:   r.trainingDeltaPct,
+          validationDeltaPct: r.validationDeltaPct,
+          hasHoldout:         r.hasHoldout,
+          reason:   r.reason
+        });
+      }
+
+      // 4. Persist
+      const accepted = results.filter(r => r.accepted);
+      const rejected = results.filter(r => !r.accepted);
+      if (!dryRun && accepted.length) improvementEngine.persistAcceptedRules(accepted);
+      if (!dryRun && rejected.length) improvementEngine.persistRejectedRules(rejected);
+
+      const elapsed = Date.now() - cycleT0;
+      const finalScore = accepted.length
+        ? Math.max(...accepted.map(a => a.trial))
+        : baselineScore;
+      const report = {
+        startedAt:      new Date(cycleT0).toISOString(),
+        elapsedMs:      elapsed,
+        dryRun,
+        baseline: {
+          score: baselineScore,
+          weightedAvgScore: baselineReport.summary.weightedAvgScore,
+          source: body.sourceReport || 'fresh'
+        },
+        extraction: {
+          analysis:      extraction.analysis,
+          proposedCount: extraction.proposedRules.length,
+          rejectedShape: extraction.rejectedCount
+        },
+        trials: results,
+        accepted: accepted.map(r => ({ id: r.rule.id, type: r.rule.type, deltaPct: r.deltaPct })),
+        rejected: rejected.map(r => ({ type: r.rule.type, deltaPct: r.deltaPct, reason: r.reason })),
+        summary: {
+          baselineScore,
+          finalScore,
+          improvement:    finalScore - baselineScore,
+          improvementPct: baselineScore !== 0 ? Math.round((finalScore - baselineScore) / Math.abs(baselineScore) * 10000) / 100 : 0,
+          acceptedCount: accepted.length,
+          rejectedCount: rejected.length
+        }
+      };
+      console.log('[improve] CYCLE done: baseline=' + baselineScore + ' final=' + finalScore +
+        ' Δ=' + (finalScore - baselineScore) + ' (' + report.summary.improvementPct + '%) ' +
+        'accepted=' + accepted.length + '/' + results.length + ' elapsed=' + (elapsed/1000).toFixed(1) + 's');
+      sendJSON(res, 200, report);
+    } catch (e) {
+      console.error('[improve] cycle error:', e.message);
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
+  if (url.startsWith('/api/improve/history/') && req.method === 'GET') {
+    try {
+      const fname = url.replace('/api/improve/history/', '');
+      // Sandboxed path: only files in HISTORY_DIR, no traversal.
+      if (/[^A-Za-z0-9._\-]/.test(fname) || fname.indexOf('..') >= 0) {
+        sendJSON(res, 400, { error: 'invalid filename' });
+        return;
+      }
+      const filePath = path.join(__dirname, 'data', 'improvement_history', fname);
+      if (!fs.existsSync(filePath)) {
+        sendJSON(res, 404, { error: 'not found' });
+        return;
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      sendJSON(res, 200, JSON.parse(content));
+    } catch (e) {
+      sendJSON(res, 500, { error: e.message });
+    }
+    return;
+  }
+
   // API routes
   if (url === '/api/agent/generate' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       console.log(`[API] Generate: "${body.prompt || body.scenario || '?'}"`);
       await handleGenerate(body, res);
     } catch (e) {
@@ -3192,7 +5186,8 @@ const server = http.createServer(async (req, res) => {
   // Streaming generate (SSE)
   if (url === '/api/agent/generate/stream' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       console.log(`[API] Generate (stream): "${(body.prompt || body.scenario || '?').substring(0, 60)}"`);
       await handleGenerateStream(body, req, res);
     } catch (e) {
@@ -3204,9 +5199,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // R4: Flow Graph parallel generation (SSE)
+  //   Classifies once → runs N per-node generators in parallel (Promise.all)
+  //   Emits: classified → node_done (×N) → flow_done
+  if (url === '/api/agent/generate/flow/stream' && req.method === 'POST') {
+    try {
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
+      console.log(`[API] Flow generate (stream): "${(body.prompt || body.scenario || '?').substring(0, 60)}"`);
+      await handleFlowGenerateStream(body, req, res);
+    } catch (e) {
+      console.error('[API] Flow stream error:', e.message);
+      try { sendJSON(res, 500, { error: e.message }); }
+      catch (_) { try { res.end(); } catch(__) {} }
+    }
+    return;
+  }
+
   if (url === '/api/agent/refine' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       console.log(`[API] Refine: "${(body.feedback || '').substring(0, 60)}"`);
       await handleRefine(body, res);
     } catch (e) {
@@ -3218,7 +5231,8 @@ const server = http.createServer(async (req, res) => {
 
   if (url === '/api/agent/critic' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       console.log(`[API] Critic: surfaceType=${(body.renderModel && body.renderModel.surfaceType) || 'unknown'}`);
       await handleCritic(body, res);
     } catch (e) {
@@ -3231,7 +5245,8 @@ const server = http.createServer(async (req, res) => {
   // Variant sync endpoint — store prompt+result per variant
   if (url === '/api/agent/variants' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       handleVariantSync(body, res);
     } catch (e) {
       sendJSON(res, 500, { error: e.message });
@@ -3249,7 +5264,8 @@ const server = http.createServer(async (req, res) => {
   // Debug endpoint — inspect extracted constraints for any prompt
   if (url === '/api/agent/constraints' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       handleConstraintExtract(body, res);
     } catch (e) {
       sendJSON(res, 500, { error: e.message });
@@ -3260,7 +5276,8 @@ const server = http.createServer(async (req, res) => {
   // Evolve: save a refinement issue
   if (url === '/api/agent/evolve' && req.method === 'POST') {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req, res);
+      if (body === null) return;  // 413 already sent
       const result = appendEvolveEntry(body);
       EVOLVE_CONSTRAINTS = loadEvolveConstraints();
       console.log(`[Evolve] Saved ${result.id}: "${(body.title || '').substring(0, 50)}" → ${EVOLVE_CONSTRAINTS ? EVOLVE_CONSTRAINTS.length : 0} total constraints`);
@@ -3288,6 +5305,7 @@ const server = http.createServer(async (req, res) => {
       status: 'ok',
       model: OPENAI_MODEL,
       mode: 'surface-grammar',
+      fallbacks: normalizer.getFallbackStats(),  // cumulative since process start
       designKB: {
         mode: 'surface-grammar',
         designSections: Object.keys(DESIGN_SECTIONS).length,
@@ -3302,26 +5320,84 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // POST to reset cumulative fallback counters (useful when starting a fresh
+  // observation window, e.g. before a batch test). No-op if already zero.
+  if (url === '/api/agent/fallbacks/reset' && req.method === 'POST') {
+    const before = normalizer.getFallbackStats();
+    normalizer.resetFallbackStats();
+    sendJSON(res, 200, { ok: true, reset: before });
+    return;
+  }
+
   // Static files — decode percent-encoded URLs so non-ASCII filenames (e.g.
   // Korean app-icons like Phone.png → %EC%A0%84%ED%99%94.png) resolve correctly.
+  // Two security checks before we hand anything to the filesystem:
+  //   1. Containment: the resolved absolute path must stay inside SAFE_ROOT.
+  //      Rejects "GET /../../etc/passwd" etc.
+  //   2. Dotfile deny: any path segment starting with "." is forbidden,
+  //      including the root (".env", ".git/", ".claude/"). Rejects
+  //      "GET /.env" which would otherwise leak the OpenAI API key.
   let decodedUrl;
   try { decodedUrl = decodeURIComponent(url); }
   catch (e) { decodedUrl = url; }
-  let filePath = path.join(__dirname, decodedUrl === '/' ? 'genui.html' : decodedUrl);
+  // Convenience aliases for dashboards (extension-less URLs):
+  //   /improve   → improve.html   (self-improvement system dashboard)
+  //   /customize → customize.html (theme dropdown + live preview)
+  let aliasedUrl = decodedUrl;
+  if (aliasedUrl === '/improve')   aliasedUrl = '/improve.html';
+  if (aliasedUrl === '/customize') aliasedUrl = '/customize.html';
+  const requested = aliasedUrl === '/' ? 'genui.html' : aliasedUrl;
+  const resolved  = path.resolve(path.join(__dirname, requested));
+  if (resolved !== path.resolve(__dirname) && !(resolved + path.sep).startsWith(SAFE_ROOT)) {
+    res.writeHead(403); res.end('Forbidden'); return;
+  }
+  const rel = path.relative(__dirname, resolved);
+  if (rel.split(path.sep).some(seg => seg.startsWith('.'))) {
+    res.writeHead(403); res.end('Forbidden'); return;
+  }
+  let filePath = resolved;
   if (!fs.existsSync(filePath)) { res.writeHead(404); res.end('Not Found'); return; }
   if (fs.statSync(filePath).isDirectory()) filePath = path.join(filePath, 'index.html');
   serveStatic(filePath, res);
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, BIND_HOST, () => {
   console.log('');
   console.log(`  \x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m`);
   console.log(`  \x1b[1m  Samsung GenUI + AI Agent Server\x1b[0m`);
   console.log(`  \x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m`);
-  console.log(`  \x1b[32m✓\x1b[0m Running on  http://localhost:${PORT}`);
-  console.log(`  \x1b[32m✓\x1b[0m Model       ${OPENAI_MODEL}`);
-  console.log(`  \x1b[32m✓\x1b[0m API Key     ${OPENAI_API_KEY.substring(0, 7)}...${OPENAI_API_KEY.slice(-4)}`);
+  console.log(`  \x1b[32m✓\x1b[0m Running on  http://${BIND_HOST === '0.0.0.0' ? 'localhost' : BIND_HOST}:${PORT}${BIND_HOST === '127.0.0.1' ? '  (loopback-only)' : ''}`);
+  console.log(`  \x1b[32m✓\x1b[0m Model       ${OPENAI_MODEL}  \x1b[2m(select)\x1b[0m`);
+  if (OPENAI_MODEL_FAST !== OPENAI_MODEL) {
+    console.log(`  \x1b[32m✓\x1b[0m Model FAST  ${OPENAI_MODEL_FAST}  \x1b[2m(interpret merged)\x1b[0m`);
+  }
+  if (OPENAI_MODEL_COMPOSE !== OPENAI_MODEL) {
+    console.log(`  \x1b[32m✓\x1b[0m Model COMP  ${OPENAI_MODEL_COMPOSE}  \x1b[2m(compose)\x1b[0m`);
+  }
+  if (OPENAI_MODEL_EXPLAIN !== OPENAI_MODEL && OPENAI_MODEL_EXPLAIN !== OPENAI_MODEL_FAST) {
+    console.log(`  \x1b[32m✓\x1b[0m Model EXPL  ${OPENAI_MODEL_EXPLAIN}  \x1b[2m(explain)\x1b[0m`);
+  }
+  if (OPENAI_MODEL_CONTENT_BAG !== OPENAI_MODEL) {
+    console.log(`  \x1b[32m✓\x1b[0m Model BAG   ${OPENAI_MODEL_CONTENT_BAG}  \x1b[2m(stage 3.5 content bag, parallel)\x1b[0m`);
+  }
+  console.log(`  \x1b[32m✓\x1b[0m API Key     loaded (***${OPENAI_API_KEY.slice(-4)})`);
   console.log(`  \x1b[32m✓\x1b[0m Design KB   constraint-extraction mode`);
+  {
+    const ragOn = (process.env.PIPELINE_RAG || 'off').toLowerCase() === 'on';
+    const ragK  = parseInt(process.env.PIPELINE_RAG_K || '30', 10);
+    console.log(`  \x1b[32m✓\x1b[0m Stage 3 RAG ${ragOn ? `\x1b[33mON\x1b[0m  (top-${ragK} from 92, +~400ms/call)` : 'off  \x1b[2m(default — speed-first; 10-item curated vocab)\x1b[0m'}`);
+  }
+  console.log(`  \x1b[32m✓\x1b[0m Telemetry   fallback counters enabled${process.env.LOG_FALLBACKS === '1' ? ' (LOG_FALLBACKS=1, stderr)' : ''}`);
+  {
+    const suite = improvementEngine.getTestSuite();
+    const n = suite && suite.scenarios ? suite.scenarios.length : 0;
+    // Rehydrate persisted learned rules into pipeline runtime — keeps the
+    // self-improving system coherent across restarts. Without this, every
+    // accepted rule would evaporate when the server bounces.
+    const rehydrated = improvementEngine.rehydrateLearnedRules(pipeline);
+    console.log(`  \x1b[32m✓\x1b[0m Improve     test-suite ${n} scenarios · ${rehydrated} learned rules rehydrated → POST /api/improve/cycle`);
+  }
+  console.log(`  \x1b[32m✓\x1b[0m Limits      body<=${(MAX_BODY_BYTES/1024).toFixed(0)}KB  llm<=${MAX_CONCURRENT_LLM} concurrent / ${MAX_LLM_PER_MIN} per min`);
   console.log(`  \x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m`);
   console.log('');
 });

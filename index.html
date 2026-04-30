@@ -622,55 +622,213 @@
   </div>
 </section>
 
-<!-- FULL SPEC PAGES -->
+<!-- FULL SPEC PAGES — consolidated tab view.
+     Previous version had 4 separate cards that linked OUT to standalone
+     HTML files; switching contexts hurt access. Now: inline tabs that
+     load each spec page into an iframe, with a light/dark toggle that
+     swaps preview.html ↔ preview-dark.html for the Tokens tab. The
+     iframe is lazy-loaded — only the active tab's frame mounts, so the
+     landing page stays fast. An "Open in new tab" link is kept for
+     full-window viewing. -->
+<style>
+  .specs-tabs {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 8px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .specs-tab {
+    padding: 8px 16px; border-radius: 10px;
+    background: transparent; color: var(--text-2);
+    border: 1px solid transparent;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .specs-tab:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .specs-tab.active {
+    background: rgba(3, 129, 254, 0.18);
+    color: #fff;
+    border-color: rgba(3, 129, 254, 0.4);
+  }
+  .specs-tab .count {
+    font-size: 11px; color: var(--text-3);
+    margin-left: 4px;
+  }
+  .specs-tab.active .count { color: rgba(255,255,255,0.7); }
+
+  .specs-spacer { flex: 1; min-width: 16px; }
+
+  .specs-theme-toggle {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px; border-radius: 10px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border);
+    transition: opacity 0.18s;
+  }
+  .specs-theme-toggle.disabled { opacity: 0.35; pointer-events: none; }
+  .specs-theme-toggle button {
+    padding: 6px 12px; border-radius: 8px;
+    background: transparent; color: var(--text-2);
+    border: 0; font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .specs-theme-toggle button:hover { color: var(--text); }
+  .specs-theme-toggle button.active {
+    background: rgba(255,255,255,0.10); color: #fff;
+  }
+  .specs-theme-toggle svg {
+    width: 13px; height: 13px; opacity: 0.85;
+  }
+
+  .specs-newtab {
+    padding: 6px 12px; border-radius: 8px;
+    background: transparent; color: var(--text-3);
+    border: 1px solid var(--glass-border);
+    font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+    text-decoration: none;
+    transition: color 0.15s, border-color 0.15s;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .specs-newtab:hover { color: var(--text); border-color: rgba(255,255,255,0.25); }
+
+  .specs-frame-wrap {
+    position: relative;
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    overflow: hidden;
+    background: #ffffff;   /* default light bg behind frame; dark mode flips */
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+  }
+  .specs-frame-wrap.dark { background: #0a0a0a; }
+  .specs-frame {
+    width: 100%;
+    height: 78vh;
+    min-height: 600px;
+    border: 0; display: block;
+    background: transparent;
+  }
+  .specs-frame-status {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-3); font-size: 13px;
+    pointer-events: none;
+    background: rgba(10,10,10,0.85);
+    transition: opacity 0.2s;
+  }
+  .specs-frame-status.hidden { opacity: 0; pointer-events: none; }
+</style>
+
 <section class="section" id="pages">
   <div class="section-label">Full Specifications</div>
   <h2 class="section-title">Explore</h2>
-  <p class="section-desc">Deep-dive into every token, component, and animation in the system.</p>
+  <p class="section-desc">Deep-dive into every token, component, and animation in the system. Switch tabs to browse without leaving this page; toggle Light/Dark for the Tokens view.</p>
 
-  <div class="grid grid-4">
-    <a class="page-card" href="preview.html">
-      <div class="page-card-preview" style="background:linear-gradient(135deg, #f7f7f7, #e8e8e8);">
-        <div class="page-card-arrow">&rarr;</div>
-        <div style="font-size:14px; font-weight:700; color:#252525;">Light Mode</div>
-      </div>
-      <div class="page-card-body">
-        <h3>Design Tokens (Light)</h3>
-        <p>Colors, typography, buttons, cards, spacing, radius, elevation</p>
-      </div>
-    </a>
-    <a class="page-card" href="preview-dark.html">
-      <div class="page-card-preview" style="background:linear-gradient(135deg, #1a1a1a, #0a0a0a);">
-        <div class="page-card-arrow">&rarr;</div>
-        <div style="font-size:14px; font-weight:700; color:#fff;">Dark Mode</div>
-      </div>
-      <div class="page-card-body">
-        <h3>Design Tokens (Dark)</h3>
-        <p>Same tokens, dark surface variants</p>
-      </div>
-    </a>
-    <a class="page-card" href="components.html">
-      <div class="page-card-preview" style="background:linear-gradient(135deg, #0072DE, #3E91FF);">
-        <div class="page-card-arrow">&rarr;</div>
-        <div style="font-size:14px; font-weight:700; color:#fff;">22 Components</div>
-      </div>
-      <div class="page-card-body">
-        <h3>Component Library</h3>
-        <p>Buttons, FAB, switches, tabs, dialogs, Floating Pill Tab Bar, Now Bar, Glass tiles</p>
-      </div>
-    </a>
-    <a class="page-card" href="motion.html">
-      <div class="page-card-preview" style="background:linear-gradient(135deg, #64e9e3, #9ffac7);">
-        <div class="page-card-arrow">&rarr;</div>
-        <div style="font-size:14px; font-weight:700; color:#0a0a0a;">Interactive Demos</div>
-      </div>
-      <div class="page-card-body">
-        <h3>Motion Library</h3>
-        <p>7 easing curves, 15 new animations, unlock styles, ambient scroll</p>
-      </div>
+  <div class="specs-tabs" role="tablist">
+    <button class="specs-tab active" data-tab="tokens"     role="tab">Design Tokens</button>
+    <button class="specs-tab"        data-tab="components" role="tab">Components<span class="count">·22</span></button>
+    <button class="specs-tab"        data-tab="motion"     role="tab">Motion</button>
+
+    <div class="specs-spacer"></div>
+
+    <!-- Theme toggle — only meaningful for the Tokens tab. Disabled
+         (visually muted) when other tabs are active. -->
+    <div class="specs-theme-toggle" id="specsThemeToggle">
+      <button data-theme="light" class="active" title="Light tokens">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Light
+      </button>
+      <button data-theme="dark" title="Dark tokens">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" fill="currentColor"/></svg>
+        Dark
+      </button>
+    </div>
+
+    <a class="specs-newtab" id="specsOpenNewTab" href="preview.html" target="_blank" rel="noopener">
+      Open in new tab
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M14 5h5v5M19 5L10 14M5 5h6v2H7v10h10v-4h2v6H5z" fill="currentColor"/></svg>
     </a>
   </div>
+
+  <div class="specs-frame-wrap" id="specsFrameWrap">
+    <iframe id="specsFrame" class="specs-frame" src="" loading="lazy" title="Specs preview"></iframe>
+    <div class="specs-frame-status" id="specsFrameStatus">Loading…</div>
+  </div>
 </section>
+
+<script>
+(function () {
+  // Tab → URL map. Tokens has two variants (light/dark) controlled by the
+  // theme toggle. Components and Motion are theme-agnostic.
+  var TAB_URLS = {
+    tokens: { light: 'preview.html', dark: 'preview-dark.html' },
+    components: 'components.html',
+    motion: 'motion.html'
+  };
+  var currentTab = 'tokens';
+  var currentTheme = 'light';
+
+  var frame  = document.getElementById('specsFrame');
+  var status = document.getElementById('specsFrameStatus');
+  var wrap   = document.getElementById('specsFrameWrap');
+  var openLink = document.getElementById('specsOpenNewTab');
+  var themeToggle = document.getElementById('specsThemeToggle');
+
+  function urlFor(tab, theme) {
+    var entry = TAB_URLS[tab];
+    if (typeof entry === 'string') return entry;
+    return entry[theme] || entry.light;
+  }
+
+  function loadFrame() {
+    var url = urlFor(currentTab, currentTheme);
+    status.classList.remove('hidden');
+    status.textContent = 'Loading ' + url + '…';
+    frame.src = url;
+    openLink.href = url;
+    // Tokens tab → wrap bg matches its theme so the iframe edges blend.
+    wrap.classList.toggle('dark', currentTab === 'tokens' && currentTheme === 'dark');
+    // Theme toggle disabled when not on Tokens tab.
+    themeToggle.classList.toggle('disabled', currentTab !== 'tokens');
+  }
+
+  frame.addEventListener('load', function () {
+    status.classList.add('hidden');
+  });
+  frame.addEventListener('error', function () {
+    status.textContent = 'Failed to load.';
+  });
+
+  // Tab clicks
+  document.querySelectorAll('.specs-tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.specs-tab').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentTab = btn.dataset.tab;
+      loadFrame();
+    });
+  });
+
+  // Theme toggle (Tokens-only)
+  themeToggle.querySelectorAll('button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (themeToggle.classList.contains('disabled')) return;
+      themeToggle.querySelectorAll('button').forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentTheme = btn.dataset.theme;
+      loadFrame();
+    });
+  });
+
+  // Initial load
+  loadFrame();
+})();
+</script>
 
 <!-- FOOTER -->
 <footer class="footer">

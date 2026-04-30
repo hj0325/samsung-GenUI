@@ -1407,16 +1407,28 @@ function _lockScreenContext(uiState) {
   var theme = (uiState && uiState.theme) || 'dark';
 
   var nowBarType = null;
-  if (tagSet.has('now-bar:media') || tagSet.has('media-playing')) nowBarType = 'media';
+  // Honor direct uiState.nowBarType (agent path passes this when the AI
+  // explicitly chose a now-bar variant — deterministic, no random).
+  if (uiState && uiState.nowBarType) {
+    nowBarType = uiState.nowBarType;
+  }
+  else if (tagSet.has('now-bar:media') || tagSet.has('media-playing')) nowBarType = 'media';
   else if (tagSet.has('now-bar:charging') || tagSet.has('charging')) nowBarType = 'charging';
   else if (tagSet.has('now-bar:timer')) nowBarType = 'timer';
   else if (tagSet.has('now-bar:voice') || interaction === 'driving') nowBarType = 'single-line';
   else if (tagSet.has('now-bar:delivery') || tagSet.has('now-bar:eta') ||
            tagSet.has('now-bar')) nowBarType = 'dual-line';
+  else if (tagSet.has('no-now-bar') || tagSet.has('bare-lock')) {
+    // EXPLICIT SUPPRESSION: scenario asked for a clean / bare lock screen
+    // with no ambient activity widget. Honors the user intent over the
+    // demo-variety default below.
+    nowBarType = null;
+  }
   else {
-    // No explicit tag → randomly pick one of the 3 Figma Now Bar variants
-    // (Media / Timer / Charging) per lock-screen generation so the lower
-    // cluster feels fresh. Matches Figma 752:7978 / 752:7988 / 752:7994.
+    // DEFAULT for Lock screen: Now Bar is a One UI staple element of the
+    // lower cluster, so when the scenario doesn't specify a variant we
+    // pick one at random for visual variety. To suppress it explicitly,
+    // emit contextTag "no-now-bar" or "bare-lock" from the interpreter.
     var RANDOM_POOL = ['media', 'timer', 'charging'];
     nowBarType = RANDOM_POOL[Math.floor(Math.random() * RANDOM_POOL.length)];
   }
@@ -1426,6 +1438,14 @@ function _lockScreenContext(uiState) {
     overlay: overlay, theme: theme, tags: tagSet,
     hasNowBar: nowBarType !== null,
     nowBarType: nowBarType,
+    // Pass AI-authored now-bar content through so _lockScreenVariant can
+    // substitute it for the randomized SONGS preset. All optional — when
+    // absent, classic demo behavior (random song) kicks in.
+    nowBarTitle:   (uiState && uiState.nowBarTitle)   || null,
+    nowBarArtist:  (uiState && uiState.nowBarArtist)  || null,
+    nowBarMarquee: (uiState && uiState.nowBarMarquee) || null,
+    nowBarPercent: (uiState && uiState.nowBarPercent != null) ? uiState.nowBarPercent : null,
+    nowBarLabel:   (uiState && uiState.nowBarLabel)   || null,
     canShowWidgets: attn !== 'glanceable' && density !== 'compressed' && interaction !== 'driving',
     canShowShortcuts: overlay === 'none' && attn !== 'deep-focus',
     canShowDateRow: attn !== 'glanceable',
@@ -1558,16 +1578,28 @@ function _lockScreenVariant(componentId, ctx, layout) {
   if (componentId === 'status-bar.default')
     return { theme: ctx.theme, fontSize: layout.typeScale.small };
   if (componentId.indexOf('now-bar.') === 0) {
-    // Map ctx.nowBarType → Figma atomic variant payload. Each type has
-    // multiple alternative content presets which are shuffled on every
-    // generation so the lock-screen now-bar feels fresh.
+    // Map ctx.nowBarType → Figma atomic variant payload. When the agent
+    // path has supplied AI-authored content (ctx.nowBarTitle / Artist /
+    // Marquee / Percent / Label), use it directly instead of picking
+    // from the random SONGS list — that way the canonical now-bar on
+    // the Lock scene shows "Midnight City · M83" (AI's song) instead
+    // of a randomized "Bad Guy · Billie Eilish".
     var t = ctx.nowBarType || 'timer';
-    // Accept legacy 'dual-line' / 'single-line' as 'timer'
     if (t === 'dual-line' || t === 'single-line') t = 'timer';
 
     function _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
     if (t === 'media') {
+      // If the agent supplied song data, honor it verbatim.
+      if (ctx.nowBarTitle || ctx.nowBarMarquee) {
+        var mTitle   = ctx.nowBarTitle || 'Now playing';
+        var mArtist  = ctx.nowBarArtist || null;
+        var mMarquee = ctx.nowBarMarquee
+          || [mTitle, mArtist].filter(Boolean).join(' \u00B7 ')
+          || mTitle;
+        return { type: 'media', title: mTitle, artist: mArtist, marquee: mMarquee };
+      }
+      // Otherwise random preset (classic Scene/Lock demo behavior).
       var SONGS = [
         { title: 'Never Gonna Give You Up', marquee: 'Never Gonna Give You Up \u00B7 Rick Astley (1987)' },
         { title: 'Bohemian Rhapsody',       marquee: 'Bohemian Rhapsody \u00B7 Queen (1975)' },
@@ -1582,11 +1614,14 @@ function _lockScreenVariant(componentId, ctx, layout) {
       return { type: 'media', title: song.title, marquee: song.marquee };
     }
     if (t === 'charging') {
-      // Fixed at 69% per Figma 752:7994 spec — matches the reference
-      // charging state exactly (no randomization for this variant).
-      return { type: 'charging', percent: 69 };
+      // Honor AI-supplied percent, else Figma-spec 69%.
+      var pct = ctx.nowBarPercent != null ? ctx.nowBarPercent : 69;
+      return { type: 'charging', percent: pct };
     }
-    // timer (default) — live counter ticks every sec from 00:00:00
+    // timer (default) — AI's label wins, else live counter from 00:00:00
+    if (ctx.nowBarLabel) {
+      return { type: 'timer', label: ctx.nowBarLabel, icon: 'stopwatch', live: false };
+    }
     return { type: 'timer', label: '00:00:00', icon: 'stopwatch', live: true };
   }
   if (componentId === 'lock-screen.shortcut-circle:phone')
@@ -1594,15 +1629,18 @@ function _lockScreenVariant(componentId, ctx, layout) {
   if (componentId === 'lock-screen.shortcut-circle:camera')
     return { icon: 'camera' };
   if (componentId === 'lock-screen.clock') {
-    // Google "Space Mono" — monospace with geometric digit shapes. Loaded
-    // via <link> in genui.html (preconnect + preload for fast first paint).
-    // Platform monospace stack is the fallback while the web font loads.
+    // Google "Space Grotesk" — display-geometric sans with bold digit
+    // shapes. Paired with Inter for rest of the UI. Loaded via <link>
+    // in genui.html. Inter is the structural fallback while the web
+    // font loads (keeps the clock readable on first paint without a
+    // FOUT jump). Earlier revisions used Space Mono; switched to
+    // Space Grotesk to match the requested Inter + Space Grotesk pair.
     return {
       fontSize: ctx.attn === 'glanceable'
         ? Math.round(layout.typeScale.hero * 1.15)
         : layout.typeScale.hero,
       stack: true,
-      fontFamily: "'Space Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+      fontFamily: "'Space Grotesk', Inter, system-ui, sans-serif"
     };
   }
   if (componentId === 'lock-screen.weather-date')
@@ -1630,7 +1668,7 @@ function _lockScreenTokens(ctx, layout) {
     },
     // Typography — EVERY size comes from the type scale, not from Figma constants.
     typography: {
-      clock:     { family: 'SamsungNrDefault-V6, Inter',     size: layout.typeScale.hero },
+      clock:     { family: "'Space Grotesk', Inter",         size: layout.typeScale.hero },
       date:      { family: 'One UI Sans APP VF, Inter',      size: layout.typeScale.title },
       statusBar: { family: 'One UI Sans APP VF, Inter',      size: layout.typeScale.small, weight: 700 },
       hint:      { family: 'One UI Sans APP VF, Inter',      size: layout.typeScale.body },
@@ -2963,7 +3001,7 @@ if (typeof window !== 'undefined' && !DESIGN_RULES) {
 var FALLBACK_RULES = {
   typography: {
     family: { system: "'One UI Sans APP VF', Inter, sans-serif",
-              clock:  "'SamsungNrDefault-V6', Inter, sans-serif" },
+              clock:  "'Space Grotesk', Inter, sans-serif" },
     weight: { regular: 400, medium: 500, semibold: 600, bold: 700 },
     size:   { caption: 12, label: 14, body: 15, title: 16, heading: 18 },
     color:  { primary: '#FFFFFF', secondary: '#CFCCCF', statusBar: 'rgba(255,255,255,0.8)' }

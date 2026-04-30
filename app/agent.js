@@ -198,6 +198,82 @@ const AgentAPI = {
     return finalResponse;
   },
 
+  // R4: Flow Graph streaming generate. Subscribes to SSE events emitted by
+  // /api/agent/generate/flow/stream:
+  //   onClassified({ …classification, flowPlan: { nodes, edges } })
+  //   onNodeDone({ nodeId, nodeKind, nodeIntent, nodeIndex, renderModel, … })  ×N
+  //   onFlowDone({ sessionId, nodes:[…], edges:[…], totalElapsedMs })
+  //   onError({ message })
+  //
+  // Resolves with the final flow_done payload.
+  //
+  // NOTE: this bypasses _promptCache on purpose — flow graphs are
+  // higher-order and we don't yet fingerprint them correctly. The single-
+  // screen path remains cached unchanged.
+  async generateFlowStream(payload, handlers) {
+    handlers = handlers || {};
+    const base = this._getBase();
+    const response = await fetch(base + '/api/agent/generate/flow/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || `Flow stream error: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalFlow = null;
+    let streamError = null;
+
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+
+      let frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+
+      for (const frame of frames) {
+        if (!frame.trim()) continue;
+        let event = 'message';
+        let dataStr = '';
+        const lines = frame.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('event:')) event = line.slice(6).trim();
+          else if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+        }
+        if (!dataStr) continue;
+        let data;
+        try { data = JSON.parse(dataStr); } catch (e) { continue; }
+
+        switch (event) {
+          case 'classified':
+            if (handlers.onClassified) handlers.onClassified(data);
+            break;
+          case 'node_done':
+            if (handlers.onNodeDone) handlers.onNodeDone(data);
+            break;
+          case 'flow_done':
+            finalFlow = data;
+            if (handlers.onFlowDone) handlers.onFlowDone(data);
+            break;
+          case 'error':
+            streamError = data;
+            if (handlers.onError) handlers.onError(data);
+            break;
+        }
+      }
+    }
+
+    if (streamError) throw new Error(streamError.message || 'Flow stream error');
+    if (!finalFlow) throw new Error('Flow stream ended without flow_done');
+    return finalFlow;
+  },
+
   async refineUI(payload) {
     return this._post('/api/agent/refine', payload);
   },
@@ -458,9 +534,45 @@ function _hFor(role, comp) {
 }
 
 // Attach _rect + _emphasis to a component spec.
+// Atomic roles that have a CANONICAL fixed size (pulled from the Figma
+// Lock/Notif/QS reference frames). When the dispatcher tries to place
+// one of these in a wider layout zone, we re-size to the canonical
+// dimensions and CENTER horizontally — otherwise the now-bar, etc.,
+// gets stretched to the full interaction-zone width (415px) leaving
+// ugly empty margins inside the 247-wide pill. Entries are matched
+// by role AND (optionally) by variant.type, because e.g. now-bar's
+// media/timer/charging variants all share the same 247×64 hull.
+const CANONICAL_ROLE_SIZES = {
+  // now-bar pill: 247×64, aligned to canonical Figma (752:7978 / 7988 / 7994).
+  'now-bar':        { w: 247, h: 64 },
+  // Lock screen shortcut circles: exact 47×47.
+  'shortcutLeft':   { w: 47,  h: 47 },
+  'shortcutRight':  { w: 47,  h: 47 },
+  // Canonical lock atomics (in case the dispatcher tries to place them).
+  'lockIndicator':  { w: 24,  h: 24 },
+  'weatherDate':    { w: 192, h: 20 },
+  'clock':          { w: 192, h: 176 },
+  'gestureBar':     { w: 451, h: 24 }
+};
+
 function _place(comp, rect, emphasis) {
+  // Apply canonical size override if this role has one. We preserve the
+  // rect's vertical anchor (y) so the dispatcher's stacking order is
+  // respected, but constrain width/height to the canonical Figma size
+  // and re-center horizontally within the original rect. Components
+  // without a canonical size fill the rect as before.
+  const canonical = CANONICAL_ROLE_SIZES[comp.role];
+  let finalRect = rect;
+  if (canonical && rect && rect.w > canonical.w) {
+    finalRect = {
+      x: rect.x + Math.round((rect.w - canonical.w) / 2),
+      y: rect.y,
+      w: canonical.w,
+      h: Math.min(rect.h, canonical.h)
+    };
+  }
   return Object.assign({}, comp, {
-    _rect: rect,
+    _rect: finalRect,
     _emphasis: emphasis || null
   });
 }
@@ -667,10 +779,117 @@ function _layoutDefaultStack(aiComponents, z, mustShow) {
   return placed;
 }
 
+// ---------------------------------------------------------------------
+//  MIXED WIDTH PACKER — honors per-component variant.width
+//  ---------------------------------------------------------------------
+//  The AI can tag each focus-block / card / info-tile with:
+//     variant.width = "full"  → spans the full row (1-col)
+//     variant.width = "half"  → half-width, pairs with the next half
+//     (omitted)               → inherit from role default (see below)
+//
+//  Packer walks the component list top-to-bottom, row by row:
+//   • If current item is "half" and the NEXT is also "half" → place
+//     them side-by-side with a 10px gap, row height = max(h1,h2).
+//   • Otherwise → full-width row, item gets the whole z.w.
+//  This lets a single screen mix a 1-col hero on top with a 2-col
+//  pair below (or vice versa) — designer-level flexibility.
+// ---------------------------------------------------------------------
+const _ROLE_DEFAULT_WIDTH = {
+  'focus-block':        'full',  // default: full-width editorial card
+  'notif-card':         'full',
+  'notif-card-ai':      'full',
+  'paragraph':          'full',
+  'media-card':         'full',
+  'media-half':         'half',
+  'focus-block-group':  'full',  // renders its own internal grid
+  'information_glance_tile': 'half',  // semantic id (pre-resolve) — also covered post-resolve
+  // Small chrome-ish items stay full by default (row packer keeps them solo).
+  'progress-track':     'full'
+};
+
+function _resolveWidthHint(c) {
+  const v = c && c.variant || {};
+  // Explicit hint wins. Accept 'full' or 'half'; anything else → role default.
+  if (v.width === 'full' || v.width === 'half') return v.width;
+  // Semantic-id fallback (semantic may resolve to a generic atomic role).
+  const semDef = c && c._semanticId && _ROLE_DEFAULT_WIDTH[c._semanticId];
+  if (semDef) return semDef;
+  return _ROLE_DEFAULT_WIDTH[c && c.role] || 'full';
+}
+
+function _layoutMixed(aiComponents, z, mustShow) {
+  const placed = [];
+  const colGap = 10;
+  const rowGap = 12;
+  const halfW  = Math.floor((z.w - colGap) / 2);
+
+  let y = z.y;
+  let i = 0;
+  while (i < aiComponents.length) {
+    const c  = aiComponents[i];
+    const wH = _resolveWidthHint(c);
+    const h  = _hFor(c.role, c);
+    const remaining = (z.y + z.h) - y;
+    if (remaining < h + 10) break;
+    const emph = _isMustShow(c.role, mustShow) ? 'must' : 'normal';
+
+    // Try to pair two half-width items into one row.
+    if (wH === 'half' && i + 1 < aiComponents.length) {
+      const next  = aiComponents[i + 1];
+      const nextH = _resolveWidthHint(next);
+      if (nextH === 'half') {
+        const rowH = Math.max(h, _hFor(next.role, next));
+        if (remaining >= rowH + 10) {
+          placed.push(_place(c,
+            { x: z.x,                 y: y, w: halfW, h: rowH },
+            emph));
+          const nextEmph = _isMustShow(next.role, mustShow) ? 'must' : 'normal';
+          placed.push(_place(next,
+            { x: z.x + halfW + colGap, y: y, w: halfW, h: rowH },
+            nextEmph));
+          y += rowH + rowGap;
+          i += 2;
+          continue;
+        }
+      }
+    }
+
+    // Unpaired half (odd count) renders as a centered half-width card,
+    // not stretched full-width — looks intentional instead of orphaned.
+    if (wH === 'half') {
+      placed.push(_place(c,
+        { x: z.x + Math.floor((z.w - halfW) / 2), y: y, w: halfW, h: h },
+        emph));
+    } else {
+      placed.push(_place(c,
+        { x: z.x, y: y, w: z.w, h: h },
+        emph));
+    }
+    y += h + rowGap;
+    i += 1;
+  }
+  return placed;
+}
+
+// True when the AI has explicitly tagged any component with a width hint,
+// signaling "I'm designing the layout, let me control it".
+function _hasExplicitWidthHint(aiComponents) {
+  return (aiComponents || []).some(c => {
+    const w = c && c.variant && c.variant.width;
+    return w === 'full' || w === 'half';
+  });
+}
+
 // Main dispatcher.
 function _layoutForPurpose(purposeType, aiComponents, interactionZone, mustShowList) {
   const z = interactionZone;
   const mustShow = Array.isArray(mustShowList) ? mustShowList : [];
+  // If the AI has set explicit widths, honor its layout choices verbatim
+  // via the mixed packer — no purpose-based override. This is the
+  // "designer-driven" path where 1-col hero + 2-col pair can coexist.
+  if (_hasExplicitWidthHint(aiComponents)) {
+    return _layoutMixed(aiComponents, z, mustShow);
+  }
   switch (purposeType) {
     case 'focus_protection':         return _layoutHeroSingle(aiComponents, z, mustShow);
     case 'context_reconstruction':   return _layoutSummaryGrid(aiComponents, z, mustShow);
@@ -776,6 +995,211 @@ const RenderEngine = {
     });
   },
 
+  // ────────────────────────────────────────────────────────────────
+  //  LOCKSCREEN — render Scene/Lock as base, overlay AI content
+  // ────────────────────────────────────────────────────────────────
+  //  Strategy: instead of duplicating the canonical Lock plan in
+  //  composeSurfacePlan + hand-matching every atomic's position +
+  //  font + layout, we just REUSE the exact same renderFromRules()
+  //  path that "Screens > Lock" uses. Everything the canned Scene
+  //  gets, the AI path gets.
+  //
+  //  After the base renders, we scan AI's components for anything
+  //  that's NOT already part of the canonical Lock set (lock-clock /
+  //  weather-date / lock-indicator / shortcuts / gesture-bar, etc.)
+  //  and append them as absolutely-positioned overlays inside the
+  //  interaction zone (below the clock, above the shortcut row).
+  //
+  //  AI can also influence canonical atomics by passing hints via
+  //  its components — e.g. a now-bar with variant.type=media tells
+  //  the Lock rules to pick the media preset instead of randomizing.
+  _renderLockscreenWithAIOverlay(renderModel) {
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return;
+
+    const aiComps = (renderModel.components || []).filter(Boolean);
+
+    // Extract hints that should steer the canonical Lock render so
+    // AI-authored content (song title, artist, marquee, timer time,
+    // charging percent) reaches the canonical Scene/Lock atomics
+    // instead of being duplicated as an overlay below the canonical
+    // now-bar. Without this, the user sees TWO now-bars: canonical's
+    // randomized "Bad Guy · Billie Eilish" + AI's "Midnight City · M83".
+    const uiState = {
+      overlayType: 'none',
+      attentionMode: 'focused',
+      interactionMode: 'touch',
+      contextTags: []
+    };
+    const aiNowBar = aiComps.find(c => c.role === 'now-bar' || c.role === 'nowBar');
+    if (aiNowBar) {
+      const v = (aiNowBar.variant || {});
+      const ct = (aiNowBar.content || {});
+      const type = v.type || ct.type || 'media';
+      uiState.nowBarType = type;
+      uiState.contextTags.push('now-bar:' + type);
+      // Merge AI song/timer/charging content into the uiState so the
+      // canonical _lockScreenVariant picks it up instead of randomizing.
+      uiState.nowBarTitle   = v.title   || ct.title   || v.song   || ct.song   || null;
+      uiState.nowBarArtist  = v.artist  || ct.artist  || null;
+      uiState.nowBarMarquee = v.marquee || ct.marquee || null;
+      uiState.nowBarPercent = v.percent != null ? v.percent
+                          : ct.percent != null ? ct.percent : null;
+      uiState.nowBarLabel   = v.label   || ct.label   || ct.time || null;
+    }
+
+    // 1. Paint the canonical Scene/Lock into #canvas.
+    const ok = window.renderFromRules('lock', uiState);
+    if (ok === false) {
+      throw new Error('renderFromRules("lock") returned false');
+    }
+
+    // 2. Identify which AI components belong to canonical Lock atomics
+    //    (they're already rendered by the rules-renderer — we just
+    //    merge their CONTENT into the existing DOM nodes) vs. which
+    //    are pure overlays (new content to append).
+    const CANONICAL_LOCK_ROLES = new Set([
+      'clock', 'lock-clock', 'lock-time',
+      'weatherDate', 'weather-date',
+      'lockIndicator', 'lock-indicator',
+      'shortcutLeft', 'shortcutRight', 'lock-shortcuts',
+      'gestureBar', 'unlock-hint',
+      'status-bar', 'statusBar',
+      // now-bar is a SINGLETON on lockscreen: the canonical Scene/Lock
+      // already renders one (randomized song/timer/charging). When the
+      // AI emits a now-bar, we MERGE its content (title / artist /
+      // marquee / type) into the canonical slot — never append a
+      // second one. Both casings listed so kebab-case AI emissions
+      // and camelCase canonical slots alias correctly.
+      'nowBar', 'now-bar',
+      // Same rule for progress-track: the canonical Lock may include
+      // one paired with the now-bar; AI's progress emissions merge in.
+      'progress-track', 'progressTrack'
+    ]);
+    const overlays = [];
+    aiComps.forEach(c => {
+      if (!c.role) return;
+      if (CANONICAL_LOCK_ROLES.has(c.role)) {
+        // Merge AI-supplied content into the canonical DOM node.
+        this._mergeAIContentIntoCanonicalLockAtom(c);
+      } else {
+        overlays.push(c);
+      }
+    });
+
+    // 3. Overlay the AI's contextual components in the INTERACTION
+    //    zone (below the clock). Uses the same purpose-aware layout
+    //    dispatcher that non-lockscreen surfaces use, but constrained
+    //    to a safe y-range (~y=440 → y=840 on a 978-tall canvas) so
+    //    overlays never collide with the clock above or the shortcut
+    //    row below.
+    if (overlays.length) {
+      this._appendLockscreenOverlays(overlays, renderModel);
+    }
+  },
+
+  // Merge AI-emitted content into an already-rendered canonical Lock
+  // atomic. E.g. AI emits weather-date with condition='Clear' temp='68°'
+  // → the existing .rules-item[data-role="weatherDate"] DOM node gets
+  // its innerHTML re-rendered via renderAtomicForRole with the merged
+  // variant. This lets AI customize the base (e.g. "Rain tonight · 52°")
+  // without redrawing the entire lockscreen.
+  _mergeAIContentIntoCanonicalLockAtom(aiComp) {
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return;
+    // now-bar and progress-track are handled upstream via uiState hints
+    // (_renderLockscreenWithAIOverlay populates uiState.nowBarTitle /
+    // Artist / Marquee / Percent / Type so the canonical rules-renderer
+    // picks them up). Re-rendering them here via renderAtomicForRole
+    // would replace the canonical GalaxyNowBar styling with the simpler
+    // surface-layout kebab-case version — off-brand. Skip.
+    if (aiComp.role === 'now-bar' || aiComp.role === 'nowBar' ||
+        aiComp.role === 'progress-track' || aiComp.role === 'progressTrack') {
+      return;
+    }
+    // Canonical role aliases — same as agent.js Pass 1 merge.
+    const ROLE_ALIASES = {
+      'lock-clock':      'clock',
+      'lock-time':       'clock',
+      'lock-indicator':  'lockIndicator',
+      'weather-date':    'weatherDate',
+      'unlock-hint':     'gestureBar',
+      'lock-shortcuts':  'shortcutLeft',
+      'status-bar':      'statusBar'
+    };
+    const targetRole = ROLE_ALIASES[aiComp.role] || aiComp.role;
+    // rules-renderer uses either canvas._rulesInner or canvas itself
+    const host = canvas._rulesInner || canvas;
+    const node = host.querySelector('[data-role="' + targetRole + '"]');
+    if (!node || typeof window.renderAtomicForRole !== 'function') return;
+
+    // Rebuild the atom using the merged variant (canonical defaults
+    // plus AI content). We pass the rect from the existing DOM so
+    // proportions stay identical.
+    const rect = {
+      w: parseFloat(node.style.width)  || 0,
+      h: parseFloat(node.style.height) || 0
+    };
+    const mergedComp = Object.assign({}, aiComp, {
+      role: targetRole,
+      variant: Object.assign({}, aiComp.variant || {}, aiComp.content || {})
+    });
+    try {
+      node.innerHTML = window.renderAtomicForRole(mergedComp, rect);
+    } catch (e) { /* leave canonical render in place */ }
+  },
+
+  // Place AI's overlay components (now-bar-media, focus-block, notif-
+  // card, progress-track, …) in the interaction zone. Uses the same
+  // _layoutForPurpose dispatcher the general path uses, but scoped
+  // to a y-range safe from the clock+shortcuts.
+  _appendLockscreenOverlays(overlays, renderModel) {
+    const canvas = document.getElementById('canvas');
+    if (!canvas) return;
+    const host = canvas._rulesInner || canvas;
+
+    // Safe band: below the clock bottom (~y=420) and above the
+    // shortcut row top (~y=860). Leaves ~420px of vertical room
+    // for AI content — enough for 1 hero + 2-3 supporting items.
+    const layoutZone = { x: 24, y: 440, w: 451 - 48, h: 400 };
+
+    // Determine purpose from renderModel orchestration so the
+    // dispatcher picks the right strategy.
+    const purpose = (renderModel._orchestration &&
+                     renderModel._orchestration.purpose &&
+                     renderModel._orchestration.purpose.primary) || 'focus_protection';
+    const mustShow = (renderModel._informationPriority &&
+                      renderModel._informationPriority.must_show) || [];
+    const placed = (typeof _layoutForPurpose === 'function')
+      ? _layoutForPurpose(purpose, overlays, layoutZone, mustShow)
+      : overlays.map((c, i) => _place(c, {
+          x: layoutZone.x, y: layoutZone.y + i * 80,
+          w: layoutZone.w, h: 72
+        }, 'normal'));
+
+    placed.forEach(comp => {
+      const rect = comp._rect || { x: 24, y: 440, w: 380, h: 72 };
+      const wrapper = document.createElement('div');
+      wrapper.className = 'rules-item agent-overlay';
+      wrapper.dataset.role = comp.role;
+      wrapper.dataset.nodeId = comp.id || ('overlay-' + Math.random().toString(36).slice(2, 7));
+      wrapper.dataset.compType = comp.role;
+      if (comp._semanticId) wrapper.dataset.semanticId = comp._semanticId;
+      wrapper.dataset.zone = 'interaction';
+      if (comp._emphasis) wrapper.dataset.emphasis = comp._emphasis;
+      wrapper.style.position = 'absolute';
+      wrapper.style.left   = rect.x + 'px';
+      wrapper.style.top    = rect.y + 'px';
+      wrapper.style.width  = rect.w + 'px';
+      wrapper.style.height = rect.h + 'px';
+      if (typeof window.renderAtomicForRole === 'function') {
+        try { wrapper.innerHTML = window.renderAtomicForRole(comp, rect); }
+        catch (e) { wrapper.innerHTML = ''; }
+      }
+      host.appendChild(wrapper);
+    });
+  },
+
   renderFromModel(renderModel) {
     if (!renderModel) return;
 
@@ -790,6 +1214,33 @@ const RenderEngine = {
 
       clearCanvas();
 
+      // ──────────────────────────────────────────────────────────────
+      //  LOCKSCREEN: render the canonical Scene/Lock template as the
+      //  BASE LAYER, then overlay AI's contextual components on top.
+      //  This is dramatically simpler than the general plan-merge
+      //  path — we don't reimplement lock atomics, we just use the
+      //  same renderFromRules() path that the "Screens > Lock" button
+      //  uses. Anything the AI adds (now-bar, focus-block, notif-
+      //  card, etc.) sits in the INTERACTION zone below the clock.
+      //
+      //  Benefits:
+      //    - pixel-perfect parity with Scene/Lock (same DOM, same
+      //      positions, same fonts, same atomics)
+      //    - zero drift: one path, one source of truth
+      //    - AI focuses on content overlays only (fewer tokens, higher
+      //      quality output)
+      // ──────────────────────────────────────────────────────────────
+      if (surfaceType === 'lockscreen' &&
+          typeof window.renderFromRules === 'function') {
+        try {
+          return this._renderLockscreenWithAIOverlay(normalized);
+        } catch (e) {
+          console.warn('[agent] Lockscreen overlay render failed; falling back to plan path:', e);
+          clearCanvas();
+          // fall through to the generic plan path below
+        }
+      }
+
       // Build plan manually so we can inject agent content BEFORE the
       // expansion step turns "list" into N "list-item" children. Otherwise
       // expansion uses random presets and the agent's semantic content
@@ -801,15 +1252,47 @@ const RenderEngine = {
       // Pass 1: merge agent content into plan items by role (for chrome
       // components already present in the canned plan — status-bar,
       // app-bar, app-dock, etc.). First match wins.
+      // Canonical-role normalizer. The canned Scene/Lock template (and
+      // its matching surface plan) uses the camelCase role names
+      // `clock`, `lockIndicator`, `weatherDate`, `shortcutLeft`,
+      // `shortcutRight`, `gestureBar`. The AI naturally emits kebab-
+      // case (`lock-clock`, `weather-date`, etc.). This map normalizes
+      // AI's kebab-case emissions to the Scene canonical names so
+      // Pass 1 merge-by-role finds its target and the DOM output shows
+      // the SAME node ids as the canned Scene/Lock — no more "two
+      // naming conventions" confusion in the Layers inspector.
+      const ROLE_ALIASES = {
+        'lock-clock':     'clock',
+        'lock-time':      'clock',
+        'lock-indicator': 'lockIndicator',
+        'weather-date':   'weatherDate',
+        'unlock-hint':    'gestureBar',
+        // The legacy combined `lock-shortcuts` expands to two canonical
+        // circles. It merges into shortcutLeft by default; a second AI
+        // emission (or the canned plan's shortcutRight slot) handles
+        // the right-side camera circle.
+        'lock-shortcuts': 'shortcutLeft'
+      };
+      function _canonicalRole(role) {
+        if (!role) return role;
+        return ROLE_ALIASES[role] || role;
+      }
+
       const agentByRole = new Map();
       (normalized.components || []).forEach(function (ac) {
-        if (!agentByRole.has(ac.role)) agentByRole.set(ac.role, ac);
+        const key = _canonicalRole(ac.role);
+        if (!agentByRole.has(key)) agentByRole.set(key, ac);
       });
       const consumedRoles = new Set();
       (plan.components || []).forEach(function (pc) {
-        var ac = agentByRole.get(pc.role);
+        const key = _canonicalRole(pc.role);
+        var ac = agentByRole.get(key);
         if (!ac) return;
-        consumedRoles.add(pc.role);
+        // Mark BOTH the canonical key and the AI component's original
+        // role as consumed, so the aiDrivingScreen counter below sees
+        // them as merged (not "unconsumed extra content").
+        consumedRoles.add(key);
+        consumedRoles.add(ac.role);
         if (ac.id)      pc.id      = ac.id;
         if (ac.text)    pc.text    = ac.text;
         if (ac.state)   pc.state   = ac.state;
@@ -840,14 +1323,39 @@ const RenderEngine = {
       // the viewing + interaction regions cleanly.
       const CHROME_ZONES = new Set(['topSystem', 'bottomNav', 'bottomAction']);
       const agentContentCount = (normalized.components || []).filter(function (ac) {
-        if (!ac.role || consumedRoles.has(ac.role)) return false;
+        if (!ac.role) return false;
+        // A component counts as "extra AI content" (potential collider
+        // with the canned plan) ONLY if it wasn't consumed via
+        // merge-by-role — even after alias normalization. Lockscreen
+        // atomics that merged into canned positions do NOT count here.
+        if (consumedRoles.has(ac.role) || consumedRoles.has(_canonicalRole(ac.role))) return false;
         return true;
       }).length;
-      const aiDrivingScreen = agentContentCount >= 2;
+      // LOCKSCREEN LAYERED MODEL: the canned Screen/Lock template is
+      // the BASE LAYER. AI-generated content is an OVERLAY on top of
+      // that base — never a replacement. So on lockscreen we skip the
+      // strip-canned-content logic entirely: every canonical atomic
+      // (status-bar, lockIndicator, weatherDate, clock, shortcutLeft/
+      // Right, gestureBar) stays on canvas, regardless of how many
+      // contextual extras the AI adds. The dispatcher places AI's
+      // unconsumed components in the INTERACTION zone (below the
+      // clock) where they can't collide with the base chrome.
+      //
+      // For non-lockscreen surfaces, keep the old behavior: if the AI
+      // supplies 2+ unmerged content components it's "driving the
+      // screen", so strip the canned content items and let the AI's
+      // content own viewing+interaction.
+      const isLockscreen = surfaceType === 'lockscreen';
+      const aiDrivingScreen = !isLockscreen && agentContentCount >= 2;
       if (aiDrivingScreen) {
         plan.components = (plan.components || []).filter(function (pc) {
           return CHROME_ZONES.has(pc.zone);
         });
+      }
+      if (consumedRoles.size) {
+        console.log('[RenderEngine] merged ' + consumedRoles.size + ' AI role(s) into canned plan; ' +
+          agentContentCount + ' extra AI component(s) ' +
+          (aiDrivingScreen ? '(STRIPPING canned content)' : '(appending to plan)'));
       }
       // Track which zones the AI is filling — used by layouts to leave
       // bottom reserve for canned chrome that still exists (app-dock,
@@ -868,15 +1376,18 @@ const RenderEngine = {
       //   flow_continuity          → continuity_stream (hero + middle + action)
       //   multi_party_coordination → modal_stack (centered dialog)
       //
-      // Layout scope = the combined VIEWING + INTERACTION area. Earlier
-      // revision only passed the interaction zone, which was too narrow
-      // on lockscreen (viewing zone hogged the top). Now the dispatcher
-      // sees the full content canvas (everything between topSystem
-      // chrome and bottomNav/bottomAction chrome).
+      // Layout scope = the combined VIEWING + INTERACTION area on most
+      // surfaces. On LOCKSCREEN, though, the viewing zone holds
+      // preserved Samsung identity chrome (lock-time huge clock,
+      // weather-date, lock-date) — if the dispatcher places AI's
+      // unconsumed components (now-bar, focus-block, notif-card, etc.)
+      // there, they OVERLAP the clock and kill the Samsung look. So on
+      // lockscreen we restrict the dispatcher to the INTERACTION zone
+      // only, keeping AI content below the clock+date region.
       const viewingZone     = (layout && layout.zones && layout.zones.viewing)     || null;
       const interactionZone = (layout && layout.zones && layout.zones.interaction) ||
         { x: 18, y: 140, w: 415, h: 600 };
-      const contentZone = viewingZone ? {
+      const contentZone = (viewingZone && !isLockscreen) ? {
         x: Math.min(viewingZone.x, interactionZone.x),
         y: viewingZone.y,
         w: Math.max(viewingZone.w, interactionZone.w),
@@ -1138,6 +1649,21 @@ const RenderEngine = {
     const badge = document.getElementById('criticBadge');
     const badgeScore = document.getElementById('criticBadgeScore');
     const badgeIssues = document.getElementById('criticBadgeIssues');
+    // Normalize issues/suggestions locally in case the server contract
+    // drifts: string → {type:'critique', message:string}, object →
+    // pass-through with a message fallback. Keeps the "undefined
+    // undefined" literals out of the UI whenever the AI returns a
+    // shape we didn't expect.
+    const _normIssue = function (i) {
+      if (typeof i === 'string') return { type: 'critique', message: i };
+      if (!i || typeof i !== 'object') return { type: 'critique', message: String(i || '') };
+      return { type: i.type || 'critique', message: i.message || i.text || '' };
+    };
+    const _normSugg = function (s) {
+      if (typeof s === 'string') return s;
+      return (s && (s.message || s.text)) || '';
+    };
+
     if (badge && badgeScore) {
       const score = (typeof critic.score === 'number') ? critic.score : null;
       if (score != null) {
@@ -1146,7 +1672,7 @@ const RenderEngine = {
         const color = score >= 85 ? '#0FCF6E' : score >= 70 ? '#F5A623' : '#FF6B6B';
         badgeScore.style.color = color;
         if (badgeIssues) {
-          const issuesArr = Array.isArray(critic.issues) ? critic.issues : [];
+          const issuesArr = (Array.isArray(critic.issues) ? critic.issues : []).map(_normIssue);
           if (issuesArr.length) {
             const preview = issuesArr.slice(0, 2).map(function (i) {
               return '<span style="color:' + color + ';opacity:0.9;">\u2022</span> ' + (i.message || i.type || '');
@@ -1169,13 +1695,15 @@ const RenderEngine = {
       html += `<div class="critic-score">${critic.score}<span>/100</span></div>`;
     }
     if (critic.issues && critic.issues.length > 0) {
-      critic.issues.forEach(issue => {
+      critic.issues.map(_normIssue).forEach(issue => {
         html += `<div class="critic-issue"><span class="refine-issue-type ${issue.type}">${issue.type}</span> ${issue.message}</div>`;
       });
     }
     if (critic.suggestions && critic.suggestions.length > 0) {
       html += '<div class="critic-suggestions">';
-      critic.suggestions.forEach(s => { html += `<div class="critic-suggestion">&#128161; ${s}</div>`; });
+      critic.suggestions.map(_normSugg).forEach(s => {
+        if (s) html += `<div class="critic-suggestion">&#128161; ${s}</div>`;
+      });
       html += '</div>';
     }
     html += '</div>';

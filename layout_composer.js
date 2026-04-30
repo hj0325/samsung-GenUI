@@ -68,7 +68,14 @@ function flattenGroups(layoutPlan) {
         placement:   ch.placement,
         priority:    ch.priority,
         visibility:  ch.visibility,
+        // role flows through so downstream validators can apply
+        // chrome-vs-content rules (chrome is always full-width and always
+        // present, so it shouldn't trigger width / visibleChildren checks
+        // against canvas content budgets).
+        role:        ch.role || g.role || null,
+        slot:        ch.slot || null,
         _groupId:    g.groupId,
+        _groupRole:  g.role,
         _groupContainer: g.container,
         _groupGap:   g.gap
       });
@@ -242,10 +249,20 @@ function validateLayoutOverflow(layoutPlan, uiState, viewport, idGen) {
     }));
   }
 
-  // Width check — any single child whose min_width + horizontal padding exceeds viewport.width
+  // Width check — any single child whose min_width + horizontal padding exceeds viewport.width.
+  //
+  // CHROME EXEMPTION: chrome elements (status-bar, app-bar/header, gesture-bar,
+  // bottom-navigation-bar) are absolute-positioned by the renderer into the
+  // device frame's reserved zones (topSystem / bottomNav) — they ALWAYS span
+  // the full viewport width by design, which means they always exceed the
+  // canvas content's usable width (viewport - inner padding). Flagging that
+  // is a false positive that produced 1-2 noise violations every iteration.
+  // The width check applies only to body content, not structural chrome.
   const widthCap = vp.width - pad.left - pad.right;
   flattenGroups(lp).forEach(ch => {
     if (ch.visibility !== 'visible') return;
+    // Chrome exemption — full-width by design, lives in topSystem/bottomNav zones.
+    if (ch.role === 'chrome' || ch._groupRole === 'chrome') return;
     const spec = getComponentSpec(ch.componentId);
     const minW = (spec && spec.layout_spec && spec.layout_spec.min_width) || 0;
     if (minW > widthCap) {
@@ -266,8 +283,16 @@ function validateLayoutOverflow(layoutPlan, uiState, viewport, idGen) {
     }
   });
 
-  // Density / attention heuristics
-  const allVisible = flattenGroups(lp).filter(ch => ch.visibility === 'visible');
+  // Density / attention heuristics — count CONTENT children only. Chrome
+  // (status bar, header, gesture bar, bottom nav) is always present and does
+  // not compete for the user's primary attention, so excluding it keeps the
+  // glanceable=4 / compressed=6 budgets meaningful for the things the user
+  // actually scans.
+  const allVisible = flattenGroups(lp).filter(ch =>
+    ch.visibility === 'visible' &&
+    ch.role !== 'chrome' &&
+    ch._groupRole !== 'chrome'
+  );
   if (uiState && uiState.densityMode === 'compressed' && allVisible.length > 6) {
     out.push(buildViolation({
       id:       idGen(),

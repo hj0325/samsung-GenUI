@@ -4,14 +4,117 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GenUI - Samsung One UI 8.5 Design Builder</title>
+
+<!-- Theme bootstrap — applies the active theme's CSS variables to :root
+     before the rest of the page paints, so cards render with the theme
+     from the very first frame instead of flashing the default first.
+     Themes are managed at /customize. The active id is read from
+     figma-refs/themes.json via /api/themes. -->
+<style id="theme-vars"></style>
+<script>
+  // Theme system — boot apply + Generate-panel picker + cross-window
+  // sync. The customize page (/customize) is the editor; this block
+  // handles the active-theme apply + the small Generate-panel dropdown
+  // that lets the user fast-switch presets without leaving the page.
+  // BroadcastChannel keeps the two windows in sync — saving a theme
+  // on /customize broadcasts a 'theme-saved' message that this window
+  // listens for to refresh its dropdown options.
+  (function _themeBoot() {
+    const STYLE_EL_ID = 'theme-vars';
+    const SELECT_ID   = 'themePickerSelect';
+    let CACHED_THEMES = null;
+
+    function applyVarsToRoot(vars) {
+      const css = ':root {\n' +
+        Object.entries(vars).map(([k, v]) => '  ' + k + ': ' + v + ';').join('\n') +
+      '\n}';
+      const style = document.getElementById(STYLE_EL_ID);
+      if (style) style.textContent = css;
+    }
+
+    function populatePicker(themes, activeId) {
+      const sel = document.getElementById(SELECT_ID);
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = themes.map(t =>
+        '<option value="' + t.id + '"' + (t.id === activeId ? ' selected' : '') + '>' + t.name + '</option>'
+      ).join('');
+      // Restore prior selection if the active id changed but the
+      // previously-selected theme is still in the list.
+      if (prev && themes.find(t => t.id === prev)) sel.value = prev;
+    }
+
+    function loadAndApply(opts) {
+      return fetch('/api/themes', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.themes) return;
+          CACHED_THEMES = data.themes;
+          const activeId = (opts && opts.forceId) || data._active;
+          const active = data.themes.find(t => t.id === activeId) || data.themes[0];
+          if (active && active.vars) applyVarsToRoot(active.vars);
+          window.__activeTheme = active && active.id;
+          // Wait one tick — the picker element may not exist yet at
+          // boot time (it's later in the DOM than this <head> script).
+          setTimeout(() => populatePicker(data.themes, active && active.id), 0);
+        })
+        .catch(() => {});
+    }
+
+    // Called by the dropdown's onchange. Applies vars locally + POSTs
+    // active id so the change persists across reloads.
+    window.applyThemeFromPicker = function applyThemeFromPicker(id) {
+      if (!id || !CACHED_THEMES) return;
+      const theme = CACHED_THEMES.find(t => t.id === id);
+      if (!theme) return;
+      applyVarsToRoot(theme.vars || {});
+      window.__activeTheme = id;
+      fetch('/api/themes/active', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      }).catch(() => {});
+    };
+
+    // Cross-window sync — listens for 'theme-saved' broadcasts from
+    // the /customize editor (which posts whenever a theme is created
+    // or the active theme changes). On receive, we re-fetch the list
+    // and update the dropdown so newly-saved custom themes show up
+    // immediately without a manual refresh.
+    if (typeof BroadcastChannel === 'function') {
+      const ch = new BroadcastChannel('oneui-themes');
+      ch.addEventListener('message', (ev) => {
+        if (!ev || !ev.data) return;
+        if (ev.data.type === 'theme-saved' || ev.data.type === 'theme-active-changed') {
+          loadAndApply({ forceId: ev.data.activeId });
+        }
+      });
+      window.__themeChannel = ch;
+    }
+
+    loadAndApply();
+  })();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<!-- Lock-screen clock font — Space Mono (Google, monospace). Preconnect +
-     preload woff2 so the clock renders with the correct metrics on first
-     paint (no FOUT when lock screen generates). -->
+<!-- Lock-screen clock font — Space Grotesk (Google, display-geometric sans).
+     Paired with Inter for UI / body text. Preconnect so the clock renders
+     with the correct metrics on first paint (no FOUT when lock screen
+     generates). Space Mono is kept loaded for backward compatibility with
+     older generated scenes that reference it, but new renders default to
+     Space Grotesk. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/genui.css">
+<!-- html-to-image — used by the auto-iterate loop to capture canvas
+     snapshots. Uses the SVG <foreignObject> + native rasterization
+     approach, which produced pixel-accurate captures in our test
+     scenarios (vs. html2canvas which doubled text and mis-rendered
+     box-shadows). modern-screenshot was the first attempt but ships
+     ES-module-only — html-to-image ships a UMD bundle exposing
+     window.htmlToImage, which is what we need for a CDN <script>. -->
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js" async></script>
 </head>
 <body>
 
@@ -492,15 +595,12 @@
           <div id="overlayHint" style="margin-top:6px;font-size:11px;color:var(--text-2);line-height:1.4;">Overlays render on top of the current screen. Pick a screen first.</div>
         </div>
 
-        <!-- 4.5 CACHED — saved screens, click to restore -->
-        <div style="margin-bottom:14px;">
-          <div class="panel-label" style="display:flex;justify-content:space-between;align-items:center;">
-            <span>Cached</span>
-            <button onclick="saveCurrentScreen()" title="Save currently rendered screen" style="font-size:11px;padding:2px 8px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">+ Save</button>
-          </div>
-          <div id="cachedScreensList" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;"></div>
-          <div id="cachedEmpty" style="font-size:11px;color:var(--text-3);padding:8px;text-align:center;font-style:italic;">No saved screens yet. Generate one and hit Save.</div>
-        </div>
+        <!-- 4.5 CACHED removed per user request — the Generate tab was
+             too crowded. saveCurrentScreen() and the cached-screens
+             rendering still exist in app/cached-screens.js for code
+             reuse, but the UI block (label + list + empty state) is
+             gone. To restore: re-insert the markup here and the
+             existing JS will populate it. -->
 
         <!-- 5. CHAT (Generate) — merged: prompt + URL + image + send -->
         <div style="margin-bottom:14px;">
@@ -514,9 +614,9 @@
           <!-- Full-width chat input — auto-growing textarea (Enter = send, Shift+Enter = newline) -->
           <div class="chat-input-wrap" style="position:relative;width:100%;">
             <textarea id="genPrompt" rows="1"
-              onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendChatMessage();}"
+              onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();pipelineGenerate();}"
               oninput="autoResizeChatInput(this)"
-              placeholder="Describe a screen or paste a URL..."
+              placeholder="Describe your screen :)"
               style="width:100%;min-height:56px;max-height:240px;border-radius:14px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:13px;line-height:22px;padding:16px 102px 16px 16px;box-sizing:border-box;resize:none;overflow-y:auto;display:block;"></textarea>
 
             <!-- Image upload (anchored bottom-right so it stays put when textarea grows) -->
@@ -530,17 +630,69 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M6 11v1a6 6 0 0012 0v-1M12 18v3M8 21h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
             </button>
 
-            <!-- Send (rightmost) — AI star icon, no container (opacity for hover) -->
-            <button class="chat-inline-btn ai-send-btn" title="Send (Generate) — Shift+Enter for newline" onclick="sendChatMessage()" style="position:absolute;right:10px;bottom:14px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:none;border:none;padding:0;">
+            <!-- Send (rightmost) — AI star icon. Triggers Path A pipeline
+                 (interpret → select → compose → validate → explain). The
+                 Enter key in the textarea above does the same thing. -->
+            <button class="chat-inline-btn ai-send-btn" title="Generate (Path A pipeline) — Shift+Enter for newline" onclick="pipelineGenerate()" style="position:absolute;right:10px;bottom:14px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:none;border:none;padding:0;">
               <span class="ai-star-slot" data-size="20"></span>
             </button>
           </div>
-          <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+          <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
             <button onclick="pipelineGenerate()" title="Run the full 5-step AI pipeline (interpret → ui_state → plan → compose → validate → explain). Each step&apos;s output is streamed to the panel below." style="padding:6px 12px;border-radius:8px;background:rgba(3,129,254,0.12);color:#3E91FF;border:1px solid rgba(3,129,254,0.25);font-family:var(--font);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Run Pipeline
             </button>
-            <span style="font-size:10px;color:var(--text-3);">Streams each step&apos;s JSON output below</span>
+
+            <!-- Auto-iterate toggle: when ON, after each generate the system
+                 captures a snapshot, applies mechanical auto-fixes, and re-runs
+                 the pipeline. Stops when violations=0 OR max iterations OR user
+                 clicks "stop". Best iteration (fewest violations) is preserved. -->
+            <label class="auto-iter-toggle" title="When enabled, the pipeline runs in a loop, auto-fixes violations, and stops when clean (or after 5 iterations)." style="display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);font-size:11px;color:var(--text-2);cursor:pointer;user-select:none;">
+              <input type="checkbox" id="autoIterToggle" style="margin:0;cursor:pointer;">
+              <span>Auto-iterate</span>
+            </label>
+
+            <!-- Output log toggle: ON (default) shows full pipeline JSON +
+                 explainer prose + reasoning arrays. OFF runs in fast mode —
+                 skips Stage 7 (explain) and trims verbose reasoning fields,
+                 typically ~15-25% faster end-to-end. The Path A panels still
+                 render the structural data (interpretation, classification,
+                 layout) — only the narrative prose is missing. -->
+            <label class="output-log-toggle" title="When ON (default): full output with explanations + reasoning. When OFF: fast mode — skips the explainer step, trims reasoning notes; ~15-25% faster." style="display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);font-size:11px;color:var(--text-2);cursor:pointer;user-select:none;">
+              <input type="checkbox" id="outputLogToggle" checked style="margin:0;cursor:pointer;">
+              <span>Output log</span>
+            </label>
+
+            <button id="autoIterStopBtn" onclick="autoIterStop()" style="display:none;padding:6px 12px;border-radius:8px;background:rgba(239,68,68,0.15);color:#FCA5A5;border:1px solid rgba(239,68,68,0.35);font-size:11px;font-weight:600;cursor:pointer;">
+              Stop
+            </button>
+
+            <button id="autoIterHistoryBtn" onclick="autoIterShowHistory()" style="display:none;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.04);color:var(--text-2);border:1px solid var(--divider);font-size:11px;font-weight:500;cursor:pointer;">
+              History
+              <span id="autoIterCount" style="margin-left:4px;color:#3E91FF;">(0)</span>
+            </button>
+
+            <!-- Theme picker — fast switch between presets without leaving
+                 the Generate panel. Loaded from /api/themes; on change the
+                 active id is POSTed and the CSS variables are applied to
+                 :root. The "Customize…" link opens the full editor in a
+                 new window so you can edit / save while watching the main
+                 canvas re-render in real time. The two windows stay in
+                 sync via BroadcastChannel (see scenes.js boot) — saving
+                 a theme on the customize page refreshes this dropdown. -->
+            <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 4px 4px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);">
+              <span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Theme</span>
+              <select id="themePickerSelect"
+                onchange="applyThemeFromPicker(this.value)"
+                title="Switch theme — affects all rendered cards and page chrome"
+                style="appearance:none;background:transparent;color:var(--text);border:0;outline:none;font-family:var(--font);font-size:11px;font-weight:500;padding:4px 18px 4px 6px;cursor:pointer;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 4px center;">
+                <option value="" disabled selected>Loading…</option>
+              </select>
+              <a href="/customize" target="_blank" rel="noopener" title="Open theme editor in new window — edit values + save as custom"
+                style="padding:4px 8px;border-radius:5px;color:var(--text-3);font-size:10px;text-decoration:none;border-left:1px solid var(--divider);">Customize…</a>
+            </span>
+
+            <span style="font-size:10px;color:var(--text-3);flex-basis:100%;margin-top:2px;">Streams each step&apos;s JSON output below</span>
           </div>
           <div id="pipelineOutput" style="display:none;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--divider);font-size:11px;line-height:1.5;color:var(--text-2);max-height:320px;overflow:auto;"></div>
         </div>
@@ -572,58 +724,64 @@
               Visual grammar for the 4+2+1 orchestration. Each rule maps a state-packet field to how it should look on canvas.
             </div>
 
-            <!-- Group 1: Purpose → Layout Template -->
+            <!-- Group 1: Classification → Path A Layout Recipe -->
             <div class="panel-section" style="margin-bottom:12px;">
               <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
-                <span>Purpose &rarr; Layout Template</span>
-                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">4 rules</span>
+                <span>Classification &rarr; Path A Layout Recipe</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">4 patterns</span>
               </div>
               <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
                 <div class="hierarchy-rule">
-                  <span class="hr-key" style="color:#60a5fa;">&#9678; Focus Protection</span>
+                  <span class="hr-key" style="color:#60a5fa;">&#9678; 몰입 보호형 (Focus Protection)</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">hero_single</span>
+                  <span class="hr-val"><code>vertical-stack</code> · 1 primary-task with dominant subject + minimal state, supporting collapsed</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key" style="color:#a78bfa;">&#9670; Context Reconstruction</span>
+                  <span class="hr-key" style="color:#a78bfa;">&#9670; 맥락 재구성형 (Context Reconstruction)</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">summary_grid</span>
+                  <span class="hr-val"><code>grid</code> or <code>vertical-stack</code> · multiple supporting groups of context tiles (home widgets, notification shade, QS panel)</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key" style="color:#4ade80;">&rarr; Flow Continuity</span>
+                  <span class="hr-key" style="color:#4ade80;">&rarr; 흐름 연속형 (Flow Continuity)</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">continuity_stream</span>
+                  <span class="hr-val"><code>vertical-stack</code> · primary-task with subject + state + action grouped, plus optional supporting context</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key" style="color:#fb923c;">&#10216;&#10217; Multi-party Coordination</span>
+                  <span class="hr-key" style="color:#fb923c;">&#10216;&#10217; 다자 협업형 (Multi-party Coordination)</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">modal_stack</span>
+                  <span class="hr-val"><code>overlay-stack</code> · system-dialog overlay group on top of underlying surface (handoff, share, confirm)</span>
                 </div>
+              </div>
+              <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
+                Path A's classifier (heuristic) tags scenarios with these patterns; the composer LLM is free to deviate when the scenario warrants. Container + group-role + child-role choices encode the pattern in canonical schema, NOT a named template.
               </div>
             </div>
 
-            <!-- Group 2: Attention Capacity → Density -->
+            <!-- Group 2: Attention Mode + Density Mode (Path A pipeline) -->
             <div class="panel-section" style="margin-bottom:12px;">
               <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
-                <span>Attention Capacity &rarr; Density</span>
-                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">3 rules</span>
+                <span>Attention Mode &rarr; Density</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">3 modes</span>
               </div>
               <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
                 <div class="hierarchy-rule">
-                  <span class="hr-key">low (glanceable)</span>
+                  <span class="hr-key">glanceable</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">wide whitespace, larger type, max 3 items</span>
+                  <span class="hr-val">density=compressed; max 3 items, larger type, wide whitespace</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">medium</span>
+                  <span class="hr-key">distracted</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">default gap, normal type scale</span>
+                  <span class="hr-val">density=normal; default gap, mid type scale</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">high (focused)</span>
+                  <span class="hr-key">focused</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">compact gap, denser grid, many items</span>
+                  <span class="hr-val">density=expanded; compact gap, denser grid, many items</span>
                 </div>
+              </div>
+              <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
+                Path A's interpreter emits attentionMode + densityMode as separate enums; this panel shows the typical pairing rule.
               </div>
             </div>
 
@@ -652,38 +810,86 @@
               </div>
             </div>
 
-            <!-- Group 4: Emphasis Tiers (visual hierarchy of components) -->
+            <!-- Group 4a: Component Role (Path A pipeline — semantic role per child) -->
             <div class="panel-section" style="margin-bottom:12px;">
               <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
-                <span>Emphasis Tiers</span>
-                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">5 tiers</span>
+                <span>Component Role &rarr; Visual Treatment</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">7 roles</span>
               </div>
               <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
                 <div class="hierarchy-rule">
-                  <span class="hr-key">hero</span>
+                  <span class="hr-key" style="color:#94A3B8;">chrome</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">dominant position in purpose layout</span>
+                  <span class="hr-val">status bar, app bar, gesture bar — flush to frame, no card decoration</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">must (must_show match)</span>
+                  <span class="hr-key" style="color:#86EFAC;">subject</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">subtle green ring, primary surface</span>
+                  <span class="hr-val">primary artifact (recipe step, message body, song) — dominant typography (19px bold), larger card padding</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">secondary</span>
+                  <span class="hr-key" style="color:#A5B4FC;">state</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">opacity 0.9, standard presentation</span>
+                  <span class="hr-val">timer, progress, step counter — attached to subject (negative top margin), 13px subdued title</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">dim (supporting in hero_single)</span>
+                  <span class="hr-key" style="color:#FDE68A;">action</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">opacity 0.55, scale 0.96, saturate 0.8</span>
+                  <span class="hr-val">user-triggerable (button, chip, toggle) — 600 weight label, stretched in primary-task</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">action (pinned)</span>
+                  <span class="hr-key" style="color:#FCA5A5;">feedback</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">bottom, shadow + backdrop-filter</span>
+                  <span class="hr-val">snackbar / inline confirmation — opacity 0.90, italic (transient)</span>
                 </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#A78BFA;">context</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">supporting info (weather next to clock, related card) — opacity 0.82, smaller card padding (14px)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#7DD3FC;">navigation</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">tabs, bottom-nav, back arrow — neutral (opacity 0.96)</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Group 4b: Group Role (Path A pipeline — semantic role per group) -->
+            <div class="panel-section" style="margin-bottom:12px;">
+              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Group Role &rarr; Surface Treatment</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">5 roles</span>
+              </div>
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#94A3B8;">chrome</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">device frame zones (topSystem / bottomNav) — absolute-positioned, no group wrapper</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#A5F3FC;">primary-task</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">main task unit — unified inner surface (28px radius, gradient, drop shadow, 20px padding)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#FDE68A;">supporting</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">context that frames the primary — dashed border, indented (8px margin), opacity 0.90</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#94A3B8;">tertiary</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">low importance (badges, quiet notifications) — minimal, opacity 0.72</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key" style="color:#CBD5E1;">meta</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val">overflow / settings shortcuts — subtle background, opacity 0.84</span>
+                </div>
+              </div>
+              <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
+                Component role + group role together drive css/genui.css's role-aware styling. Set by the composer LLM, validated by validateLayout().
               </div>
             </div>
 
@@ -720,96 +926,133 @@
               </div>
             </div>
 
-            <!-- Group 6: Semantic Components (R3-C) -->
+            <!-- Group 6: Pipeline Atomic Bridge (Path A) -->
             <div class="panel-section" style="margin-bottom:6px;">
               <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
-                <span>Semantic Components &rarr; Atomic Role</span>
-                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">15 ids</span>
+                <span>Pipeline Atomic Bridge</span>
+                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">21 mappings</span>
               </div>
               <div style="font-size:10px;color:var(--text-3);margin-bottom:6px;line-height:1.45;">
-                AI emits intent-based component ids (e.g. <code>contextual_summary_card</code>). Server resolves each to an atomic role + default variant before rendering. Log panel shows the resolution map per generation.
+                Path A's selector emits componentIds directly from <code>component_registry.json</code>. The renderer (<code>app/scenes.js</code>) routes specific IDs through Path B's <code>renderAtomicForRole()</code> for richer One UI rendering. Defined in <code>PIPELINE_CHROME_ATOMIC_ROLE</code> + <code>PIPELINE_BODY_ATOMIC_ROLE</code>.
               </div>
+
+              <!-- Chrome bridge — absolute-positioned into device frame zones -->
+              <div style="font-size:9px;color:var(--text-3);font-weight:600;letter-spacing:0.3px;margin:4px 0 4px;">CHROME BRIDGE — 6 mappings (zone-positioned)</div>
               <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
                 <div class="hierarchy-rule">
-                  <span class="hr-key">contextual_summary_card</span>
+                  <span class="hr-key">container.status-bar-app</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>focus-block</code> (kind=secondary)</span>
+                  <span class="hr-val"><code>status-bar</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">information_glance_tile</span>
+                  <span class="hr-key">status-bar.default</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>focus-block</code> (kind=secondary, grid)</span>
+                  <span class="hr-val"><code>status-bar</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">focus_protection_overlay</span>
+                  <span class="hr-key">container.header</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>focus-block</code> (kind=secondary, ambient)</span>
+                  <span class="hr-val"><code>collapsed-app-bar</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">continuity_bridge_panel</span>
+                  <span class="hr-key">container.nav-gestures-dark</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>now-bar</code> (type=media)</span>
+                  <span class="hr-val"><code>gesture-bar</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">ambient_status_line</span>
+                  <span class="hr-key">container.nav-buttons-light</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>now-bar</code> (type=media)</span>
+                  <span class="hr-val"><code>nav-buttons</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">progress_trail</span>
+                  <span class="hr-key">dialog.nav-gesture-bar</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>progress-track</code></span>
+                  <span class="hr-val"><code>gesture-bar</code></span>
+                </div>
+              </div>
+
+              <!-- Body bridge — flow inline in canvas content -->
+              <div style="font-size:9px;color:var(--text-3);font-weight:600;letter-spacing:0.3px;margin:10px 0 4px;">BODY BRIDGE — 15 mappings (inline)</div>
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+                <div class="hierarchy-rule">
+                  <span class="hr-key">input_summary_card</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>focus-block</code> (kind=secondary if value &gt; 28 chars)</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">primary_action_pill</span>
+                  <span class="hr-key">weather_glance_card</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>single-toggle</code> (shortcut, half)</span>
+                  <span class="hr-val"><code>focus-block</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">override_action</span>
+                  <span class="hr-key">calendar_summary_card</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>action-row</code> (kind=override)</span>
+                  <span class="hr-val"><code>focus-block</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">coordination_sheet</span>
+                  <span class="hr-key">message_summary_card</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>selection-dialog</code></span>
+                  <span class="hr-val"><code>focus-block</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">target_picker</span>
+                  <span class="hr-key">eta_card</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>dialog-icon-grid</code></span>
+                  <span class="hr-val"><code>focus-block</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">explanation_footer</span>
+                  <span class="hr-key">reminder_card</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>paragraph</code> (kind=caption)</span>
+                  <span class="hr-val"><code>focus-block</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">handoff_affordance</span>
+                  <span class="hr-key">media_control_bar</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>focus-block</code> (accent blue)</span>
+                  <span class="hr-val"><code>now-bar</code> (variant inferred — media)</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">interruption_banner</span>
+                  <span class="hr-key">now-bar.media-player</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>notif-card</code> (urgency=high)</span>
+                  <span class="hr-val"><code>now-bar</code> (media)</span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">notification_summary</span>
+                  <span class="hr-key">now-bar.charging</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>now-bar</code> (charging)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">navigation_turn_card</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>now-bar</code> (single-line / voice)</span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">action_chip_row</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>action-row</code></span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">quick_toggle_row</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>toggle-chip</code></span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">notification-card</span>
+                  <span class="hr-arrow">&rarr;</span>
+                  <span class="hr-val"><code>notif-card</code></span>
+                </div>
+                <div class="hierarchy-rule">
+                  <span class="hr-key">notification.ai-regular</span>
                   <span class="hr-arrow">&rarr;</span>
                   <span class="hr-val"><code>notif-card-ai</code></span>
                 </div>
                 <div class="hierarchy-rule">
-                  <span class="hr-key">intent_header</span>
+                  <span class="hr-key">lock-screen.clock</span>
                   <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>expandable-app-bar</code></span>
+                  <span class="hr-val"><code>clock</code></span>
                 </div>
-                <div class="hierarchy-rule">
-                  <span class="hr-key">scenario_title_bar</span>
-                  <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val"><code>list-top-bar</code></span>
-                </div>
+              </div>
+
+              <div style="margin-top:8px;font-size:10px;color:var(--text-3);font-style:italic;">
+                Components NOT in this bridge render via their own template in <code>app/templates.js</code> (or fall through to the registry-fallback stub).
               </div>
             </div>
 
@@ -1381,6 +1624,12 @@
          The underlying variant system remains for internal state tracking but
          the UI affordance is hidden. -->
     <div class="variant-bar" id="variantBar" style="display:none !important;"></div>
+
+    <!-- R4: Flow Navigator — appears above the canvas when the current
+         generation emitted a multi-node flow graph. Hidden for single-
+         screen results. Each dot swaps the canvas to the node's
+         renderModel without re-calling the AI. -->
+    <div class="flow-navigator" id="flowNavigator" hidden></div>
 
     <div class="canvas-wrap" id="canvasWrap">
       <!-- Primary canvas (Variant A or active variant) -->

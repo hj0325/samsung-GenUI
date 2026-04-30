@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Theme Customizer · One UI GenUI</title>
+<style>
+  :root {
+    --pg-bg:     #0a0a0c;
+    --panel:     rgba(23, 23, 26, 0.6);
+    --panel-2:   rgba(35, 35, 40, 0.7);
+    --border:    rgba(255, 255, 255, 0.08);
+    --text:      #efeef2;
+    --text-2:    rgba(239, 238, 242, 0.7);
+    --text-3:    rgba(239, 238, 242, 0.45);
+    --primary:   #0381FE;
+    --positive:  #34D399;
+    --warning:   #F59E0B;
+    --font:      -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  }
+  /* Theme variable defaults — overridden in real-time by the dropdown.
+     Mirrors figma-refs/themes.json#default. */
+  :root {
+    --card-radius: 20px;
+    --card-padding-v: 14px;
+    --card-padding-h: 16px;
+    --card-gap: 6px;
+    --card-weather-accent: #FBBF24;
+    --card-weather-temp-size: 52px;
+    --card-weather-temp-weight: 600;
+    --card-weather-temp-color: #fff;
+    --card-weather-temp-letterspacing: -1.5px;
+    --card-weather-icon-size: 44px;
+    --card-calendar-accent: #A78BFA;
+    --card-calendar-time-size: 22px;
+    --card-calendar-time-weight: 600;
+    --card-reminder-accent: #F59E0B;
+    --card-reminder-task-size: 16px;
+    --card-message-avatar-grad: linear-gradient(135deg,#34D399,#10B981);
+    --card-message-avatar-size: 32px;
+    --card-eta-accent: #14B8A6;
+    --card-eta-size: 40px;
+    --card-eta-icon-size: 32px;
+    --card-nav-accent: #14B8A6;
+    --card-nav-distance-size: 22px;
+    --card-nav-arrow-bg: rgba(20,184,166,0.25);
+    --card-ai-grad: linear-gradient(120deg, rgba(102,161,243,0.45) 0%, rgba(167,139,250,0.45) 50%, rgba(34,201,166,0.45) 100%);
+    --card-ai-shimmer-speed: 3.6s;
+    --card-input-topic-size: 20px;
+  }
+  @keyframes aiShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--pg-bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px; line-height: 1.45;
+    min-height: 100vh;
+  }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  header {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .sub { color: var(--text-3); font-size: 13px; }
+  header .nav { margin-left: auto; display: flex; gap: 12px; }
+  header .nav a {
+    padding: 6px 12px; border-radius: 8px;
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text-2); font-size: 13px;
+  }
+
+  /* Toolbar (sticky theme dropdown + actions) */
+  .toolbar {
+    position: sticky; top: 0; z-index: 10;
+    padding: 14px 32px;
+    background: rgba(10, 10, 12, 0.95);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .toolbar label { font-size: 12.5px; color: var(--text-3); margin-right: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
+  select.theme-select {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 36px 8px 12px;
+    font-family: inherit; font-size: 14px; font-weight: 500;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    cursor: pointer;
+    min-width: 240px;
+  }
+  .toolbar .description { color: var(--text-3); font-size: 13px; flex: 1; min-width: 200px; }
+  .toolbar .spacer { flex: 1; }
+
+  button {
+    background: var(--primary); color: #fff;
+    border: 0; border-radius: 10px;
+    padding: 9px 18px; font-size: 14px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+  }
+  button:hover { opacity: 0.9; }
+  button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  main {
+    padding: 24px 32px 80px;
+    max-width: 1400px; margin: 0 auto;
+  }
+
+  .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .preview-cell {
+    background: var(--pg-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .preview-cell .name {
+    font-size: 11px; font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .preview-cell .stage {
+    /* The card preview happens inside this stage. Width drives the
+       layout; height adapts to content (no forced min-height — that
+       was making short cards look loose with empty space below).
+       align-items: flex-start so cards size to content naturally. */
+    display: flex; align-items: flex-start; justify-content: stretch;
+    position: relative;
+  }
+  .preview-cell .stage > * { width: 100%; }
+  .preview-cell .stage::after {
+    /* Subtle dotted bg so glass cards are visible */
+    content: '';
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 12px 12px;
+    z-index: -1;
+    border-radius: 12px;
+  }
+
+  /* Editor panel */
+  .editor-panel {
+    margin-top: 24px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .editor-panel header.editor-head {
+    padding: 14px 18px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,10,12,0.5);
+  }
+  .editor-panel header.editor-head h2 {
+    margin: 0; font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-3);
+  }
+  .editor-panel .editor-body {
+    padding: 18px 20px 24px; display: none;
+  }
+  .editor-panel.open .editor-body { display: block; }
+  .editor-panel .toggle-arrow {
+    transition: transform 0.15s; opacity: 0.5;
+    font-size: 14px;
+  }
+  .editor-panel.open .toggle-arrow { transform: rotate(90deg); }
+  .editor-section {
+    margin-bottom: 20px;
+  }
+  .editor-section h3 {
+    margin: 0 0 8px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.4px;
+    color: var(--text-3);
+  }
+  .editor-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(180px, 1.5fr);
+    align-items: center; gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px dashed rgba(255,255,255,0.04);
+  }
+  .editor-row:last-child { border-bottom: 0; }
+  .editor-row label {
+    font-size: 12.5px; color: var(--text-2);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .editor-row label code {
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 10.5px; color: var(--text-3);
+    margin-left: 4px;
+  }
+  .editor-row .input-wrap { display: flex; gap: 6px; align-items: center; }
+  .editor-row input[type="color"] {
+    width: 34px; height: 28px; padding: 0;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: transparent; cursor: pointer;
+  }
+  .editor-row input[type="text"],
+  .editor-row input[type="number"],
+  .editor-row select {
+    flex: 1; min-width: 0;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; font-size: 12.5px; font-family: inherit;
+  }
+  .editor-row input[type="number"] { max-width: 80px; }
+  .editor-row .suffix { font-size: 11.5px; color: var(--text-3); }
+  .editor-actions {
+    display: flex; gap: 10px; align-items: center;
+    padding-top: 14px; border-top: 1px solid var(--border);
+    margin-top: 14px;
+  }
+  .editor-actions .spacer { flex: 1; }
+  .editor-actions .hint { font-size: 11.5px; color: var(--text-3); }
+
+  /* Save toast */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    padding: 10px 20px; background: var(--positive); color: #062;
+    border-radius: 999px; font-weight: 600; font-size: 13px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .toast.show {
+    opacity: 1; transform: translateX(-50%) translateY(-8px);
+  }
+
+  /* "active theme" hint pill on header */
+  .active-pill {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(52, 211, 153, 0.15);
+    color: var(--positive);
+    font-size: 11.5px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Theme Customizer</h1>
+  <span class="sub">CSS variable presets · live preview · apply to whole site</span>
+  <span class="active-pill" id="active-pill">Default · One UI 8.5</span>
+  <div class="nav">
+    <a href="/">← GenUI</a>
+    <a href="/improve">Improvements</a>
+  </div>
+</header>
+
+<div class="toolbar">
+  <label>Theme</label>
+  <select id="theme-select" class="theme-select"></select>
+  <div class="description" id="theme-description"></div>
+  <span class="spacer"></span>
+  <button id="btn-apply">Apply to Site</button>
+  <button id="btn-reset" class="secondary">Reset preview</button>
+</div>
+
+<main>
+  <h2 style="font-size:14px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 16px;">Live preview · all themed cards</h2>
+  <div class="preview-grid" id="preview-grid"></div>
+
+  <!-- Editor panel — collapsed by default. Click header to open. Inside:
+       grouped property editors (color, size, weight, gradient). Edits
+       apply to :root in real-time so the preview above updates as the
+       user types. "Save as Custom..." persists the current var set as
+       a new theme via POST /api/themes. -->
+  <div class="editor-panel" id="editor-panel">
+    <header class="editor-head" id="editor-head">
+      <span class="toggle-arrow">›</span>
+      <h2>Edit theme variables</h2>
+      <span style="margin-left:8px;color:var(--text-3);font-size:12px;">click to expand · live preview · save as custom</span>
+    </header>
+    <div class="editor-body" id="editor-body"></div>
+  </div>
+</main>
+
+<div class="toast" id="toast">Saved · theme applied</div>
+
+<!-- The renderer needs the same surface-layout helpers used by the main app.
+     We load it AFTER our boot block so window.renderAtomicForRole becomes
+     available without disturbing main-app rendering (it's just a function
+     export — no side effects on the customize page). -->
+<script src="app/surface-layout.js"></script>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------------------
+//  Sample card variants — what we feed each renderer to produce a preview.
+//  Each entry pairs a friendly label with the (atomic role, variant) tuple
+//  the renderer expects. See app/scenes.js _adaptForBodyAtomic for the
+//  shapes — we hand-build them here so the customize page is self-contained.
+// ---------------------------------------------------------------------------
+const PREVIEW_CARDS = [
+  {
+    name: 'Weather',
+    role: 'focus-block',
+    variant: { kind: 'weather', temp: '23°', condition: 'Partly cloudy', location: 'Seoul', feels: '21°', icon: 'cloud-sun' }
+  },
+  {
+    name: 'Calendar',
+    role: 'focus-block',
+    variant: { kind: 'calendar', section: 'Next up · Today', time: '9:30 AM', duration: '30 min', title: 'Team stand-up', location: 'Studio A' }
+  },
+  {
+    name: 'Reminder',
+    role: 'focus-block',
+    variant: { kind: 'reminder', task: 'Review proposal', due: '5 PM', count: '3', section: 'TODAY · 3 ITEMS' }
+  },
+  {
+    name: 'Message',
+    role: 'focus-block',
+    variant: { kind: 'message', sender: 'Alex', preview: 'Running 10 min late — see you at coffee', section: 'MESSAGES · 2 NEW' }
+  },
+  {
+    name: 'ETA',
+    role: 'focus-block',
+    variant: { kind: 'eta', eta: '12 min', destination: 'Home', traffic: 'Light traffic', route: 'via Hangang-daero' }
+  },
+  {
+    name: 'Input summary',
+    role: 'focus-block',
+    variant: { kind: 'input', section: 'SEARCH · COFFEE SHOPS', topic: 'Found 12 nearby', detail: '', facets: ['Vegetarian', 'Within 1 km', 'Open now'] }
+  },
+  {
+    name: 'AI notification',
+    role: 'notif-card-ai',
+    variant: { title: 'Galaxy AI', subtitle: 'Your morning summary is ready', body: 'Your morning summary is ready', time: '8:21 AM', glyph: 'A', kind: 'ai' }
+  },
+  {
+    name: 'Notification',
+    role: 'notif-card',
+    variant: { title: 'WhatsApp', subtitle: 'Alex: Hey, are you around?', body: 'Alex: Hey, are you around?', time: '5m', glyph: 'W', accent: '#25D366' }
+  },
+  {
+    name: 'Navigation now-bar',
+    role: 'now-bar',
+    variant: { type: 'navigation', distance: '200 m', direction: 'right', instruction: 'Turn right onto Hangang-daero', eta: '8 min' }
+  },
+  {
+    name: 'Voice (single-line)',
+    role: 'now-bar',
+    variant: { type: 'single-line', label: 'Listening', listening: true }
+  },
+  {
+    name: 'Charging now-bar',
+    role: 'now-bar',
+    variant: { type: 'charging', percent: 69 }
+  },
+  {
+    name: 'Action chips',
+    role: 'action-row',
+    variant: { actions: [{ label: 'Save', icon: 'bookmark', kind: 'primary' }, { label: 'Share', icon: 'share' }, { label: 'Edit', icon: 'edit' }] }
+  },
+  {
+    name: 'Quick toggles',
+    role: 'toggle-chip',
+    variant: { toggles: [
+      { name: 'Wi-Fi',      icon: 'wifi',       on: true  },
+      { name: 'Bluetooth',  icon: 'bluetooth',  on: true  },
+      { name: 'Flashlight', icon: 'flashlight', on: false },
+      { name: 'Airplane',   icon: 'airplane',   on: false }
+    ] }
+  }
+];
+
+// ---------------------------------------------------------------------------
+//  Editor schema — groups every customizable CSS variable by section and
+//  declares the appropriate input type. Adding a new var here is enough
+//  to expose it in the editor panel; no other code needs to change.
+//  Type semantics:
+//    color      → <input type="color"> (HEX only, no alpha)
+//    color-rgba → <input type="text"> (free-form for rgba/oklch/etc)
+//    size       → <input type="number"> + 'px' suffix
+//    weight     → <select> with 400/500/600/700
+//    text       → <input type="text"> (gradients, letter-spacing strings)
+// ---------------------------------------------------------------------------
+const THEME_EDIT_SCHEMA = [
+  {
+    section: 'Page',
+    vars: [
+      { key: '--page-bg',          label: 'Background',     type: 'color' },
+      { key: '--text-primary',     label: 'Text · primary', type: 'color' },
+      { key: '--text-secondary',   label: 'Text · secondary (rgba)', type: 'color-rgba' },
+      { key: '--text-tertiary',    label: 'Text · tertiary (rgba)',  type: 'color-rgba' },
+      { key: '--accent-primary',   label: 'Accent · primary', type: 'color' }
+    ]
+  },
+  {
+    section: 'Card globals',
+    vars: [
+      { key: '--card-radius',     label: 'Corner radius',     type: 'size', min: 0,  max: 40, step: 1 },
+      { key: '--card-padding-v',  label: 'Padding · vertical',type: 'size', min: 0,  max: 40, step: 1 },
+      { key: '--card-padding-h',  label: 'Padding · horizontal', type: 'size', min: 0, max: 40, step: 1 },
+      { key: '--card-gap',        label: 'Inner gap',         type: 'size', min: 0,  max: 24, step: 1 }
+    ]
+  },
+  {
+    section: 'Weather card',
+    vars: [
+      { key: '--card-weather-accent',          label: 'Accent (icon)',   type: 'color' },
+      { key: '--card-weather-temp-color',      label: 'Temp color',      type: 'color' },
+      { key: '--card-weather-temp-size',       label: 'Temp size',       type: 'size', min: 16, max: 90, step: 1 },
+      { key: '--card-weather-temp-weight',     label: 'Temp weight',     type: 'weight' },
+      { key: '--card-weather-temp-letterspacing', label: 'Temp letter-spacing', type: 'text' },
+      { key: '--card-weather-icon-size',       label: 'Icon size',       type: 'size', min: 16, max: 80, step: 1 }
+    ]
+  },
+  {
+    section: 'Calendar card',
+    vars: [
+      { key: '--card-calendar-accent',         label: 'Accent (cal icon)', type: 'color' },
+      { key: '--card-calendar-time-size',      label: 'Time size',         type: 'size', min: 12, max: 50, step: 1 },
+      { key: '--card-calendar-time-weight',    label: 'Time weight',       type: 'weight' }
+    ]
+  },
+  {
+    section: 'Reminder card',
+    vars: [
+      { key: '--card-reminder-accent',         label: 'Accent (checkbox)', type: 'color' },
+      { key: '--card-reminder-task-size',      label: 'Task size',         type: 'size', min: 12, max: 28, step: 1 }
+    ]
+  },
+  {
+    section: 'Message card',
+    vars: [
+      { key: '--card-message-avatar-grad',     label: 'Avatar gradient (CSS)', type: 'text' },
+      { key: '--card-message-avatar-size',     label: 'Avatar size',           type: 'size', min: 18, max: 56, step: 1 }
+    ]
+  },
+  {
+    section: 'ETA card',
+    vars: [
+      { key: '--card-eta-accent',              label: 'Accent (car icon)', type: 'color' },
+      { key: '--card-eta-size',                label: 'ETA size',          type: 'size', min: 18, max: 64, step: 1 },
+      { key: '--card-eta-icon-size',           label: 'Icon size',         type: 'size', min: 16, max: 60, step: 1 }
+    ]
+  },
+  {
+    section: 'Navigation now-bar',
+    vars: [
+      { key: '--card-nav-accent',              label: 'Accent (arrow)',    type: 'color' },
+      { key: '--card-nav-distance-size',       label: 'Distance size',     type: 'size', min: 12, max: 40, step: 1 },
+      { key: '--card-nav-arrow-bg',            label: 'Arrow bg (rgba)',   type: 'color-rgba' }
+    ]
+  },
+  {
+    section: 'AI notification',
+    vars: [
+      { key: '--card-ai-grad',                 label: 'Background gradient', type: 'text' },
+      { key: '--card-ai-shimmer-speed',        label: 'Shimmer speed (e.g. 3.6s)', type: 'text' }
+    ]
+  },
+  {
+    section: 'Input summary card',
+    vars: [
+      { key: '--card-input-topic-size',        label: 'Topic size',        type: 'size', min: 14, max: 36, step: 1 }
+    ]
+  }
+];
+
+// ---------------------------------------------------------------------------
+//  State
+// ---------------------------------------------------------------------------
+let THEMES = [];
+let ACTIVE_ID = null;
+
+// ---------------------------------------------------------------------------
+//  Helpers
+// ---------------------------------------------------------------------------
+function $(id) { return document.getElementById(id); }
+async function fetchJSON(url, opts) {
+  const res = await fetch(url, opts || {});
+  if (!res.ok) throw new Error(url + ' → HTTP ' + res.status);
+  return res.json();
+}
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+// Apply a theme's vars to :root in real-time — drives both the customize
+// page's preview cells AND the toolbar surfaces. We override declaratively
+// by setting each var on documentElement.style.
+function applyThemeVars(vars) {
+  const root = document.documentElement;
+  Object.entries(vars || {}).forEach(([k, v]) => {
+    root.style.setProperty(k, v);
+  });
+}
+
+// Render every preview card using window.renderAtomicForRole. Called once
+// at boot and whenever the theme changes (re-render is cheap; the same
+// renderer that the main app uses produces consistent output).
+function renderPreviewGrid() {
+  const grid = $('preview-grid');
+  grid.innerHTML = '';
+  PREVIEW_CARDS.forEach(card => {
+    const cell = document.createElement('div');
+    cell.className = 'preview-cell';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = card.name;
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    let html = '';
+    try {
+      const comp = { role: card.role, variant: card.variant, content: card.content || {} };
+      if (typeof window.renderAtomicForRole === 'function') {
+        html = window.renderAtomicForRole(comp, { x: 0, y: 0, w: 320, h: 140 });
+      } else {
+        html = '<div style="padding:20px;color:var(--text-3);">renderer not loaded</div>';
+      }
+    } catch (e) {
+      html = '<div style="padding:20px;color:var(--warning);">render error: ' + e.message + '</div>';
+    }
+    stage.innerHTML = html;
+    cell.appendChild(name);
+    cell.appendChild(stage);
+    grid.appendChild(cell);
+  });
+}
+
+// ---------------------------------------------------------------------------
+//  Editor — builds the property-edit panel from THEME_EDIT_SCHEMA, wires
+//  every input to live :root updates, and provides a "Save as Custom..."
+//  flow that POSTs the current var snapshot to /api/themes.
+// ---------------------------------------------------------------------------
+function _readVar(key) {
+  // Reads the current effective value of a CSS variable from :root.
+  // We check inline style first (recent overrides) then computed style.
+  const root = document.documentElement;
+  const inline = root.style.getPropertyValue(key);
+  if (inline) return inline.trim();
+  return getComputedStyle(root).getPropertyValue(key).trim();
+}
+function _writeVar(key, value) {
+  document.documentElement.style.setProperty(key, value);
+}
+// Convert any color expression (hex, rgb, rgba) into a 6-digit hex for
+// the <input type="color"> element. Falls back to '#000000' if it can't.
+function _toHex6(value) {
+  if (!value) return '#000000';
+  const v = value.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(v)) return v;
+  if (/^#[0-9A-Fa-f]{3}$/.test(v)) {
+    return '#' + v.slice(1).split('').map(c => c + c).join('');
+  }
+  // Use a temporary canvas to parse rgb()/rgba()/named colors.
+  try {
+    const tmp = document.createElement('div');
+    tmp.style.color = v;
+    document.body.appendChild(tmp);
+    const c = getComputedStyle(tmp).color;
+    document.body.removeChild(tmp);
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(c);
+    if (m) {
+      const r = (+m[1]).toString(16).padStart(2, '0');
+      const g = (+m[2]).toString(16).padStart(2, '0');
+      const b = (+m[3]).toString(16).padStart(2, '0');
+      return '#' + r + g + b;
+    }
+  } catch (e) { /* ignore */ }
+  return '#000000';
+}
+// Strip 'px' from a size string for <input type="number">.
+function _toNumPx(value) {
+  if (!value) return '';
+  const m = /^(-?\d+(?:\.\d+)?)\s*px/.exec(value.trim());
+  if (m) return m[1];
+  const n = parseFloat(value);
+  return isNaN(n) ? '' : String(n);
+}
+
+function _esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function buildEditorBody() {
+  // Robust rebuild via innerHTML + delegated events. This avoids the
+  // earlier failure mode where el()-based DOM construction silently
+  // produced an empty panel — easier to debug, harder to miswire.
+  var body = document.getElementById('editor-body');
+  if (!body) { console.warn('[customize] editor-body element missing'); return; }
+  try {
+    var html = '';
+    THEME_EDIT_SCHEMA.forEach(function (section) {
+      html += '<div class="editor-section">';
+      html += '<h3>' + _esc(section.section) + '</h3>';
+      section.vars.forEach(function (v) {
+        var current = _readVar(v.key) || '';
+        var rowHtml = '<div class="editor-row" data-var="' + _esc(v.key) + '" data-vtype="' + _esc(v.type) + '">';
+        rowHtml += '<label>' + _esc(v.label) + ' <code>' + _esc(v.key) + '</code></label>';
+        rowHtml += '<div class="input-wrap">';
+        if (v.type === 'color') {
+          var hex = _toHex6(current);
+          rowHtml += '<input data-role="color" type="color" value="' + _esc(hex) + '">';
+          rowHtml += '<input data-role="color-text" type="text" value="' + _esc(current) + '" style="max-width:120px;">';
+        } else if (v.type === 'color-rgba') {
+          rowHtml += '<input data-role="text" type="text" value="' + _esc(current) + '" placeholder="rgba(255,255,255,0.7)">';
+        } else if (v.type === 'size') {
+          var n = _toNumPx(current);
+          var min = v.min != null ? String(v.min) : '0';
+          var max = v.max != null ? String(v.max) : '500';
+          var step = v.step != null ? String(v.step) : '1';
+          rowHtml += '<input data-role="size" type="number" value="' + _esc(n) +
+            '" min="' + _esc(min) + '" max="' + _esc(max) + '" step="' + _esc(step) + '">';
+          rowHtml += '<span class="suffix">px</span>';
+        } else if (v.type === 'weight') {
+          rowHtml += '<select data-role="weight">';
+          ['400', '500', '600', '700'].forEach(function (w) {
+            var sel = String(current).indexOf(w) >= 0 ? ' selected' : '';
+            rowHtml += '<option value="' + w + '"' + sel + '>' + w + '</option>';
+          });
+          rowHtml += '</select>';
+        } else {
+          rowHtml += '<input data-role="text" type="text" value="' + _esc(current) + '">';
+        }
+        rowHtml += '</div></div>';
+        html += rowHtml;
+      });
+      html += '</div>';
+    });
+    // Action footer
+    html += '<div class="editor-actions">' +
+      '<button id="btn-save-custom">Save as Custom…</button>' +
+      '<button class="secondary" id="btn-revert">Revert to active theme</button>' +
+      '<div class="spacer"></div>' +
+      '<span class="hint">Editing creates a new theme — existing presets are not modified.</span>' +
+    '</div>';
+    body.innerHTML = html;
+  } catch (e) {
+    console.error('[customize] buildEditorBody failed:', e);
+    body.innerHTML = '<div style="padding:18px;color:#EF4444;">Editor failed to render. Check console.<br>' + _esc(e.message) + '</div>';
+    return;
+  }
+  // Wire up footer buttons
+  var saveBtn = document.getElementById('btn-save-custom');
+  var revertBtn = document.getElementById('btn-revert');
+  if (saveBtn) saveBtn.addEventListener('click', saveAsCustom);
+  if (revertBtn) revertBtn.addEventListener('click', revertToActive);
+  // Delegated input handler: one listener for the whole body. Reads the
+  // row's data-var + data-vtype, applies write + preview re-render.
+  body.addEventListener('input', _onEditorInput);
+  body.addEventListener('change', _onEditorInput);
+}
+
+// Delegated handler — fired once per input/change event on any descendant
+// of the editor body. Uses closest('.editor-row') to find the row's
+// data-var (CSS variable key) and data-vtype (input type), then routes
+// to the right write strategy.
+function _onEditorInput(e) {
+  var t = e.target;
+  if (!t || !t.matches) return;
+  var row = t.closest('.editor-row');
+  if (!row) return;
+  var key = row.getAttribute('data-var');
+  var vtype = row.getAttribute('data-vtype');
+  if (!key) return;
+  var role = t.getAttribute('data-role');
+  if (vtype === 'color' && (role === 'color' || role === 'color-text')) {
+    // Sync the color picker and text field, then write.
+    var color = row.querySelector('input[data-role="color"]');
+    var text  = row.querySelector('input[data-role="color-text"]');
+    if (role === 'color' && color && text) { text.value = color.value; }
+    if (role === 'color-text' && color && text) {
+      var hex = _toHex6(text.value);
+      if (hex) color.value = hex;
+    }
+    _writeVar(key, role === 'color' ? color.value : text.value);
+  } else if (vtype === 'size') {
+    _writeVar(key, t.value + 'px');
+  } else if (vtype === 'weight') {
+    _writeVar(key, t.value);
+  } else {
+    _writeVar(key, t.value);
+  }
+  renderPreviewGrid();
+}
+
+function readAllVarsFromRoot() {
+  const out = {};
+  THEME_EDIT_SCHEMA.forEach(section => {
+    section.vars.forEach(v => {
+      const val = _readVar(v.key);
+      if (val) out[v.key] = val;
+    });
+  });
+  return out;
+}
+
+async function saveAsCustom() {
+  const name = (window.prompt('Name for your custom theme?', 'My Custom Theme') || '').trim();
+  if (!name) return;
+  // Generate a kebab-case id from the name + a short hash so two saves
+  // with the same name don't collide.
+  const baseId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'custom';
+  const id = baseId + '-' + Math.random().toString(36).slice(2, 6);
+  const vars = readAllVarsFromRoot();
+  const description = 'Custom — saved ' + new Date().toLocaleString();
+  const theme = { id, name, description, vars };
+  const btn = document.getElementById('btn-save-custom');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    await fetchJSON('/api/themes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme })
+    });
+    THEMES.push(theme);
+    // Refresh dropdown
+    const sel = $('theme-select');
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = name + ' (custom)';
+    sel.appendChild(opt);
+    sel.value = id;
+    showToast('Saved · "' + name + '" added to dropdown');
+    updateOnSelect(id, false);
+    // Broadcast to the main genui window (if open in another tab) so
+    // its compact theme picker can pick up the newly-saved theme
+    // without a manual refresh.
+    _broadcastThemeChange('theme-saved', id);
+  } catch (e) {
+    showToast('ERROR: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save as Custom…';
+  }
+}
+
+// Cross-window sync helper — fires a BroadcastChannel message any
+// time the customize page changes theme state. Other open windows
+// (genui.html main app) listen for these to refresh their picker.
+function _broadcastThemeChange(type, activeId) {
+  try {
+    if (!window.__themeChannel && typeof BroadcastChannel === 'function') {
+      window.__themeChannel = new BroadcastChannel('oneui-themes');
+    }
+    if (window.__themeChannel) {
+      window.__themeChannel.postMessage({ type, activeId, at: Date.now() });
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function revertToActive() {
+  const active = THEMES.find(t => t.id === ACTIVE_ID);
+  if (!active) return;
+  // Strip every inline override so :root falls back to the CSS file
+  // defaults, then re-apply the active theme cleanly.
+  THEME_EDIT_SCHEMA.forEach(section => {
+    section.vars.forEach(v => document.documentElement.style.removeProperty(v.key));
+  });
+  applyThemeVars(active.vars);
+  $('theme-select').value = ACTIVE_ID;
+  buildEditorBody();   // refresh inputs to reflect current values
+  renderPreviewGrid();
+}
+
+// Toggle editor open/close
+$('editor-head').addEventListener('click', () => {
+  const p = $('editor-panel');
+  p.classList.toggle('open');
+  if (p.classList.contains('open')) buildEditorBody();
+});
+
+// ---------------------------------------------------------------------------
+//  Boot
+// ---------------------------------------------------------------------------
+async function boot() {
+  try {
+    const data = await fetchJSON('/api/themes');
+    THEMES = data.themes || [];
+    ACTIVE_ID = data._active;
+    // Build dropdown
+    const sel = $('theme-select');
+    sel.innerHTML = THEMES.map(t =>
+      '<option value="' + t.id + '">' + t.name + '</option>'
+    ).join('');
+    sel.value = ACTIVE_ID;
+    updateOnSelect(ACTIVE_ID, false);
+    // Wait for renderer to be ready (the script tag is async-ish; if not
+    // ready yet, retry once on next tick).
+    if (typeof window.renderAtomicForRole === 'function') {
+      renderPreviewGrid();
+    } else {
+      setTimeout(renderPreviewGrid, 50);
+    }
+  } catch (e) {
+    console.error('boot failed', e);
+    document.body.innerHTML = '<div style="padding:32px;color:#EF4444;">Failed to load themes: ' + e.message + '</div>';
+  }
+}
+
+function updateOnSelect(id, applyServer) {
+  const theme = THEMES.find(t => t.id === id);
+  if (!theme) return;
+  // Strip prior inline overrides so the new theme's vars cleanly take
+  // effect (avoids leaking from a previously-edited custom theme).
+  THEME_EDIT_SCHEMA.forEach(section => {
+    section.vars.forEach(v => document.documentElement.style.removeProperty(v.key));
+  });
+  applyThemeVars(theme.vars);
+  $('theme-description').textContent = theme.description || '';
+  $('active-pill').textContent = (theme.id === ACTIVE_ID ? 'Active · ' : 'Preview · ') + theme.name;
+  // Re-render preview so any cards that compute color from vars at render
+  // time pick up the new values.
+  renderPreviewGrid();
+  // Also rebuild editor inputs if the panel is open — they should
+  // reflect the newly-selected theme's values.
+  const panel = document.getElementById('editor-panel');
+  if (panel && panel.classList.contains('open')) buildEditorBody();
+}
+
+$('theme-select').addEventListener('change', (e) => {
+  updateOnSelect(e.target.value, false);
+});
+
+$('btn-apply').addEventListener('click', async () => {
+  const id = $('theme-select').value;
+  const btn = $('btn-apply');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    await fetchJSON('/api/themes/active', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    ACTIVE_ID = id;
+    $('active-pill').textContent = 'Active · ' + (THEMES.find(t => t.id === id) || {}).name;
+    showToast('Saved · "' + id + '" is now the active theme');
+    _broadcastThemeChange('theme-active-changed', id);
+  } catch (e) {
+    showToast('ERROR: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Apply to Site';
+  }
+});
+
+$('btn-reset').addEventListener('click', () => {
+  $('theme-select').value = ACTIVE_ID;
+  updateOnSelect(ACTIVE_ID, false);
+});
+
+boot();
+</script>
+
+</body>
+</html>

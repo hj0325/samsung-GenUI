@@ -401,5 +401,23 @@ function clearCanvas() {
   const oldHint = document.getElementById('canvasHint');
   if (oldHint) oldHint.remove();
   selectedItems.clear();
+  // Also clear any active overlay layer (notification shade, dialog,
+  // quick settings, etc). The overlay attaches to #canvasFrame /
+  // canvas._rulesInner — NOT to #canvas — so canvas.innerHTML alone
+  // didn't dismiss it. Calling clearOverlay() resets currentOverlay,
+  // strips overlay-inner nodes, and removes scene-btn .active state.
+  if (typeof window.clearOverlay === 'function') {
+    try { window.clearOverlay(); } catch (e) { /* ignore */ }
+  }
+  // Reset DesignDoc so the Scene/Layers panel doesn't show stale nodes
+  // from a prior generation. Without this, every successive run accumulated
+  // ghost layer entries from the previous canvas.
+  if (window.DesignDoc && typeof window.DesignDoc.reset === 'function') {
+    window.DesignDoc.reset();
+  }
+  // Repaint the inspector so the cleared state is reflected immediately.
+  if (typeof window.refreshSceneInspector === 'function') {
+    window.refreshSceneInspector();
+  }
 }
 

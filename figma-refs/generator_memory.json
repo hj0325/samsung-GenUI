@@ -60,9 +60,9 @@
       "outerPadding": { "top": 10, "right": 10, "bottom": 0, "left": 10 },
       "gridGap": 20,
       "maxVisibleGroups": 6,
-      "mandatoryComponents": ["container.status-bar-app"],
+      "mandatoryComponents": ["container.status-bar-app", "container.header"],
       "optionalComponents": [
-        "container.header", "search.dark", "search.light", "search.galaxy-ai",
+        "search.dark", "search.light", "search.galaxy-ai",
         "button.dark", "button.light", "button.accent", "button.galaxy-ai",
         "card.toggle-row", "card.toggle-row-light", "card.menu-item", "card.menu-item-body",
         "card.subheading", "card.chevron-nav", "card.radio", "card.stacked-group",

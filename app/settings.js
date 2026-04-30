@@ -131,15 +131,65 @@ function setColorTarget(t, btn) {
   document.querySelectorAll('.color-target button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 }
+// Lightweight toast — used by applyColor and other Design-tab interactions
+// to surface "no selection" / "applied X" status without an obtrusive alert.
+// Floats bottom-center for ~1.6s then fades. Reuses an existing #appToast
+// element if present (avoids stacking ghosts), creates one otherwise.
+function showToast(msg) {
+  let el = document.getElementById('appToast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'appToast';
+    el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(8px);' +
+      'padding:10px 18px;border-radius:999px;background:rgba(23,23,26,0.92);color:#efeef2;' +
+      'font-size:13px;font-weight:500;font-family:var(--font);box-shadow:0 8px 32px rgba(0,0,0,0.4);' +
+      'border:1px solid rgba(255,255,255,0.12);' +
+      'opacity:0;pointer-events:none;transition:opacity 0.18s, transform 0.18s;z-index:9999;';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  el.style.transform = 'translateX(-50%) translateY(0)';
+  clearTimeout(el._fadeTimer);
+  el._fadeTimer = setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateX(-50%) translateY(8px)';
+  }, 1600);
+}
+window.showToast = showToast;
+
 function applyColor(color) {
+  // No-selection guard — without this the swatch click was a no-op and
+  // the user had no signal as to why. Show a brief hint and bail.
+  if (!selectedItems || selectedItems.size === 0) {
+    showToast('Select a component on the canvas first, then pick a color');
+    return;
+  }
   selectedItems.forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     const target = el.firstElementChild || el;
-    switch(colorTarget) {
-      case 'bg': target.style.background = color; break;
-      case 'text': target.style.color = color; break;
-      case 'border': target.style.border = '1.5px solid ' + color; break;
+    switch (colorTarget) {
+      case 'bg':
+        target.style.background = color;
+        break;
+      case 'text': {
+        // Inline-style override walk — the rich-card renderers emit
+        // explicit `color:#fff` (etc.) on every text node, which
+        // overrides the wrapper's color via cascade. To make the
+        // panel actually visible-affect text, we set the color on
+        // every descendant that already has an inline color value.
+        target.style.color = color;
+        target.querySelectorAll('*').forEach(node => {
+          if (node.style && node.style.color) {
+            node.style.color = color;
+          }
+        });
+        break;
+      }
+      case 'border':
+        target.style.border = '1.5px solid ' + color;
+        break;
     }
   });
 }

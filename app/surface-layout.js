@@ -29,18 +29,29 @@ window.createOneUILayout = function createOneUILayout(viewport, surfaceType) {
   const width = viewport.width || 451;
   const height = viewport.height || 978;
 
+  // Safe-area insets — must clear the device frame's rounded bezel
+  // (border-radius:44px on .canvas-frame). Previous safe.bottom=16 was
+  // smaller than the bezel radius, so bottom-edge content (shortcut
+  // circles, charging pill) ended up partially clipped inside the
+  // rounded corner — visible at 100% browser zoom in the user's
+  // screenshot. Bumped to 36 (clears the 44px arc and leaves a small
+  // visual gap so content doesn't kiss the bezel). Top stays smaller
+  // because the status-bar zone already adds visual margin.
   const safe = {
     top: 16,
-    right: 24,
-    bottom: 16,
-    left: 24
+    right: 28,
+    bottom: 36,
+    left: 28
   };
 
   const topSystemH = 28;
   const appBarExpandedH = Math.round(height * 0.22);
   const appBarCollapsedH = 56;
   const interactionStartY = Math.round(height * 0.58);
-  const bottomNavH = 72;
+  // bottomNavH bumped from 72 → 80 so the shortcut circles + now-bar
+  // pill have enough vertical room AND are positioned higher within
+  // the safe area (no longer touching the bezel arc).
+  const bottomNavH = 80;
   const bottomBarH = 64;
 
   return {
@@ -100,14 +111,30 @@ window.composeSurfacePlan = function composeSurfacePlan(surfaceType, layout) {
 
   switch (surfaceType) {
     case T.LOCKSCREEN:
+      // Samsung Lock identity chrome. These slot names match the
+      // canonical Scene/Lock template (see app/rules-renderer.js
+      // ROLE_RENDERERS lookup) so the DOM node id + data-role emitted
+      // by the agent path is IDENTICAL to what the canned "Screens >
+      // Lock" scene produces. That way the Layers inspector, CSS
+      // selectors, and downstream tooling see one naming convention
+      // instead of two.
+      //   • status-bar    = signal / battery / carrier row
+      //   • lockIndicator = padlock icon at top center (Figma y=48)
+      //   • weatherDate   = "68° · Partly cloudy · Thu Apr 24" thin line
+      //   • clock         = huge center clock (renderer uses current time)
+      //   • shortcutLeft  = phone shortcut circle (bottom-left)
+      //   • shortcutRight = camera shortcut circle (bottom-right)
+      //   • gestureBar    = bottom home-gesture indicator bar
       return {
         surfaceType,
         components: [
-          { id: 'status-bar', role: 'status-bar', zone: 'topSystem' },
-          { id: 'lock-time', role: 'lock-time', zone: 'viewing' },
-          { id: 'lock-date', role: 'lock-date', zone: 'viewing' },
-          { id: 'lock-widgets', role: 'focus-block-group', zone: 'interaction' },
-          { id: 'lock-shortcuts', role: 'lock-shortcuts', zone: 'bottomNav' }
+          { id: 'status-bar',    role: 'status-bar',    zone: 'topSystem' },
+          { id: 'lockIndicator', role: 'lockIndicator', zone: 'topSystem' },
+          { id: 'weatherDate',   role: 'weatherDate',   zone: 'viewing' },
+          { id: 'clock',         role: 'clock',         zone: 'viewing' },
+          { id: 'shortcutLeft',  role: 'shortcutLeft',  zone: 'bottomNav', variant: { icon: 'phone' } },
+          { id: 'shortcutRight', role: 'shortcutRight', zone: 'bottomNav', variant: { icon: 'camera' } },
+          { id: 'gestureBar',    role: 'gestureBar',    zone: 'bottomAction' }
         ]
       };
 
@@ -739,28 +766,88 @@ window.resolveComponentRect = function resolveComponentRect(comp, layout, plan) 
         h: vh - Math.round(vh * 0.16)
       };
 
+    // Canonical Samsung lockscreen atomics (names match Scene/Lock
+    // template layers — see app/rules-renderer.js ROLE_RENDERERS).
+    // Coordinates mirror the Figma Lock frame 451×978:
+    //   lockIndicator y≈48  (small padlock icon, top center)
+    //   weatherDate   y≈133 (condition + temp line above the clock)
+    //   clock         y≈179 (huge center clock)
+    //   shortcutLeft/Right = 47×47 circles in bottomNav zone corners
+    //   gestureBar    = full-width 24h home indicator at very bottom
+    case 'lockIndicator':
+    case 'lock-indicator':   // kebab alias, same render target
+      return {
+        x: Math.round(vw / 2 - 12),
+        y: z.topSystem.y + z.topSystem.h + 12,
+        w: 24,
+        h: 24
+      };
+
+    case 'weatherDate':
+    case 'weather-date':
+      return {
+        x: z.viewing.x,
+        y: z.viewing.y + 44,
+        w: z.viewing.w,
+        h: 28
+      };
+
+    case 'clock':
+    case 'lock-clock':
     case 'lock-time':
       return {
         x: z.viewing.x,
-        y: z.viewing.y + 24,
+        y: z.viewing.y + 78,
         w: z.viewing.w,
-        h: 96
+        h: 176
       };
 
     case 'lock-date':
       return {
         x: z.viewing.x,
-        y: z.viewing.y + 126,
+        y: z.viewing.y + 262,
         w: z.viewing.w,
         h: 28
       };
 
-    case 'lock-shortcuts':
+    case 'shortcutLeft':
+      return {
+        x: z.bottomNav.x + 6,
+        y: z.bottomNav.y + Math.round((z.bottomNav.h - 47) / 2),
+        w: 47,
+        h: 47
+      };
+
+    case 'shortcutRight':
+      return {
+        x: z.bottomNav.x + z.bottomNav.w - 47 - 6,
+        y: z.bottomNav.y + Math.round((z.bottomNav.h - 47) / 2),
+        w: 47,
+        h: 47
+      };
+
+    case 'lock-shortcuts':   // legacy combined role
       return {
         x: z.bottomNav.x,
         y: z.bottomNav.y,
         w: z.bottomNav.w,
         h: z.bottomNav.h
+      };
+
+    case 'gestureBar':
+      return {
+        x: 0,
+        y: vh - 24,
+        w: vw,
+        h: 24
+      };
+
+    case 'unlock-hint':
+      return {
+        x: z.bottomNav.x,
+        y: (z.bottomNav.y || vh - 80) - 48,
+        w: z.bottomNav.w,
+        h: 32
       };
 
     case 'scrim':
@@ -789,7 +876,16 @@ function _T(size, opts) {
   if (window.Generator && typeof window.Generator.typography === 'function') {
     return window.Generator.typography(size, opts || {});
   }
-  const pxMap = { micro:10, caption:12, label:14, body:15, title:16, heading:18, large:20, date:24, headline:26, hero:112 };
+  // Display tier (Tier 1.3) — for hero card numbers/labels. display-xl
+  // is the hottest signal on screen (hero weather temp, big ETA, etc.);
+  // display-lg / display-md cover step-down hierarchy. Falls back to
+  // headline/large for legacy callers.
+  const pxMap = {
+    micro:10, caption:12, label:14, body:15, title:16, heading:18, large:20,
+    date:24, headline:26,
+    'display-md': 32, 'display-lg': 40, 'display-xl': 56,
+    hero:112
+  };
   const weightMap = { regular:400, medium:500, semibold:600, bold:700 };
   const o = opts || {};
   return 'font-size:' + (pxMap[size] || 15) + 'px;font-weight:' + (weightMap[o.weight || 'regular']) + ';color:#fff;';
@@ -813,6 +909,86 @@ function _S(tier) {
   }
   const sMap = { xs:4, sm:6, md:8, base:10, lg:12, xl:14, xxl:16, '3xl':18, '4xl':20 };
   return (sMap[tier] != null ? sMap[tier] : 8) + 'px';
+}
+
+// ── Weather icon glyph set ──────────────────────────────────────────────
+// Returns an inline SVG string for the named weather condition. Sized to
+// fill its container. Used by the focus-block weather variant. The colors
+// are tuned to read on the dark glass card surface — sun is amber, cloud
+// is light gray, rain is sky blue, snow is white-on-cloud, etc.
+function _weatherIconSvg(name) {
+  const N = (name || 'sun').toLowerCase();
+  const base = '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" style="display:block;">';
+  const close = '</svg>';
+  const cloud = '<path d="M7 17a4 4 0 0 1-1-7.87A6 6 0 0 1 17.5 8.5 4 4 0 0 1 17 17H7z" fill="#E5E7EB"/>';
+  const cloudGray = '<path d="M7 17a4 4 0 0 1-1-7.87A6 6 0 0 1 17.5 8.5 4 4 0 0 1 17 17H7z" fill="#9CA3AF"/>';
+  switch (N) {
+    case 'sun':
+    case 'clear':
+      return base +
+        '<circle cx="12" cy="12" r="4.5" fill="#FBBF24"/>' +
+        '<g stroke="#FBBF24" stroke-width="2" stroke-linecap="round">' +
+          '<path d="M12 2v2.5M12 19.5v2.5M2 12h2.5M19.5 12h2.5"/>' +
+          '<path d="M4.93 4.93l1.77 1.77M17.3 17.3l1.77 1.77M4.93 19.07l1.77-1.77M17.3 6.7l1.77-1.77"/>' +
+        '</g>' +
+      close;
+    case 'cloud-sun':
+    case 'partly-cloudy':
+      return base +
+        '<circle cx="8" cy="7.5" r="3" fill="#FBBF24"/>' +
+        '<g stroke="#FBBF24" stroke-width="1.5" stroke-linecap="round">' +
+          '<path d="M8 2v1.5M2 7.5h1.5M3.5 3.5l1.06 1.06M12.5 3.5l-1.06 1.06M2.94 11.56l1.06-1.06"/>' +
+        '</g>' +
+        cloud +
+      close;
+    case 'cloud':
+    case 'overcast':
+      return base + cloud + close;
+    case 'rain':
+    case 'showers':
+    case 'drizzle':
+      return base +
+        cloudGray +
+        '<g stroke="#60A5FA" stroke-width="2" stroke-linecap="round">' +
+          '<path d="M9 19v2.5M12 19.5v2M15 19v2.5"/>' +
+        '</g>' +
+      close;
+    case 'snow':
+    case 'sleet':
+      return base +
+        cloud +
+        '<g fill="#fff">' +
+          '<circle cx="9" cy="20" r="1.2"/>' +
+          '<circle cx="12" cy="21" r="1.2"/>' +
+          '<circle cx="15" cy="20" r="1.2"/>' +
+        '</g>' +
+      close;
+    case 'bolt':
+    case 'storm':
+    case 'thunderstorm':
+      return base +
+        cloudGray +
+        '<path d="M12 18l-2 4h2.5l-1 4 4-6h-2.5l1-2z" fill="#FBBF24"/>' +
+      close;
+    case 'fog':
+    case 'mist':
+    case 'haze':
+      return base +
+        '<g stroke="#9CA3AF" stroke-width="2" stroke-linecap="round">' +
+          '<path d="M3 8h18M3 12h18M3 16h13M5 20h14"/>' +
+        '</g>' +
+      close;
+    case 'wind':
+    case 'windy':
+      return base +
+        '<g stroke="#9CA3AF" stroke-width="2" stroke-linecap="round" fill="none">' +
+          '<path d="M3 9h12a3 3 0 1 0-3-3"/>' +
+          '<path d="M3 15h15a3 3 0 1 1-3 3"/>' +
+        '</g>' +
+      close;
+    default:
+      return base + cloud + close;
+  }
 }
 
 window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
@@ -1124,13 +1300,346 @@ window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
 
     case 'focus-block': {
       // Variant-aware: widget cells, hero cards, 'secondary' editorial
-      // cards, or default focus
+      // cards, weather cards, or default focus
       var fv = (comp && comp.variant) || {};
       var ftitle = fv.title || 'Focus block';
       var fvalue = fv.value || '';
       var fbody  = fv.body || fv.description || '';
       var fsub   = fv.sub   || (fv.kind === 'hero' ? '' : 'Important content goes here');
       var faccent = fv.accent || '#0381FE';
+
+      // Calendar variant — dedicated visual treatment so
+      // calendar_summary_card doesn't render as a generic banner. Layout:
+      // small section header ("Next up · Today") + small calendar glyph
+      // beside a prominent time block, then event title large, location
+      // with pin icon at the bottom.
+      if (fv.kind === 'calendar') {
+        var cTime     = fv.time     || '';
+        var cTitle    = fv.title    || 'Event';
+        var cLocation = fv.location || '';
+        var cDuration = fv.duration || '';
+        var cSection  = fv.section  || '';
+        // Inline calendar glyph (24x24, fills container) — uses theme
+        // accent color so a "vibrant" or "mono" theme recolors it.
+        var calIcon = '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" style="display:block;">' +
+          '<rect x="3" y="5" width="18" height="16" rx="3" stroke="var(--card-calendar-accent,#A78BFA)" stroke-width="1.8" fill="color-mix(in srgb, var(--card-calendar-accent,#A78BFA) 15%, transparent)"/>' +
+          '<path d="M8 3v4M16 3v4M3 10h18" stroke="var(--card-calendar-accent,#A78BFA)" stroke-width="1.8" stroke-linecap="round"/>' +
+          '<circle cx="8" cy="14" r="1.2" fill="var(--card-calendar-accent,#A78BFA)"/>' +
+          '<circle cx="12" cy="14" r="1.2" fill="var(--card-calendar-accent,#A78BFA)"/>' +
+        '</svg>';
+        // Pin glyph for location (smaller)
+        var pinIcon = '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" style="display:block;">' +
+          '<path d="M12 22s7-7.58 7-13a7 7 0 0 0-14 0c0 5.42 7 13 7 13z" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" fill="none"/>' +
+          '<circle cx="12" cy="9" r="2.2" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>' +
+        '</svg>';
+        // Build header row (section + duration meta, optional)
+        var headerParts = [];
+        if (cSection)  headerParts.push('<span>' + cSection + '</span>');
+        if (cSection && cDuration) headerParts.push('<span style="opacity:0.5;">·</span>');
+        if (cDuration) headerParts.push('<span>' + cDuration + '</span>');
+        var headerRow = headerParts.length
+          ? '<div style="' + _T('micro', { color: 'translucentLabel' }) + 'display:flex;gap:' + _S('xs') + ';align-items:center;letter-spacing:0.4px;text-transform:uppercase;">' + headerParts.join('') + '</div>'
+          : '';
+        // Build time + cal-icon row
+        var timeRow = '<div style="display:flex;align-items:center;gap:' + _S('md') + ';">' +
+          '<div style="width:18px;height:18px;flex-shrink:0;opacity:0.9;">' + calIcon + '</div>' +
+          (cTime ? '<div style="font-family:var(--font);font-size:var(--card-calendar-time-size,22px);font-weight:var(--card-calendar-time-weight,600);line-height:1;color:#fff;letter-spacing:-0.3px;">' + cTime + '</div>' : '') +
+        '</div>';
+        // Location row with pin
+        var locRow = cLocation
+          ? '<div style="display:flex;align-items:center;gap:' + _S('xs') + ';">' +
+              '<div style="width:12px;height:12px;flex-shrink:0;opacity:0.7;">' + pinIcon + '</div>' +
+              '<div style="' + _T('caption', { color: 'translucentLabel' }) + '">' + cLocation + '</div>' +
+            '</div>'
+          : '';
+        // Tier 2.1 — Calendar background: subtle day-grid SVG pattern
+        // baked into the surface as a faint accent. Doesn't compete with
+        // the foreground content; just adds visual texture so the card
+        // feels like an actual calendar widget.
+        var calBgPattern = '<svg width="100%" height="100%" viewBox="0 0 200 100" preserveAspectRatio="none" style="position:absolute;inset:0;opacity:0.18;pointer-events:none;">' +
+          '<defs><pattern id="calGrid" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">' +
+            '<rect width="28" height="28" fill="none"/>' +
+            '<path d="M28 0L0 0L0 28" stroke="var(--card-calendar-accent,#A78BFA)" stroke-width="0.5" fill="none"/>' +
+          '</pattern></defs>' +
+          '<rect width="100%" height="100%" fill="url(#calGrid)"/>' +
+        '</svg>';
+        return '<div style="width:100%;height:100%;border-radius:var(--card-radius,' + _R('widget') + ');' +
+          _G('panel') +
+          'padding:var(--card-padding-v,18px) var(--card-padding-h,20px);box-sizing:border-box;' +
+          'display:flex;flex-direction:column;justify-content:flex-start;gap:var(--card-gap,6px);overflow:hidden;position:relative;">' +
+          calBgPattern +
+          '<div style="position:relative;z-index:1;display:flex;flex-direction:column;gap:var(--card-gap,8px);height:100%;">' +
+            headerRow +
+            timeRow +
+            '<div style="' + _T('title', { weight: 'semibold' }) + 'line-height:1.2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">' + cTitle + '</div>' +
+            locRow +
+          '</div>' +
+        '</div>';
+      }
+
+      // Input-summary variant — for `input_summary_card`. Layout: a small
+      // form-input glyph in the corner, section header (uppercase), large
+      // topic phrase, and either a single detail line OR a row of facet
+      // chips when the value contained separators. Used for search recap,
+      // settings change confirmation, address entry summary.
+      if (fv.kind === 'input') {
+        var iSection = fv.section || 'INPUT';
+        var iTopic   = fv.topic   || '';
+        var iDetail  = fv.detail  || '';
+        var iFacets  = Array.isArray(fv.facets) ? fv.facets : [];
+        // Form-input glyph (search bar with text-line)
+        var formIcon = '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" style="display:block;">' +
+          '<rect x="3" y="6" width="18" height="12" rx="3" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>' +
+          '<path d="M7 12h6" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round"/>' +
+          '<circle cx="17" cy="12" r="0.8" fill="rgba(255,255,255,0.6)"/>' +
+        '</svg>';
+        // Long-facet detection — if any facet exceeds ~28 chars, the chip
+        // pattern looks bad (long pill that overflows the card). Fall
+        // back to a plain detail line in that case (the LLM's value as
+        // body text). Short facets (<=28) render as proper chip row.
+        var FACET_MAX_LEN  = 28;
+        var hasLongFacet   = iFacets.some(function (f) { return (f || '').length > FACET_MAX_LEN; });
+        var useChipRow     = iFacets.length > 0 && !hasLongFacet;
+        // Render facet chips — only when all facets are short enough.
+        // flex-wrap:wrap so multiple chips stack to a new line if the
+        // sum exceeds card width. flex-shrink:1 + max-width so a single
+        // chip can compress before overflowing.
+        var facetHtml = !useChipRow ? '' :
+          iFacets.slice(0, 4).map(function (f) {
+            return '<span style="padding:4px 10px;background:rgba(255,255,255,0.1);border-radius:14px;' +
+              _T('caption', { weight: 'medium' }) +
+              'max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:1;">' + f + '</span>';
+          }).join('');
+        // Detail-line fallback: join all facets with separator, render
+        // as a 2-line clamped paragraph. Keeps the info accessible even
+        // if it can't fit as chips.
+        var detailLine = iDetail || (hasLongFacet ? iFacets.join(' · ') : '');
+        return '<div style="width:100%;height:100%;border-radius:var(--card-radius,' + _R('widget') + ');' +
+          _G('panel') +
+          'padding:var(--card-padding-v,18px) var(--card-padding-h,20px);box-sizing:border-box;' +
+          'display:flex;flex-direction:column;justify-content:flex-start;gap:var(--card-gap,6px);overflow:hidden;">' +
+          // Header: form-icon + section
+          '<div style="display:flex;align-items:center;gap:' + _S('md') + ';">' +
+            '<div style="width:18px;height:18px;flex-shrink:0;opacity:0.85;">' + formIcon + '</div>' +
+            '<div style="' + _T('micro', { color: 'translucentLabel' }) + 'letter-spacing:0.4px;text-transform:uppercase;">' + iSection + '</div>' +
+          '</div>' +
+          // Body: topic (large) — what the user input was about
+          (iTopic
+            ? '<div style="font-size:var(--card-input-topic-size,20px);font-weight:600;line-height:1.2;color:#fff;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">' + iTopic + '</div>'
+            : '') +
+          // Footer: chip row when all facets are short, otherwise a
+          // 2-line clamped detail paragraph.
+          (useChipRow
+            ? '<div style="display:flex;gap:' + _S('xs') + ';flex-wrap:wrap;overflow:hidden;max-width:100%;">' + facetHtml + '</div>'
+            : (detailLine
+              ? '<div style="' + _T('label', { color: 'translucentLabel' }) + 'line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">' + detailLine + '</div>'
+              : '')) +
+        '</div>';
+      }
+
+      // Reminder variant — checkbox + task title + due time, with an
+      // orange accent for the section header. Sample Samsung One UI
+      // reminder widget layout.
+      if (fv.kind === 'reminder') {
+        var rTask    = fv.task    || 'Reminder';
+        var rDue     = fv.due     || '';
+        var rSection = fv.section || (fv.count ? fv.count + ' ITEMS' : 'TODAY');
+        // Hollow checkbox SVG — accent driven by theme var
+        var checkBox = '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" style="display:block;">' +
+          '<rect x="4" y="4" width="16" height="16" rx="4" stroke="var(--card-reminder-accent,#F59E0B)" stroke-width="1.8" fill="color-mix(in srgb, var(--card-reminder-accent,#F59E0B) 12%, transparent)"/>' +
+        '</svg>';
+        var clockIcon = '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" style="display:block;">' +
+          '<circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>' +
+          '<path d="M12 7v5l3 2" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</svg>';
+        return '<div style="width:100%;height:100%;border-radius:var(--card-radius,' + _R('widget') + ');' +
+          _G('panel') +
+          'padding:var(--card-padding-v,18px) var(--card-padding-h,20px);box-sizing:border-box;' +
+          'display:flex;flex-direction:column;justify-content:flex-start;gap:var(--card-gap,6px);overflow:hidden;">' +
+          // Header: checkbox + section
+          '<div style="display:flex;align-items:center;gap:' + _S('md') + ';">' +
+            '<div style="width:18px;height:18px;flex-shrink:0;">' + checkBox + '</div>' +
+            '<div style="' + _T('micro', { color: 'translucentLabel' }) + 'letter-spacing:0.4px;text-transform:uppercase;">' + rSection + '</div>' +
+          '</div>' +
+          // Task title
+          '<div style="font-size:var(--card-reminder-task-size,16px);font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#fff;">' + rTask + '</div>' +
+          // Due time row
+          (rDue
+            ? '<div style="display:flex;align-items:center;gap:' + _S('xs') + ';">' +
+                '<div style="width:12px;height:12px;flex-shrink:0;">' + clockIcon + '</div>' +
+                '<div style="' + _T('caption', { color: 'translucentLabel' }) + '">Due ' + rDue + '</div>' +
+              '</div>'
+            : '') +
+        '</div>';
+      }
+
+      // Message summary variant — avatar circle + sender + preview.
+      // Green accent for "new messages" section header.
+      if (fv.kind === 'message') {
+        var mSender  = fv.sender  || '';
+        var mPreview = fv.preview || '(no preview)';
+        var mSection = fv.section || 'MESSAGES';
+        // Avatar — colored circle with first letter of sender (or chat
+        // bubble glyph when no sender)
+        var avatarLetter = mSender ? mSender.charAt(0).toUpperCase() : '';
+        var avatar = avatarLetter
+          ? '<div style="width:var(--card-message-avatar-size,32px);height:var(--card-message-avatar-size,32px);border-radius:50%;background:var(--card-message-avatar-grad,linear-gradient(135deg,#34D399,#10B981));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:14px;flex-shrink:0;">' + avatarLetter + '</div>'
+          : '<div style="width:var(--card-message-avatar-size,32px);height:var(--card-message-avatar-size,32px);border-radius:50%;background:var(--card-message-avatar-grad,linear-gradient(135deg,#34D399,#10B981));display:flex;align-items:center;justify-content:center;flex-shrink:0;">' +
+              '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M21 12a8 8 0 1 1-3.5-6.6L21 4l-1.4 3.5A8 8 0 0 1 21 12z" fill="#fff"/></svg>' +
+            '</div>';
+        return '<div style="width:100%;height:100%;border-radius:var(--card-radius,' + _R('widget') + ');' +
+          _G('panel') +
+          'padding:var(--card-padding-v,18px) var(--card-padding-h,20px);box-sizing:border-box;' +
+          'display:flex;flex-direction:column;justify-content:flex-start;gap:var(--card-gap,6px);overflow:hidden;">' +
+          // Header
+          '<div style="' + _T('micro', { color: 'translucentLabel' }) + 'letter-spacing:0.4px;text-transform:uppercase;">' + mSection + '</div>' +
+          // Body: avatar + (sender + preview)
+          '<div style="display:flex;align-items:flex-start;gap:' + _S('lg') + ';">' +
+            avatar +
+            '<div style="flex:1;min-width:0;">' +
+              (mSender
+                ? '<div style="' + _T('title', { weight: 'semibold' }) + 'line-height:1.2;margin-bottom:' + _S('xs') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + mSender + '</div>'
+                : '') +
+              '<div style="' + _T('caption', { color: 'translucentLabel' }) + 'line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">' + mPreview + '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+      // ETA variant — route icon + large duration + destination + traffic.
+      // Teal accent for the navigation context.
+      if (fv.kind === 'eta') {
+        var eEta         = fv.eta         || '—';
+        var eDestination = fv.destination || '';
+        var eTraffic     = fv.traffic     || '';
+        var eRoute       = fv.route       || '';
+        // Trafficaccent: green for light, amber for moderate, red for heavy
+        var trafficColor = '#10B981';  // light (default)
+        if (/heavy|severe/i.test(eTraffic)) trafficColor = '#EF4444';
+        else if (/moderate/i.test(eTraffic)) trafficColor = '#F59E0B';
+        var carIcon = '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" style="display:block;">' +
+          '<path d="M5 17h14M7 17l1.5-5h7L17 17M6 17v2M18 17v2" stroke="var(--card-eta-accent,#14B8A6)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<circle cx="9" cy="14" r="0.8" fill="var(--card-eta-accent,#14B8A6)"/>' +
+          '<circle cx="15" cy="14" r="0.8" fill="var(--card-eta-accent,#14B8A6)"/>' +
+        '</svg>';
+        var pinIcon = '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" style="display:block;">' +
+          '<path d="M12 22s7-7.58 7-13a7 7 0 0 0-14 0c0 5.42 7 13 7 13z" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" fill="none"/>' +
+          '<circle cx="12" cy="9" r="2.2" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>' +
+        '</svg>';
+        return '<div style="width:100%;height:100%;border-radius:var(--card-radius,' + _R('widget') + ');' +
+          _G('panel') +
+          'padding:var(--card-padding-v,18px) var(--card-padding-h,20px);box-sizing:border-box;' +
+          'display:flex;flex-direction:column;justify-content:flex-start;gap:var(--card-gap,6px);overflow:hidden;">' +
+          // Top: car icon + huge ETA
+          '<div style="display:flex;align-items:center;gap:' + _S('lg') + ';">' +
+            '<div style="width:var(--card-eta-icon-size,32px);height:var(--card-eta-icon-size,32px);flex-shrink:0;">' + carIcon + '</div>' +
+            '<div style="font-family:var(--font);font-size:var(--card-eta-size,40px);font-weight:600;line-height:1;color:#fff;letter-spacing:-1px;">' + eEta + '</div>' +
+          '</div>' +
+          // Mid: destination
+          (eDestination
+            ? '<div style="display:flex;align-items:center;gap:' + _S('xs') + ';">' +
+                '<div style="width:14px;height:14px;flex-shrink:0;opacity:0.7;">' + pinIcon + '</div>' +
+                '<div style="' + _T('title', { weight: 'medium' }) + 'line-height:1.2;">' + eDestination + '</div>' +
+              '</div>'
+            : '') +
+          // Bottom: traffic indicator
+          (eTraffic
+            ? '<div style="display:flex;align-items:center;gap:' + _S('xs') + ';">' +
+                '<span style="width:8px;height:8px;border-radius:50%;background:' + trafficColor + ';flex-shrink:0;"></span>' +
+                '<span style="' + _T('caption', { color: 'translucentLabel' }) + '">' + eTraffic + (eRoute ? ' · ' + eRoute : '') + '</span>' +
+              '</div>'
+            : (eRoute
+              ? '<div style="' + _T('caption', { color: 'translucentLabel' }) + '">' + eRoute + '</div>'
+              : '')) +
+        '</div>';
+      }
+
+      // Tier 2.1 — Condition-aware background gradient for weather cards.
+      // Replaces the flat glass surface with a dynamic sky-like color
+      // that responds to the weather condition. Real Samsung weather
+      // widgets use full-card imagery; this is a CSS-only equivalent
+      // (no network calls, no images to load) that captures ~60% of
+      // the visual richness for ~5% of the cost.
+      function _weatherBgGradient(icon) {
+        var I = (icon || '').toLowerCase();
+        // Strong, visible gradients — these are the weather card's
+        // identity. Previously too subtle (0.18-0.32 alpha); bumped
+        // to 0.45-0.65 so the sun/cloud/rain identity reads at a
+        // glance. Final stop blends to dark surface so text contrast
+        // stays readable.
+        switch (I) {
+          case 'sun':
+          case 'clear':
+            return 'linear-gradient(155deg, rgba(251,191,36,0.62) 0%, rgba(249,115,22,0.40) 55%, rgba(23,23,26,0.70) 100%)';
+          case 'cloud-sun':
+          case 'partly-cloudy':
+            return 'linear-gradient(155deg, rgba(251,191,36,0.48) 0%, rgba(180,180,195,0.30) 50%, rgba(23,23,26,0.70) 100%)';
+          case 'cloud':
+          case 'overcast':
+            return 'linear-gradient(155deg, rgba(180,180,195,0.42) 0%, rgba(120,125,140,0.28) 60%, rgba(23,23,26,0.70) 100%)';
+          case 'rain':
+          case 'showers':
+          case 'drizzle':
+            return 'linear-gradient(155deg, rgba(96,165,250,0.55) 0%, rgba(51,65,85,0.35) 55%, rgba(23,23,26,0.70) 100%)';
+          case 'snow':
+          case 'sleet':
+            return 'linear-gradient(155deg, rgba(226,232,240,0.55) 0%, rgba(148,163,184,0.32) 60%, rgba(23,23,26,0.70) 100%)';
+          case 'bolt':
+          case 'storm':
+          case 'thunderstorm':
+            return 'linear-gradient(155deg, rgba(251,191,36,0.40) 0%, rgba(71,85,105,0.55) 45%, rgba(23,23,26,0.80) 100%)';
+          case 'fog':
+          case 'mist':
+          case 'haze':
+            return 'linear-gradient(155deg, rgba(180,180,195,0.36) 0%, rgba(120,125,140,0.26) 50%, rgba(23,23,26,0.70) 100%)';
+          case 'wind':
+          case 'windy':
+            return 'linear-gradient(155deg, rgba(165,180,252,0.45) 0%, rgba(120,125,140,0.28) 60%, rgba(23,23,26,0.70) 100%)';
+          default:
+            return '';
+        }
+      }
+
+      // Weather variant — dedicated visual treatment so weather_glance_card
+      // doesn't render as a generic title+sub box. Layout: condition icon
+      // beside a large temp number, condition phrase below, location +
+      // feels-like meta at the bottom. THEME-DRIVEN: every visual property
+      // pulls from a CSS variable (e.g. --card-weather-temp-size) so the
+      // /customize dropdown can swap the entire visual identity at runtime
+      // without touching this code.
+      if (fv.kind === 'weather') {
+        var wTemp      = fv.temp      || '—';
+        var wCondition = fv.condition || '';
+        var wLocation  = fv.location  || '';
+        var wFeels     = fv.feels     || '';
+        var wIcon      = _weatherIconSvg(fv.icon || 'sun');
+        var wMetaParts = [];
+        if (wLocation) wMetaParts.push('<span>' + wLocation + '</span>');
+        if (wLocation && wFeels) wMetaParts.push('<span style="opacity:0.5;">·</span>');
+        if (wFeels)    wMetaParts.push('<span>Feels ' + wFeels + '</span>');
+        var wBgGrad = _weatherBgGradient(fv.icon);
+        var wBgStyle = wBgGrad
+          ? 'background:' + wBgGrad + ', rgba(23,23,26,0.6);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.08);'
+          : _G('panel');
+        return '<div style="width:100%;height:100%;border-radius:var(--card-radius,' + _R('widget') + ');' +
+          wBgStyle +
+          'padding:var(--card-padding-v,18px) var(--card-padding-h,20px);box-sizing:border-box;' +
+          'display:flex;flex-direction:column;justify-content:flex-start;gap:var(--card-gap,6px);overflow:hidden;position:relative;">' +
+          // Top row: icon + huge temp
+          '<div style="display:flex;align-items:center;gap:' + _S('lg') + ';position:relative;z-index:1;">' +
+            '<div style="width:var(--card-weather-icon-size,44px);height:var(--card-weather-icon-size,44px);flex-shrink:0;">' + wIcon + '</div>' +
+            '<div style="font-family:var(--font);font-size:var(--card-weather-temp-size,52px);font-weight:var(--card-weather-temp-weight,600);line-height:1;color:var(--card-weather-temp-color,#fff);letter-spacing:var(--card-weather-temp-letterspacing,-1.5px);">' + wTemp + '</div>' +
+          '</div>' +
+          // Mid: condition phrase
+          (wCondition
+            ? '<div style="' + _T('title', { weight: 'medium' }) + 'line-height:1.2;position:relative;z-index:1;">' + wCondition + '</div>'
+            : '') +
+          // Bottom: location · feels
+          (wMetaParts.length
+            ? '<div style="' + _T('label', { color: 'translucentLabel' }) + 'display:flex;gap:' + _S('sm') + ';align-items:center;position:relative;z-index:1;">' + wMetaParts.join('') + '</div>'
+            : '') +
+        '</div>';
+      }
 
       if (fv.kind === 'hero') {
         return '<div style="width:100%;height:100%;border-radius:' + _R('widget') + ';' +
@@ -1250,14 +1759,99 @@ window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
     }
 
     case 'action-row': {
+      // Reads an action list from whichever channel the AI populated:
+      //   variant.actions = [{label, icon?}, …]  ← primary contract (role
+      //                                              contract says this)
+      //   content.actions = [{label, icon?}, …]  ← content-channel alias
+      //   variant.primary / variant.secondary    ← legacy 2-button form
+      //
+      // Earlier revision hardcoded "Primary" / "Secondary" as fallback
+      // labels, which is exactly the "placeholder strings" anti-pattern
+      // we ban in sanitize — it leaked dummy-looking buttons onto any
+      // screen where the AI emitted an action-row without labels. Now:
+      // if we have no real labels, render NOTHING (empty div). The
+      // sanitize pass drops action-rows with no actions so this path
+      // shouldn't fire in production, but kept as a last-resort guard.
       var av = (comp && comp.variant) || {};
-      var pLabel = av.primary || 'Primary';
-      var sLabel = av.secondary || 'Secondary';
-      return '<div style="width:100%;height:100%;display:flex;gap:' + _S('lg') + ';align-items:center;">' +
-        '<button style="flex:1;height:100%;border:none;border-radius:' + _R('pill') + ';' +
-          'background:var(--primary);color:#fff;' + _T('body', { weight: 'semibold' }) + 'cursor:pointer;">' + pLabel + '</button>' +
-        '<button style="flex:1;height:100%;border:none;border-radius:' + _R('pill') + ';' +
-          _G('widgetPill') + _T('body', { weight: 'semibold' }) + 'cursor:pointer;">' + sLabel + '</button>' +
+      var ac = (comp && comp.content) || {};
+      var actions = Array.isArray(av.actions) ? av.actions
+                  : Array.isArray(ac.actions) ? ac.actions
+                  : null;
+      if (!actions) {
+        // Legacy 2-button form — only honor when actual strings supplied,
+        // never the "Primary"/"Secondary" placeholders.
+        var hasLegacy = (av.primary && av.primary !== 'Primary') ||
+                        (av.secondary && av.secondary !== 'Secondary');
+        if (hasLegacy) {
+          actions = [];
+          if (av.primary)   actions.push({ label: av.primary,   kind: 'primary'   });
+          if (av.secondary) actions.push({ label: av.secondary, kind: 'secondary' });
+        }
+      }
+      if (!actions || !actions.length) {
+        return '<div style="width:100%;height:100%;"></div>';
+      }
+      // Render each action as a pill button. The FIRST action gets the
+      // filled (primary-accent) style; subsequent ones use glass. If an
+      // explicit variant.kind="override" arrives, that one uses the
+      // subtle "outline / muted" style regardless of position.
+      // Inline glyph set for action chips. Compact 16x16 icons that pair
+      // with the label without crowding. Render as currentColor so the
+      // button's text color drives the icon color too.
+      var ACTION_ICONS = {
+        bookmark:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 4v17l6-4 6 4V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+        share:       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="6" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="6" r="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="18" r="2.5" stroke="currentColor" stroke-width="1.8"/><path d="M8.2 11l7.6-4M8.2 13l7.6 4" stroke="currentColor" stroke-width="1.8"/></svg>',
+        edit:        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M16 3l5 5-12 12H4v-5L16 3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+        trash:       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+        copy:        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="8" y="4" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M16 18v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+        download:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 4v12M6 12l6 6 6-6M4 20h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        heart:       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 21l-9-9a5 5 0 0 1 7-7l2 2 2-2a5 5 0 0 1 7 7l-9 9z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+        comment:     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 12a8 8 0 0 1-12 7L3 21l1.5-5A8 8 0 1 1 21 12z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+        play:        '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7V5z"/></svg>',
+        pause:       '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3.5" height="14"/><rect x="13.5" y="5" width="3.5" height="14"/></svg>',
+        'skip-forward':'<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 5l9 7-9 7V5z"/><rect x="16" y="5" width="2.5" height="14"/></svg>',
+        'skip-back': '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 5L10 12l9 7V5z"/><rect x="5.5" y="5" width="2.5" height="14"/></svg>',
+        plus:        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+        x:           '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+        check:       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        settings:    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+        search:      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
+      };
+      function _renderActionIcon(name) {
+        return name && ACTION_ICONS[name]
+          ? '<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;">' + ACTION_ICONS[name] + '</span>'
+          : '';
+      }
+      // One UI guideline — touch targets must be ≥ 48dp tall. Previous
+      // version used height:100% which collapsed to text-height when the
+      // parent flex item didn't have an explicit height, producing a
+      // ~32px sliver. Now we lock min-height:48px and pad horizontally
+      // for a 56-65px wide chip minimum.
+      var BTN_BASE = 'flex:1 1 auto;min-height:48px;padding:12px 18px;border-radius:' + _R('pill') +
+                     ';display:inline-flex;align-items:center;justify-content:center;cursor:pointer;';
+      var buttons = actions.map(function (a, i) {
+        var label = (typeof a === 'string') ? a : (a && (a.label || a.text)) || '';
+        if (!label) return '';
+        var icon  = (a && a.icon) || null;
+        var iconHtml = _renderActionIcon(icon);
+        var isPrimary = (a && a.kind === 'primary') || (!a.kind && i === 0);
+        var isOverride = (a && a.kind === 'override') || av.kind === 'override';
+        var inner = '<span style="display:inline-flex;align-items:center;justify-content:center;gap:6px;">' + iconHtml + '<span>' + label + '</span></span>';
+        if (isOverride) {
+          return '<button style="' + BTN_BASE + 'border:1px solid rgba(255,255,255,0.25);background:transparent;color:#fff;' +
+            _T('body', { weight: 'medium' }) + '">' + inner + '</button>';
+        }
+        if (isPrimary) {
+          return '<button style="' + BTN_BASE + 'border:none;background:var(--primary);color:#fff;' +
+            _T('body', { weight: 'semibold' }) + '">' + inner + '</button>';
+        }
+        return '<button style="' + BTN_BASE + 'border:none;' +
+          _G('widgetPill') + _T('body', { weight: 'semibold' }) + '">' + inner + '</button>';
+      }).filter(Boolean).join('');
+      // Outer row also gets a min-height so the action group doesn't
+      // collapse below 48dp even when the parent gives no height.
+      return '<div style="width:100%;min-height:48px;display:flex;gap:' + _S('lg') + ';align-items:center;flex-wrap:wrap;">' +
+        buttons +
       '</div>';
     }
 
@@ -1424,6 +2018,42 @@ window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
     // variants can be composed from them.
 
     case 'toggle-chip': {
+      // Multi-toggle ROW path — emitted by the `quick_toggle_row`
+      // adapter. Lays out N circular toggles side-by-side with a tiny
+      // label under each. Used for Samsung QS-style strips on lock or
+      // home surface.
+      var tcvRow = (comp && comp.variant) || {};
+      if (Array.isArray(tcvRow.toggles) && tcvRow.toggles.length) {
+        var TOGGLE_ROW_ICONS = {
+          'wifi':       '<path d="M2 9c5-4 15-4 20 0M5 13c3.5-3 11-3 14 0M9 17c1.7-1.3 4.3-1.3 6 0M12 21h0.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>',
+          'bluetooth':  '<path d="M7 17l10-10-5-5v20l5-5-10-10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+          'flashlight': '<path d="M9 3h6v3l-1 3H10L9 6V3zM10 9h4v12h-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/>',
+          'airplane':   '<path d="M3 13l8-2V5a1 1 0 0 1 2 0v6l8 2v2l-8-1v4l2 1v2l-3-1-3 1v-2l2-1v-4l-8 1v-2z" fill="currentColor"/>',
+          'hotspot':    '<path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 16a6 6 0 0 1 0-8M16 16a6 6 0 0 0 0-8M5 19a10 10 0 0 1 0-14M19 19a10 10 0 0 0 0-14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/>',
+          'location':   '<path d="M12 22s-7-7-7-12a7 7 0 1 1 14 0c0 5-7 12-7 12z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/><circle cx="12" cy="10" r="2.5" stroke="currentColor" stroke-width="1.6" fill="none"/>',
+          'auto-rotate':'<path d="M4 12a8 8 0 0 1 14-5l2-2M20 7v4h-4M20 12a8 8 0 0 1-14 5l-2 2M4 17v-4h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+          'sound':      '<path d="M5 9v6h4l5 4V5L9 9H5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>',
+          'vibrate':    '<path d="M5 9v6h4l5 4V5L9 9H5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M18 8c1.5 1 2 2.5 2 4s-0.5 3-2 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/>',
+          'mute':       '<path d="M5 9v6h4l5 4V5L9 9H5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/>',
+          'power-save': '<rect x="5" y="7" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.6" fill="none"/><rect x="19" y="10" width="2" height="4" fill="currentColor"/><path d="M11 10l-2 4h3l-1 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+          'camera':     '<rect x="3" y="7" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/><circle cx="12" cy="13.5" r="3.5" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M9 7l1.5-2h3L15 7" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" fill="none"/>',
+          'screen-share':'<rect x="3" y="5" width="18" height="11" rx="1.5" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M9 20h6M12 16v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/>'
+        };
+        var tiles = tcvRow.toggles.map(function (t) {
+          var iconPath = TOGGLE_ROW_ICONS[t.icon] || TOGGLE_ROW_ICONS['sound'];
+          var bg    = t.on ? 'rgba(3,129,254,0.85)' : 'rgba(180,180,180,0.18)';
+          var color = t.on ? '#fff' : 'rgba(255,255,255,0.7)';
+          return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;min-width:0;cursor:pointer;" data-toggle-chip="1" data-on="' + (t.on ? '1' : '0') + '">' +
+            '<div style="width:48px;height:48px;border-radius:50%;background:' + bg + ';display:flex;align-items:center;justify-content:center;color:' + color + ';transition:background 0.15s;">' +
+              '<svg width="22" height="22" viewBox="0 0 24 24">' + iconPath + '</svg>' +
+            '</div>' +
+            '<div style="font-size:10.5px;font-weight:500;color:rgba(255,255,255,0.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">' + t.name + '</div>' +
+          '</div>';
+        }).join('');
+        return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:space-around;gap:8px;padding:12px 8px;box-sizing:border-box;">' +
+          tiles +
+        '</div>';
+      }
       // 56×56 circular toggle — primitive. Matches Figma `ToggleIcon`
       // 544:1125 exactly: bg rgba(180,180,180,0.2) / p-13 / rounded-full.
       // `data-toggle-chip` marks it for the delegated interact-mode click
@@ -1649,11 +2279,19 @@ window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
         'border-radius:53px;color:#fff;font-family:var(--font);overflow:hidden;position:relative;';
 
       if (nbType === 'media') {
-        // Song title scrolls as a marquee so long strings like
-        // "Never Gonna Give You Up · Rick Astley (1987)" cycle across the
-        // 164-wide text slot. Pure CSS via @keyframes nowbar-marquee.
-        var mSong    = nbv.title || nbv.song || 'Never Gonna Give You Up';
-        var mMarquee = nbv.marquee || (mSong + ' \u00B7 Rick Astley (1987)');
+        // Song title scrolls as a marquee. Earlier revisions used a
+        // hardcoded "Never Gonna Give You Up · Rick Astley (1987)"
+        // default that leaked into production screens when the AI
+        // didn't supply a marquee (the "Astley (1987)" tail visible
+        // on every music lockscreen generation). Now: if marquee isn't
+        // set, build it from the actual content (title · artist · album),
+        // falling back to just the title. Only use "Now playing" as a
+        // last-ditch placeholder when literally nothing is emitted —
+        // better than a wrong song name.
+        var mSong    = nbv.title || nbv.song || 'Now playing';
+        var mMarquee = nbv.marquee
+          || [nbv.title || nbv.song, nbv.artist, nbv.album].filter(Boolean).join(' \u00B7 ')
+          || mSong;
         var mImgBg   = nbv.imgBg || '#5b53c8';
         return '<div style="width:100%;' + common + 'background:rgba(3,78,110,0.8);padding:5px 12px;gap:8px;">' +
           '<div style="width:40px;height:40px;border-radius:37px;background:' + mImgBg + ';flex-shrink:0;display:flex;align-items:center;justify-content:center;">' +
@@ -1673,6 +2311,77 @@ window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
               '<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M6 5l10 7-10 7V5z" fill="#fff"/><rect x="17" y="5" width="2" height="14" fill="#fff"/></svg>' +
             '</div>' +
           '</div>' +
+        '</div>';
+      }
+
+      // Navigation turn-by-turn — arrow icon (direction-aware) + big
+      // distance + instruction text. Teal/blue accent for navigation
+      // context. Mimics Samsung Maps live navigation now-bar.
+      if (nbType === 'navigation') {
+        var navDist  = nbv.distance    || '';
+        var navInstr = nbv.instruction || 'Continue';
+        var navEta   = nbv.eta         || '';
+        var dir      = nbv.direction   || 'straight';
+        // Direction-aware arrow glyphs
+        var ARROW = {
+          left:    '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M5 12l7-7M5 12l7 7" stroke="var(--card-nav-accent,#14B8A6)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+          right:   '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M19 12l-7-7M19 12l-7 7" stroke="var(--card-nav-accent,#14B8A6)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+          straight:'<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M12 5l-6 6M12 5l6 6" stroke="var(--card-nav-accent,#14B8A6)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+          uturn:   '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none"><path d="M5 17V11a5 5 0 0 1 10 0v6M5 17l-2-3M5 17l3-3" stroke="var(--card-nav-accent,#14B8A6)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+          exit:    '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none"><path d="M9 5l-4 7 4 7M5 12h12M14 7l4 5-4 5" stroke="var(--card-nav-accent,#14B8A6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+          merge:   '<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none"><path d="M12 19V8M12 8l-4 4M12 8l4 4M5 19l4-4M19 19l-4-4" stroke="var(--card-nav-accent,#14B8A6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        };
+        var arrow = ARROW[dir] || ARROW.straight;
+        return '<div style="width:100%;' + common + 'background:color-mix(in srgb, var(--card-nav-accent,#14B8A6) 18%, transparent);border:1px solid color-mix(in srgb, var(--card-nav-accent,#14B8A6) 30%, transparent);">' +
+          '<div style="width:40px;height:40px;border-radius:20px;background:var(--card-nav-arrow-bg,rgba(20,184,166,0.25));display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:8px;">' +
+            arrow +
+          '</div>' +
+          '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">' +
+            (navDist
+              ? '<div style="font-size:var(--card-nav-distance-size,22px);font-weight:600;line-height:1;color:#fff;letter-spacing:-0.4px;">' + navDist + '</div>'
+              : '') +
+            '<div style="font-size:13px;font-weight:500;color:rgba(255,255,255,0.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + navInstr + '</div>' +
+          '</div>' +
+          (navEta
+            ? '<div style="font-size:12px;font-weight:500;color:rgba(255,255,255,0.7);flex-shrink:0;padding-left:8px;border-left:1px solid rgba(255,255,255,0.15);">' + navEta + '</div>'
+            : '') +
+        '</div>';
+      }
+
+      // Dual-line — title (large) + subtitle (smaller). Used for ETA,
+      // delivery, and "next step" generic now-bars. No icon by default;
+      // a dot accent on the left for visual anchor.
+      if (nbType === 'dual-line') {
+        var dlTitle    = nbv.title    || nbv.label   || '';
+        var dlSubtitle = nbv.subtitle || nbv.sub     || '';
+        var dlAccent   = nbv.accent   || '#0381FE';
+        return '<div style="width:100%;' + common + 'background:rgba(23,23,26,0.6);border:0.5px solid rgba(255,255,255,0.1);">' +
+          '<div style="width:8px;height:40px;background:' + dlAccent + ';border-radius:4px;flex-shrink:0;"></div>' +
+          '<div style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px;">' +
+            (dlTitle    ? '<div style="font-size:15px;font-weight:600;color:#fff;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + dlTitle + '</div>' : '') +
+            (dlSubtitle ? '<div style="font-size:12.5px;font-weight:400;color:rgba(255,255,255,0.65);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + dlSubtitle + '</div>' : '') +
+          '</div>' +
+        '</div>';
+      }
+
+      // Single-line — used for voice/driving "minimal touch" now-bars.
+      // Centered label, optional left mic icon, animated waveform when
+      // variant.listening===true.
+      if (nbType === 'single-line') {
+        var slLabel    = nbv.label || 'Listening';
+        var listening  = nbv.listening !== false;
+        var waveform = listening
+          ? '<div style="display:flex;align-items:center;gap:3px;height:20px;">' +
+              '<span style="width:3px;height:8px;background:#0381FE;border-radius:2px;animation:slPulse 1.2s ease-in-out infinite 0s;"></span>' +
+              '<span style="width:3px;height:14px;background:#0381FE;border-radius:2px;animation:slPulse 1.2s ease-in-out infinite 0.15s;"></span>' +
+              '<span style="width:3px;height:18px;background:#0381FE;border-radius:2px;animation:slPulse 1.2s ease-in-out infinite 0.3s;"></span>' +
+              '<span style="width:3px;height:14px;background:#0381FE;border-radius:2px;animation:slPulse 1.2s ease-in-out infinite 0.45s;"></span>' +
+              '<span style="width:3px;height:8px;background:#0381FE;border-radius:2px;animation:slPulse 1.2s ease-in-out infinite 0.6s;"></span>' +
+            '</div>'
+          : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>';
+        return '<div style="width:100%;' + common + 'background:rgba(23,23,26,0.6);border:0.5px solid rgba(255,255,255,0.1);justify-content:center;gap:14px;">' +
+          waveform +
+          '<div style="font-size:15px;font-weight:600;color:#fff;letter-spacing:-0.1px;">' + slLabel + '</div>' +
         '</div>';
       }
 
@@ -1874,39 +2583,46 @@ window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
     }
 
     case 'notif-card-ai': {
-      // Notification variant with AI blue→green gradient background.
-      // Same layout as notifCard but brighter + AI sparkle icon slot.
-      // variant.theme='light' shifts text colors darker for day-mode bases.
+      // Notification variant with AI blue→green gradient + animated
+      // shimmer overlay (slow, ambient — signals "AI is processing"
+      // without being noisy). Sparkle glyph in a glass circle. App
+      // name + time on top line, body below. Empty fallbacks return
+      // empty rather than the "Title/Subtitle" placeholder antipattern.
       var naiv = (comp && comp.variant) || {};
       var aiTheme = naiv.theme === 'light' ? 'light' : 'dark';
-      var aiTitle = naiv.title    || 'Title';
-      var aiSub   = naiv.subtitle || 'Subtitle';
-      var aiTime  = naiv.time     || '8:21 AM';
+      var aiTitle = (naiv.title && naiv.title !== 'Title') ? naiv.title : '';
+      var aiSub   = (naiv.subtitle && naiv.subtitle !== 'Subtitle') ? naiv.subtitle : (naiv.body || '');
+      var aiTime  = naiv.time || '';
       var aiTitleColor = aiTheme === 'light' ? '#111111' : '#efeef2';
-      var aiTimeColor  = aiTheme === 'light' ? '#444444' : '#d5d5d5';
-      var aiSubColor   = aiTheme === 'light' ? '#222222' : '#cfcccf';
+      var aiTimeColor  = aiTheme === 'light' ? '#444444' : 'rgba(239,238,242,0.7)';
+      var aiSubColor   = aiTheme === 'light' ? '#222222' : 'rgba(239,238,242,0.85)';
       var aiChevColor  = aiTheme === 'light' ? '#111111' : '#ffffff';
-      var aiSparkleC   = '#ffffff';
-      // Gradient opacity depends on base:
-      //   dark (over Lock) → 0.4 alpha — base blur is doing the heavy
-      //                      visual lifting; card stays translucent.
-      //   light (over Home/List/Detail) → 1.0 alpha — no backdrop blur
-      //                      so the card pops as a solid AI pill.
+      // Richer gradient: blue → purple → teal — three-stop AI signature.
+      // Theme-driven via --card-ai-grad. Light mode keeps a stronger
+      // gradient (no backdrop blur); dark mode uses a translucent one.
       var aiGrad = aiTheme === 'light'
-        ? 'linear-gradient(to right,rgba(102,161,243,1),rgba(34,201,166,1))'
-        : 'linear-gradient(to right,rgba(102,161,243,0.4),rgba(34,201,166,0.4))';
-      return '<div style="width:100%;height:100%;background:' + aiGrad + ';border-radius:50px;padding:15px 20px 15px 16px;display:flex;align-items:center;gap:10px;box-sizing:border-box;overflow:hidden;">' +
-        '<div style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.22);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);flex-shrink:0;display:flex;align-items:center;justify-content:center;">' +
-          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.8 4.5L18 9l-4.2 1.5L12 15l-1.8-4.5L6 9l4.2-1.5L12 3zM18 15l.9 2.2L21 18l-2.1.8L18 21l-.9-2.2L15 18l2.1-.8L18 15z" fill="' + aiSparkleC + '"/></svg>' +
+        ? 'linear-gradient(120deg, rgba(102,161,243,1) 0%, rgba(167,139,250,1) 50%, rgba(34,201,166,1) 100%)'
+        : 'var(--card-ai-grad, linear-gradient(120deg, rgba(102,161,243,0.45) 0%, rgba(167,139,250,0.45) 50%, rgba(34,201,166,0.45) 100%))';
+      // Shimmer overlay — animated white sweep, very subtle. Speed
+      // tunable via --card-ai-shimmer-speed for theme variations.
+      var shimmer = '<div style="position:absolute;inset:0;background:linear-gradient(110deg,transparent 0%,transparent 35%,rgba(255,255,255,0.10) 50%,transparent 65%,transparent 100%);background-size:300% 100%;animation:aiShimmer var(--card-ai-shimmer-speed,3.6s) linear infinite;pointer-events:none;border-radius:inherit;"></div>';
+      return '<div style="position:relative;width:100%;height:100%;background:' + aiGrad + ';border-radius:50px;padding:15px 20px 15px 16px;display:flex;align-items:center;gap:10px;box-sizing:border-box;overflow:hidden;">' +
+        shimmer +
+        '<div style="position:relative;z-index:1;width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.22);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.3);">' +
+          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.8 4.5L18 9l-4.2 1.5L12 15l-1.8-4.5L6 9l4.2-1.5L12 3zM18 15l.9 2.2L21 18l-2.1.8L18 21l-.9-2.2L15 18l2.1-.8L18 15z" fill="#fff"/></svg>' +
         '</div>' +
-        '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;overflow:hidden;">' +
-          '<div style="display:flex;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden;">' +
-            '<span style="font-size:15px;font-weight:600;color:' + aiTitleColor + ';">' + aiTitle + '</span>' +
-            '<span style="font-size:12px;color:' + aiTimeColor + ';">' + aiTime + '</span>' +
-          '</div>' +
-          '<div style="font-size:14px;color:' + aiSubColor + ';line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + aiSub + '</div>' +
+        '<div style="position:relative;z-index:1;flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;overflow:hidden;">' +
+          (aiTitle || aiTime
+            ? '<div style="display:flex;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden;">' +
+                (aiTitle ? '<span style="font-size:15px;font-weight:600;color:' + aiTitleColor + ';">' + aiTitle + '</span>' : '') +
+                (aiTime  ? '<span style="font-size:12px;color:' + aiTimeColor + ';">' + aiTime + '</span>'   : '') +
+              '</div>'
+            : '') +
+          (aiSub
+            ? '<div style="font-size:14px;color:' + aiSubColor + ';line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + aiSub + '</div>'
+            : '') +
         '</div>' +
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="opacity:0.8;flex-shrink:0;"><path d="M7 10l5 5 5-5" stroke="' + aiChevColor + '" stroke-width="1.5" stroke-linecap="round"/></svg>' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="position:relative;z-index:1;opacity:0.8;flex-shrink:0;"><path d="M7 10l5 5 5-5" stroke="' + aiChevColor + '" stroke-width="1.5" stroke-linecap="round"/></svg>' +
       '</div>';
     }
 
@@ -1934,48 +2650,106 @@ window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
       '</div>';
     }
 
-    case 'lock-clock': {
-      // Huge digital time display (Samsung lock-screen signature).
-      // variant:
-      //   time   → 'HH:MM' string (default '9:41')
-      //   weight → 100–400 font weight (default 200 for thin display feel)
-      //   size   → px font-size (default 96 — fits the 176h Figma column)
-      // Text is centered and given a soft drop-shadow so it reads over any
-      // wallpaper without needing a scrim.
+    case 'clock':         // canonical Scene template name
+    case 'lock-clock':    // kebab alias
+    case 'lock-time': {   // legacy alias
+      // Huge digital time display — Samsung lock-screen signature.
+      // Delegates to GalaxyAtomics.Clock when available so the render
+      // matches the canned Screen/Lock scene 1:1: HH on line 1, MM on
+      // line 2 (NO COLON between them), FONT_CLOCK family
+      // ('SamsungNrDefault-V6'), weight 400, size 112, line-height 82,
+      // gap 12. Earlier version rendered "HH:MM" on one line with the
+      // Inter fallback and weight 200 — visually inconsistent with the
+      // canonical Scene/Lock.
       var lcv = (comp && comp.variant) || {};
-      var lcTime   = lcv.time   || '9:41';
-      var lcWeight = lcv.weight || 200;
-      var lcSize   = lcv.size   || 96;
-      return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font);">' +
-        '<div style="font-size:' + lcSize + 'px;font-weight:' + lcWeight + ';line-height:1;letter-spacing:-2px;text-shadow:0 2px 12px rgba(0,0,0,0.35);">' + lcTime + '</div>' +
+      var _now = new Date();
+      var _HH = lcv.HH != null ? String(lcv.HH)
+        : String(_now.getHours()).padStart(2, '0');
+      var _MM = lcv.MM != null ? String(lcv.MM)
+        : String(_now.getMinutes()).padStart(2, '0');
+      // `A` (= window.GalaxyAtomics) is already in scope from the top
+      // of renderAtomicForRole — reuse it directly.
+      if (A && typeof A.Clock === 'function') {
+        return A.Clock({
+          time:       [_HH, _MM],
+          fontSize:   lcv.fontSize || 112,
+          lineHeight: lcv.lineHeight || 82,
+          gap:        lcv.gap != null ? lcv.gap : 12,
+          family:     lcv.family || null
+        });
+      }
+      // Fallback (when GalaxyAtomics hasn't loaded yet) — still
+      // renders 2-line no-colon using the canonical clock font stack.
+      // Space Grotesk paired with Inter structural fallback, matching
+      // the project-wide Inter + Space Grotesk standardization.
+      var lcSize = lcv.fontSize || 112;
+      var lcLh   = lcv.lineHeight || 82;
+      var lcGap  = lcv.gap != null ? lcv.gap : 12;
+      var lcFont = lcv.family || "'Space Grotesk', Inter, system-ui, sans-serif";
+      var baseStyle = 'font-family:' + lcFont + ';font-weight:400;font-size:' + lcSize + 'px;' +
+                      'line-height:' + lcLh + 'px;color:#FFFFFF;text-align:center;white-space:nowrap;';
+      return '<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:' + lcGap + 'px;">' +
+        '<div style="' + baseStyle + '">' + _HH + '</div>' +
+        '<div style="' + baseStyle + '">' + _MM + '</div>' +
       '</div>';
     }
 
+    case 'weatherDate':       // canonical Scene template name
     case 'weather-date': {
-      // Compact "condition · temp · date" inline pill. Lives just above the
-      // lock-screen clock in Samsung's layout.
-      //   condition → 'sunny' | 'cloudy' | 'rain' | 'snow'
-      //   temp      → e.g. '72°'
-      //   date      → e.g. 'Wed, Oct 16'
+      // Canonical Samsung Lock weather-date row — matches
+      // GalaxyAtomics.WeatherDate exactly so the agent path renders
+      // identically to Scene/Lock:
+      //   layout  : [date] [moon-or-condition icon 19×19] [temp°]
+      //   font    : Inter, 24px / 400 / line-height 20px / #FFFFFF
+      //   gap     : 10px between items
+      //   width   : 192 centered (CANONICAL_ROLE_SIZES enforces this)
+      // Earlier revision rendered icon-first + bullet separator + 14px
+      // font-weight 500 — visually off by a mile. Now we delegate to
+      // GalaxyAtomics.WeatherDate when available, with a condition-
+      // aware icon override via an inline wrapper.
+      //
+      // variant fields accepted:
+      //   condition → 'sunny' | 'cloudy' | 'rain' | 'snow' | 'moon'
+      //                (default 'moon' — matches canonical night look)
+      //   temp      → numeric '24' or string '24°' (degree auto-appended)
+      //   date      → string 'Sat, May 3'
       var wdv = (comp && comp.variant) || {};
-      var wdCond = wdv.condition || 'sunny';
-      var wdTemp = wdv.temp || '72°';
-      var wdDate = wdv.date || 'Wed, Oct 16';
-      var WEATHER_SVGS = {
-        'sunny':  '<circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.5 5.5l1.5 1.5M17 17l1.5 1.5M5.5 18.5l1.5-1.5M17 7l1.5-1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-        'cloudy': '<path d="M7 17a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 17H7z" fill="currentColor"/>',
-        'rain':   '<path d="M7 14a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 14H7z" fill="currentColor"/><path d="M9 17v3M12 17v3M15 17v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-        'snow':   '<path d="M7 13a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 13H7z" fill="currentColor"/><path d="M8 17v2M12 17v2M16 17v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'
+      var wdCond = wdv.condition || 'moon';
+      // Strip trailing ° if present; canonical appends it.
+      var wdTempRaw = (wdv.temp != null ? wdv.temp : 24);
+      var wdTempStr = String(wdTempRaw).replace(/[°\s]+$/, '');
+      var wdDate = wdv.date || 'Sat, May 3';
+
+      // Default look = moon.svg (canonical Lock is night-themed).
+      // For other conditions use inline SVGs so we don't depend on
+      // missing PNG/SVG assets. Sun/cloud/rain/snow all styled to
+      // match the 19×19 footprint of moon.svg.
+      var WEATHER_INLINE = {
+        'sunny':  '<svg width="19" height="19" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4" fill="#fff"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.5 5.5l1.5 1.5M17 17l1.5 1.5M5.5 18.5l1.5-1.5M17 7l1.5-1.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>',
+        'cloudy': '<svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M7 17a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 17H7z" fill="#fff"/></svg>',
+        'rain':   '<svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M7 14a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 14H7z" fill="#fff"/><path d="M9 17v3M12 17v3M15 17v3" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>',
+        'snow':   '<svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M7 13a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 13H7z" fill="#fff"/><path d="M8 17v2M12 17v2M16 17v2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg>'
       };
-      var wdSvg = WEATHER_SVGS[wdCond] || WEATHER_SVGS['sunny'];
-      return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;gap:8px;color:#fff;font-family:var(--font);font-size:14px;font-weight:500;text-shadow:0 1px 4px rgba(0,0,0,0.35);">' +
-        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="color:#fff;">' + wdSvg + '</svg>' +
-        '<span>' + wdTemp + '</span>' +
-        '<span style="opacity:0.6;">·</span>' +
-        '<span>' + wdDate + '</span>' +
+      // Canonical moon.svg lives in assets/figma/lock-screen — if it
+      // loads we use that; otherwise inline moon SVG fallback.
+      var moonInline =
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none">' +
+          '<path d="M20 14.5A8 8 0 1 1 9.5 4c-.3 1-.5 2-.5 3a7 7 0 0 0 11 7.5z" fill="#fff"/>' +
+        '</svg>';
+      var iconSvg = WEATHER_INLINE[wdCond] || moonInline;
+
+      // Canonical typography: Inter 24/400/20 line-height
+      var textStyle = "font-family:'One UI Sans APP VF', Inter, system-ui, sans-serif;" +
+                      'font-weight:400;font-size:24px;line-height:20px;color:#FFFFFF;' +
+                      'white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,0.35);';
+      return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;gap:10px;">' +
+        '<span style="' + textStyle + '">' + wdDate + '</span>' +
+        '<div style="position:relative;width:19px;height:19px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">' + iconSvg + '</div>' +
+        '<span style="' + textStyle + '">' + wdTempStr + '\u00b0</span>' +
       '</div>';
     }
 
+    case 'lockIndicator':       // canonical Scene template name
     case 'lock-indicator': {
       // Small padlock / fingerprint / face-ID glyph shown just below the
       // status bar. variant.state: 'locked' | 'unlocked' | 'fingerprint'.
@@ -1989,6 +2763,35 @@ window.renderAtomicForRole = function renderAtomicForRole(comp, rect) {
       var liSvg = LOCK_SVGS[liState] || LOCK_SVGS['locked'];
       return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.9);filter:drop-shadow(0 1px 4px rgba(0,0,0,0.35));">' +
         '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="color:currentColor;">' + liSvg + '</svg>' +
+      '</div>';
+    }
+
+    case 'shortcutLeft':
+    case 'shortcutRight': {
+      // Canonical Samsung lockscreen shortcut — 47×47 glass circle with
+      // a single glyph (phone on the left by default, camera on the
+      // right). variant.icon picks the glyph.
+      var scv = (comp && comp.variant) || {};
+      var scIcon = scv.icon || (comp.role === 'shortcutRight' ? 'camera' : 'phone');
+      var SHORTCUT_SVGS = {
+        'phone':  '<path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 5 5L14 13l5 2v3a2 2 0 0 1-2 2 17 17 0 0 1-16-16 2 2 0 0 1 2-2z" fill="currentColor"/>',
+        'camera': '<path d="M4 7h3l2-2h6l2 2h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.6" fill="none"/><circle cx="12" cy="13" r="3.5" stroke="currentColor" stroke-width="1.6" fill="none"/>',
+        'flash':  '<path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" fill="currentColor"/>',
+        'qr':     '<rect x="3" y="3" width="7" height="7" stroke="currentColor" stroke-width="1.6" fill="none"/><rect x="14" y="3" width="7" height="7" stroke="currentColor" stroke-width="1.6" fill="none"/><rect x="3" y="14" width="7" height="7" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M14 14h3v3M19 14v7M14 19h3v2" stroke="currentColor" stroke-width="1.6" fill="none"/>'
+      };
+      var scSvg = SHORTCUT_SVGS[scIcon] || SHORTCUT_SVGS['phone'];
+      return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;' +
+        _G('shortcutCircle') + 'border-radius:50%;color:#fff;' +
+      '">' +
+        '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="color:currentColor;">' + scSvg + '</svg>' +
+      '</div>';
+    }
+
+    case 'gestureBar': {
+      // Full-width bottom home-gesture indicator (Samsung's Android home
+      // bar). Thin light pill, 134×5 centered in a 451×24 band.
+      return '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">' +
+        '<div style="width:134px;height:5px;border-radius:3px;background:rgba(255,255,255,0.85);"></div>' +
       '</div>';
     }
 

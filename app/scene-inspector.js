@@ -109,6 +109,10 @@
         return {
           id: n.id,
           role: n.role,
+          // Group nodes carry isGroup flag in props — surface as a flag
+          // here so the rendering can distinguish container from leaf.
+          isGroup:  !!(n.props && n.props.isGroup),
+          parentId: (n.props && n.props.parentId) || null,
           el: el,
           w: el ? Math.round(el.offsetWidth || 0) : 0,
           h: el ? Math.round(el.offsetHeight || 0) : 0,
@@ -122,6 +126,8 @@
         return {
           id: el.dataset.nodeId,
           role: getItemRole(el),
+          isGroup:  false,
+          parentId: null,
           el: el,
           w: Math.round(el.offsetWidth || 0),
           h: Math.round(el.offsetHeight || 0),
@@ -129,6 +135,35 @@
         };
       });
     }
+
+    // Build a hierarchy: groups first, then their children indented under
+    // them. A child whose parentId matches a group node renders nested.
+    // Orphans (parentId not found) appear at the root.
+    var byId = {};
+    nodes.forEach(function (n) { byId[n.id] = n; });
+    var rootNodes = [];
+    var childrenOf = {};
+    nodes.forEach(function (n) {
+      if (n.parentId && byId[n.parentId]) {
+        if (!childrenOf[n.parentId]) childrenOf[n.parentId] = [];
+        childrenOf[n.parentId].push(n);
+      } else {
+        rootNodes.push(n);
+      }
+    });
+    // Linearize for rendering: each root node, followed by its children.
+    var linearNodes = [];
+    rootNodes.forEach(function (n) {
+      n.depth = 0;
+      linearNodes.push(n);
+      if (childrenOf[n.id]) {
+        childrenOf[n.id].forEach(function (c) {
+          c.depth = 1;
+          linearNodes.push(c);
+        });
+      }
+    });
+    nodes = linearNodes;
 
     // Auto-collapse the whole Scene section when there are no components.
     // Re-expand as soon as nodes appear.
@@ -141,15 +176,75 @@
     }
     if (sceneSection) sceneSection.classList.remove('collapsed');
 
+    // Color-coded role indicator — matches the Component Role panel in the
+    // design tab so a designer can quickly map "this colored chip in the
+    // layer list" to "this row in the Component Role legend". Colors are
+    // pulled from the same palette CSS uses for [data-pipeline-role="..."].
+    function _roleColor(role) {
+      switch (role) {
+        case 'chrome':     return '#94A3B8';
+        case 'subject':    return '#86EFAC';
+        case 'state':      return '#A5B4FC';
+        case 'action':     return '#FDE68A';
+        case 'feedback':   return '#FCA5A5';
+        case 'context':    return '#A78BFA';
+        case 'navigation': return '#7DD3FC';
+        default:           return 'rgba(255,255,255,0.18)';
+      }
+    }
+    // Group-role colors (subset of _roleColor + custom) — applied to the
+    // dashed-border indicator on group rows so a designer can quickly
+    // tell primary-task vs supporting vs tertiary in the layer list.
+    function _groupRoleColor(role) {
+      switch (role) {
+        case 'primary-task': return 'rgba(134, 239, 172, 0.55)';   // green-ish
+        case 'supporting':   return 'rgba(167, 139, 250, 0.55)';   // purple
+        case 'tertiary':     return 'rgba(165, 180, 252, 0.45)';   // muted indigo
+        case 'meta':         return 'rgba(148, 163, 184, 0.45)';   // gray
+        case 'chrome':       return 'rgba(148, 163, 184, 0.35)';
+        default:             return 'rgba(255,255,255,0.18)';
+      }
+    }
     list.innerHTML = '';
     nodes.forEach(function (n) {
       var row = document.createElement('div');
-      row.className = 'scene-layer-row' + (n.selected ? ' active' : '');
+      row.className = 'scene-layer-row' +
+        (n.selected ? ' active' : '') +
+        (n.isGroup  ? ' is-group' : '');
       row.dataset.target = n.id;
-      row.innerHTML =
-        '<span class="scene-layer-icon">' + iconFor(n.role) + '</span>' +
-        '<span class="scene-layer-role">' + n.role + '</span>' +
-        '<span class="scene-layer-size">' + n.w + '×' + n.h + '</span>';
+      // Indentation per nesting depth — visual hierarchy.
+      if (n.depth > 0) row.style.paddingLeft = (8 + n.depth * 14) + 'px';
+      // Group rows: distinct visual — folder-like icon + uppercase role
+      // tag. Items inherit the existing leaf styling.
+      var iconHtml;
+      if (n.isGroup) {
+        // Group rows use a small "container" glyph and group-role's color
+        // as the indicator.
+        var groupRole = (n.role || '').replace(/^group:/, '');
+        var colorTag = '<span style="' +
+          'display:inline-block;width:10px;height:10px;border-radius:3px;' +
+          'background:' + _groupRoleColor(groupRole) + ';' +
+          'flex-shrink:0;margin-right:6px;vertical-align:middle;' +
+          'border:1px dashed rgba(255,255,255,0.3);' +
+        '"></span>';
+        iconHtml = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="display:inline-block;vertical-align:middle;margin-right:4px;"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 2"/></svg>';
+        row.innerHTML =
+          colorTag +
+          '<span class="scene-layer-icon" style="opacity:0.7;">' + iconHtml + '</span>' +
+          '<span class="scene-layer-role" style="text-transform:uppercase;letter-spacing:0.4px;font-size:10.5px;font-weight:600;opacity:0.85;">' + groupRole + '</span>' +
+          '<span class="scene-layer-size" style="opacity:0.55;font-size:10.5px;">' + n.w + '×' + n.h + '</span>';
+      } else {
+        var colorTag = '<span style="' +
+          'display:inline-block;width:10px;height:10px;border-radius:3px;' +
+          'background:' + _roleColor(n.role) + ';' +
+          'flex-shrink:0;margin-right:6px;vertical-align:middle;' +
+        '"></span>';
+        row.innerHTML =
+          colorTag +
+          '<span class="scene-layer-icon">' + iconFor(n.role) + '</span>' +
+          '<span class="scene-layer-role">' + n.role + '</span>' +
+          '<span class="scene-layer-size">' + n.w + '×' + n.h + '</span>';
+      }
 
       row.addEventListener('click', function (e) {
         e.stopPropagation();
