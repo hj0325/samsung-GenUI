@@ -125,6 +125,28 @@
     <a class="topbar-brand" href="index.html">SAMSUNG <span>GenUI</span></a>
   </div>
   <div class="topbar-right">
+    <!-- LOOK cluster — design-system theme + canvas light/dark mode.
+         Both control "how the rendered UI looks", so they sit first
+         (leftmost) and adjacent to each other. Theme is the design-
+         system token preset (Default / Minimal / Vibrant / Mono);
+         the ✎ icon opens /customize in a new window. Light/Dark
+         toggles the simulated device frame's display mode. -->
+    <span id="topbarThemePicker" style="display:inline-flex;align-items:center;gap:2px;padding:0 4px 0 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);height:28px;">
+      <span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Theme</span>
+      <select id="themePickerSelect"
+        onchange="applyThemeFromPicker(this.value)"
+        title="Switch theme — affects all rendered cards and page chrome"
+        style="appearance:none;background:transparent;color:var(--text);border:0;outline:none;font-family:var(--font);font-size:11px;font-weight:500;padding:0 18px 0 6px;cursor:pointer;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 4px center;height:24px;">
+        <option value="" disabled selected>Loading…</option>
+      </select>
+      <a href="/customize" target="_blank" rel="noopener" title="Open theme editor in new window — edit values + save as custom"
+         style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;color:var(--text-3);text-decoration:none;border-left:1px solid var(--divider);margin-left:2px;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      </a>
+    </span>
+    <button id="themeToggleBtn" class="topbar-btn" onclick="toggleTheme()">Light</button>
+
+    <!-- DEVICE cluster — what hardware the canvas simulates. -->
     <div class="device-selector" id="deviceSelector">
       <button class="device-selector-btn" onclick="toggleDeviceList()" id="deviceBtn">
         <span class="dev-icon">📱</span>
@@ -173,10 +195,21 @@
         </div>
       </div>
     </div>
-    <div id="agentModeIndicator" class="agent-mode-indicator local" onclick="toggleAgentMode()" style="cursor:pointer;" title="Click to toggle AI / Local generation mode. AI mode uses the OpenAI pipeline; Local mode uses keyword matching against pre-built scenarios.">Local</div>
-    <button id="themeToggleBtn" class="topbar-btn" onclick="toggleTheme()">Light</button>
+
+    <!-- ENGINE — Local/AI agent-mode toggle is hidden. With the
+         Pipeline-first workflow (textarea Enter + Run Pipeline both
+         call pipelineGenerate) the Local mode no longer has a path to
+         drive the canvas, so the toggle was vestigial UI. The element
+         is left in the DOM so app/agent.js can still reach it via
+         getElementById without errors; the visual is suppressed. -->
+    <div id="agentModeIndicator" class="agent-mode-indicator local" onclick="toggleAgentMode()" style="display:none;" title="Local / AI agent mode (hidden — Pipeline is always active)">Local</div>
+
+    <!-- ACTION — destructive canvas action sits last to reduce mis-clicks
+         on adjacent settings. Export HTML was removed — the site's value
+         is in dynamic AI generation; static HTML export added clutter
+         with little use. If a real export workflow is needed later, the
+         Design tab is a better home for it. -->
     <button class="topbar-btn" onclick="clearCanvas()">Clear</button>
-    <button class="topbar-btn primary" onclick="exportHTML()">Export HTML</button>
   </div>
 </div>
 
@@ -581,18 +614,18 @@
           </div>
         </div>
 
-        <!-- 4. OVERLAYS (regions rendered over the current screen) -->
+        <!-- 4. OVERLAYS (regions rendered over the current screen)
+             — toggle behavior: clicking an active overlay turns it off,
+             so a separate Clear button is redundant; the hint text was
+             also removed (the active button state itself communicates
+             which overlay is layered). -->
         <div style="margin-bottom:14px;">
-          <div class="panel-label" style="display:flex;justify-content:space-between;align-items:center;">
-            <span>Overlays</span>
-            <button onclick="clearOverlay()" style="font-size:11px;padding:2px 8px;background:transparent;border:1px solid var(--divider);color:var(--text-2);border-radius:4px;cursor:pointer;">Clear</button>
-          </div>
+          <div class="panel-label">Overlays</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;">
             <button class="scene-btn" data-role="overlay" onclick="toggleOverlay('notifications', this)"><span>Notification</span></button>
             <button class="scene-btn" data-role="overlay" onclick="toggleOverlay('quicksettings', this)"><span>Quick Setting</span></button>
             <button class="scene-btn" data-role="overlay" onclick="toggleOverlay('dialog', this)"><span>Dialog</span></button>
           </div>
-          <div id="overlayHint" style="margin-top:6px;font-size:11px;color:var(--text-2);line-height:1.4;">Overlays render on top of the current screen. Pick a screen first.</div>
         </div>
 
         <!-- 4.5 CACHED removed per user request — the Generate tab was
@@ -672,25 +705,11 @@
               <span id="autoIterCount" style="margin-left:4px;color:#3E91FF;">(0)</span>
             </button>
 
-            <!-- Theme picker — fast switch between presets without leaving
-                 the Generate panel. Loaded from /api/themes; on change the
-                 active id is POSTed and the CSS variables are applied to
-                 :root. The "Customize…" link opens the full editor in a
-                 new window so you can edit / save while watching the main
-                 canvas re-render in real time. The two windows stay in
-                 sync via BroadcastChannel (see scenes.js boot) — saving
-                 a theme on the customize page refreshes this dropdown. -->
-            <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 4px 4px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);">
-              <span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Theme</span>
-              <select id="themePickerSelect"
-                onchange="applyThemeFromPicker(this.value)"
-                title="Switch theme — affects all rendered cards and page chrome"
-                style="appearance:none;background:transparent;color:var(--text);border:0;outline:none;font-family:var(--font);font-size:11px;font-weight:500;padding:4px 18px 4px 6px;cursor:pointer;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 4px center;">
-                <option value="" disabled selected>Loading…</option>
-              </select>
-              <a href="/customize" target="_blank" rel="noopener" title="Open theme editor in new window — edit values + save as custom"
-                style="padding:4px 8px;border-radius:5px;color:var(--text-3);font-size:10px;text-decoration:none;border-left:1px solid var(--divider);">Customize…</a>
-            </span>
+            <!-- Theme picker moved to the topbar (alongside Light/Dark
+                 + Clear) — it's a global app preference, not a per-
+                 generate action. See genui.html line ~177 for the new
+                 location, and the bootstrap at the top of this file
+                 still wires up #themePickerSelect identically. -->
 
             <span style="font-size:10px;color:var(--text-3);flex-basis:100%;margin-top:2px;">Streams each step&apos;s JSON output below</span>
           </div>

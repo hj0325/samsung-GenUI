@@ -111,12 +111,39 @@
 
   main {
     padding: 24px 32px 80px;
-    max-width: 1400px; margin: 0 auto;
+    max-width: 1600px; margin: 0 auto;
+  }
+
+  /* Two-pane layout: editor (left, sticky-scroll) + preview (right).
+     The editor used to be collapsed and tucked under the preview, so
+     users couldn't tell the page was meant for editing. With the
+     editor as the LEFT primary pane and preview live on the right,
+     edits and their visual effect are visible at the same time. */
+  .layout-row {
+    display: grid;
+    grid-template-columns: minmax(380px, 460px) 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  .editor-col {
+    position: sticky;
+    top: 80px;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .preview-col {
+    min-width: 0;          /* lets the grid shrink children */
+  }
+  @media (max-width: 1080px) {
+    /* Stack vertically on narrow screens — editor first, preview after. */
+    .layout-row { grid-template-columns: 1fr; }
+    .editor-col { position: static; max-height: none; }
   }
 
   .preview-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 16px;
   }
   .preview-cell {
@@ -150,9 +177,10 @@
     border-radius: 12px;
   }
 
-  /* Editor panel */
+  /* Editor panel — primary surface of the page now. Always visible
+     in the left pane; was previously a collapsible hidden block. */
   .editor-panel {
-    margin-top: 24px;
+    margin-top: 0;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 14px;
@@ -169,14 +197,13 @@
     text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-3);
   }
   .editor-panel .editor-body {
-    padding: 18px 20px 24px; display: none;
+    padding: 18px 20px 24px; display: block;
   }
-  .editor-panel.open .editor-body { display: block; }
   .editor-panel .toggle-arrow {
-    transition: transform 0.15s; opacity: 0.5;
+    transition: transform 0.15s; opacity: 0.4;
     font-size: 14px;
+    transform: rotate(90deg);
   }
-  .editor-panel.open .toggle-arrow { transform: rotate(90deg); }
   .editor-section {
     margin-bottom: 20px;
   }
@@ -266,26 +293,35 @@
   <select id="theme-select" class="theme-select"></select>
   <div class="description" id="theme-description"></div>
   <span class="spacer"></span>
-  <button id="btn-apply">Apply to Site</button>
-  <button id="btn-reset" class="secondary">Reset preview</button>
+  <!-- Unsaved-changes indicator. Appears the moment any editor input
+       changes a CSS variable, hides again on Save / Discard / dropdown
+       change. The pill makes it explicit that edits are live-previewed
+       but not persisted until "Save" is clicked. -->
+  <span id="unsaved-pill" style="display:none;padding:4px 10px;border-radius:999px;background:rgba(245,166,35,0.18);color:#F5A623;font-size:11.5px;font-weight:600;">Unsaved changes</span>
 </div>
 
 <main>
-  <h2 style="font-size:14px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 16px;">Live preview · all themed cards</h2>
-  <div class="preview-grid" id="preview-grid"></div>
+  <div class="layout-row">
+    <!-- LEFT — Editor pane (sticky-scroll). The page exists to edit
+         theme tokens; the editor is the primary surface, not a hidden
+         collapsible footer like before. -->
+    <div class="editor-col">
+      <div class="editor-panel" id="editor-panel">
+        <header class="editor-head" id="editor-head">
+          <span class="toggle-arrow">›</span>
+          <h2>Edit theme variables</h2>
+          <span style="margin-left:8px;color:var(--text-3);font-size:12px;">live preview · save as custom</span>
+        </header>
+        <div class="editor-body" id="editor-body"></div>
+      </div>
+    </div>
 
-  <!-- Editor panel — collapsed by default. Click header to open. Inside:
-       grouped property editors (color, size, weight, gradient). Edits
-       apply to :root in real-time so the preview above updates as the
-       user types. "Save as Custom..." persists the current var set as
-       a new theme via POST /api/themes. -->
-  <div class="editor-panel" id="editor-panel">
-    <header class="editor-head" id="editor-head">
-      <span class="toggle-arrow">›</span>
-      <h2>Edit theme variables</h2>
-      <span style="margin-left:8px;color:var(--text-3);font-size:12px;">click to expand · live preview · save as custom</span>
-    </header>
-    <div class="editor-body" id="editor-body"></div>
+    <!-- RIGHT — Live preview of every themed card. Updates in real-time
+         as the editor changes :root variables. -->
+    <div class="preview-col">
+      <h2 style="font-size:14px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 16px;">Live preview · all themed cards</h2>
+      <div class="preview-grid" id="preview-grid"></div>
+    </div>
   </div>
 </main>
 
@@ -554,6 +590,18 @@ function _readVar(key) {
 }
 function _writeVar(key, value) {
   document.documentElement.style.setProperty(key, value);
+  _markUnsaved(true);
+}
+
+// Unsaved-state tracker. Toggles the toolbar pill so the user knows
+// their slider tweaks are LIVE-PREVIEWED only — clicking the dropdown
+// to a preset, clicking Save, or clicking Discard all reset this back
+// to a clean state.
+let HAS_UNSAVED_EDITS = false;
+function _markUnsaved(flag) {
+  HAS_UNSAVED_EDITS = !!flag;
+  const pill = document.getElementById('unsaved-pill');
+  if (pill) pill.style.display = HAS_UNSAVED_EDITS ? '' : 'none';
 }
 // Convert any color expression (hex, rgb, rgba) into a 6-digit hex for
 // the <input type="color"> element. Falls back to '#000000' if it can't.
@@ -641,12 +689,15 @@ function buildEditorBody() {
       });
       html += '</div>';
     });
-    // Action footer
+    // Action footer — single Save (primary) + Discard (secondary).
+    // Live preview happens in real time; this footer is only about
+    // *persisting* the current edited state (Save) or *throwing it
+    // away* (Discard) and going back to the dropdown preset.
     html += '<div class="editor-actions">' +
-      '<button id="btn-save-custom">Save as Custom…</button>' +
-      '<button class="secondary" id="btn-revert">Revert to active theme</button>' +
+      '<button id="btn-save">Save</button>' +
+      '<button class="secondary" id="btn-discard">Discard changes</button>' +
       '<div class="spacer"></div>' +
-      '<span class="hint">Editing creates a new theme — existing presets are not modified.</span>' +
+      '<span class="hint">Slide / type → live preview. Save creates a new theme.</span>' +
     '</div>';
     body.innerHTML = html;
   } catch (e) {
@@ -655,10 +706,10 @@ function buildEditorBody() {
     return;
   }
   // Wire up footer buttons
-  var saveBtn = document.getElementById('btn-save-custom');
-  var revertBtn = document.getElementById('btn-revert');
+  var saveBtn = document.getElementById('btn-save');
+  var discardBtn = document.getElementById('btn-discard');
   if (saveBtn) saveBtn.addEventListener('click', saveAsCustom);
-  if (revertBtn) revertBtn.addEventListener('click', revertToActive);
+  if (discardBtn) discardBtn.addEventListener('click', discardChanges);
   // Delegated input handler: one listener for the whole body. Reads the
   // row's data-var + data-vtype, applies write + preview re-render.
   body.addEventListener('input', _onEditorInput);
@@ -719,34 +770,45 @@ async function saveAsCustom() {
   const vars = readAllVarsFromRoot();
   const description = 'Custom — saved ' + new Date().toLocaleString();
   const theme = { id, name, description, vars };
-  const btn = document.getElementById('btn-save-custom');
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
+  const btn = document.getElementById('btn-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
+    // 1) Persist the new theme.
     await fetchJSON('/api/themes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ theme })
     });
     THEMES.push(theme);
-    // Refresh dropdown
+    // 2) Activate it server-side so other open windows pick it up via
+    //    BroadcastChannel and so a fresh page load defaults to this
+    //    new theme. Previously this was a separate "Apply to Site"
+    //    button — folded into Save now.
+    await fetchJSON('/api/themes/active', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    ACTIVE_ID = id;
+    // 3) Refresh dropdown + active-pill so the UI reflects the new state.
     const sel = $('theme-select');
     const opt = document.createElement('option');
     opt.value = id;
     opt.textContent = name + ' (custom)';
     sel.appendChild(opt);
     sel.value = id;
-    showToast('Saved · "' + name + '" added to dropdown');
+    $('active-pill').textContent = 'Active · ' + name;
+    showToast('Saved · "' + name + '" is now active');
     updateOnSelect(id, false);
-    // Broadcast to the main genui window (if open in another tab) so
-    // its compact theme picker can pick up the newly-saved theme
-    // without a manual refresh.
+    _markUnsaved(false);
+    // 4) Notify other open windows (genui main app) so their theme
+    //    picker dropdown picks up the new id and the new active theme.
     _broadcastThemeChange('theme-saved', id);
+    _broadcastThemeChange('theme-active-changed', id);
   } catch (e) {
     showToast('ERROR: ' + e.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Save as Custom…';
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
   }
 }
 
@@ -764,26 +826,26 @@ function _broadcastThemeChange(type, activeId) {
   } catch (e) { /* ignore */ }
 }
 
-function revertToActive() {
-  const active = THEMES.find(t => t.id === ACTIVE_ID);
-  if (!active) return;
-  // Strip every inline override so :root falls back to the CSS file
-  // defaults, then re-apply the active theme cleanly.
+// Discard all in-memory edits and snap back to whatever preset the
+// dropdown is currently pointing at. Used by the Discard button and
+// indirectly when the user picks a different preset (live-preview a
+// preset = clean state). Does NOT touch the server.
+function discardChanges() {
+  const id = $('theme-select').value;
+  const theme = THEMES.find(t => t.id === id);
+  if (!theme) return;
   THEME_EDIT_SCHEMA.forEach(section => {
     section.vars.forEach(v => document.documentElement.style.removeProperty(v.key));
   });
-  applyThemeVars(active.vars);
-  $('theme-select').value = ACTIVE_ID;
+  applyThemeVars(theme.vars);
   buildEditorBody();   // refresh inputs to reflect current values
   renderPreviewGrid();
+  _markUnsaved(false);
 }
 
-// Toggle editor open/close
-$('editor-head').addEventListener('click', () => {
-  const p = $('editor-panel');
-  p.classList.toggle('open');
-  if (p.classList.contains('open')) buildEditorBody();
-});
+// Editor is always open in the new two-pane layout. The header is now
+// just a section title (no collapsible behavior). Kept buildEditorBody()
+// in the boot path so inputs are still wired up on page load.
 
 // ---------------------------------------------------------------------------
 //  Boot
@@ -827,43 +889,25 @@ function updateOnSelect(id, applyServer) {
   // Re-render preview so any cards that compute color from vars at render
   // time pick up the new values.
   renderPreviewGrid();
-  // Also rebuild editor inputs if the panel is open — they should
-  // reflect the newly-selected theme's values.
-  const panel = document.getElementById('editor-panel');
-  if (panel && panel.classList.contains('open')) buildEditorBody();
+  // Always rebuild editor inputs — they should reflect the newly-
+  // selected theme's values. (The panel is no longer collapsible.)
+  buildEditorBody();
 }
 
 $('theme-select').addEventListener('change', (e) => {
+  // Switching presets is a clean state — drop any pending edits.
+  THEME_EDIT_SCHEMA.forEach(section => {
+    section.vars.forEach(v => document.documentElement.style.removeProperty(v.key));
+  });
   updateOnSelect(e.target.value, false);
+  _markUnsaved(false);
 });
 
-$('btn-apply').addEventListener('click', async () => {
-  const id = $('theme-select').value;
-  const btn = $('btn-apply');
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
-  try {
-    await fetchJSON('/api/themes/active', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
-    });
-    ACTIVE_ID = id;
-    $('active-pill').textContent = 'Active · ' + (THEMES.find(t => t.id === id) || {}).name;
-    showToast('Saved · "' + id + '" is now the active theme');
-    _broadcastThemeChange('theme-active-changed', id);
-  } catch (e) {
-    showToast('ERROR: ' + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Apply to Site';
-  }
-});
-
-$('btn-reset').addEventListener('click', () => {
-  $('theme-select').value = ACTIVE_ID;
-  updateOnSelect(ACTIVE_ID, false);
-});
+// btn-apply ("Apply to Site") and btn-reset ("Reset preview") removed —
+// their roles are now folded into Save (which both creates a new theme
+// AND sets it active) and Discard (which clears unsaved edits without
+// touching the server). The dropdown's onChange already handles preset
+// switching.
 
 boot();
 </script>

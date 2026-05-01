@@ -1,3 +1,38 @@
+/* ──────────────────────────────────────────────────────────────────────
+   Theme transition layer — when the topbar Theme picker (or /customize
+   editor) swaps a CSS variable, every consumer that uses var(--name)
+   should fade between the old and new value instead of snapping.
+   We can't put `transition` on the :root variables themselves (CSS
+   custom properties don't animate), so we apply it to the elements
+   that READ those variables. Limited to color + background +
+   border-color + opacity to avoid layout shifts (no padding / radius
+   transitions — those would reflow during a theme change).
+   `prefers-reduced-motion` users skip the animation entirely.
+   ────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  .canvas-frame,
+  .canvas-frame.light,
+  .canvas-inner,
+  .canvas-item,
+  .canvas-group,
+  .oui-card,
+  .oui-appbar,
+  .oui-list-item,
+  .oui-dialog,
+  .oui-snackbar,
+  .topbar,
+  .sidebar,
+  .panel,
+  .scene-btn {
+    transition:
+      background-color 280ms cubic-bezier(0.2, 0, 0, 1),
+      color 280ms cubic-bezier(0.2, 0, 0, 1),
+      border-color 280ms cubic-bezier(0.2, 0, 0, 1),
+      box-shadow 280ms cubic-bezier(0.2, 0, 0, 1);
+  }
+}
+
 :root {
   /* Legacy tokens — bridged to theme tokens below so a /customize theme
      swap also affects the surrounding page chrome (sidebar excluded —

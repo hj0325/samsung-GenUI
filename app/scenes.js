@@ -9,7 +9,7 @@
 // Version stamp — update when shipping visually-impactful changes so that
 // users can verify in DevTools whether they're running cached vs fresh JS.
 // Open the console after a hard refresh and look for the [oneui] log line.
-console.log('[oneui] scenes.js loaded · build 2026-05-01 · per-slot content lookup (no more same-type collapse)');
+console.log('[oneui] scenes.js loaded · build 2026-05-01c · topbar reorder · theme transitions · agent-mode hidden');
 
 // ---------------------------------------------------------------------------
 //  Voice input (Korean) — Web Speech API
@@ -3899,6 +3899,21 @@ window.currentBaseSurface = window.currentBaseSurface || null;
 window.currentOverlay     = window.currentOverlay     || null;
 
 function generateScreen(scenarioKey, buttonEl) {
+  // Toggle behavior — matches Overlays. Clicking the currently active
+  // screen button deselects it and clears the canvas, so the row reads
+  // as a real toggle instead of a one-way radio. Clicking a different
+  // screen switches as before.
+  if (window.currentBaseSurface === scenarioKey) {
+    window.currentBaseSurface = null;
+    window.currentOverlay = null;
+    _removeOverlayLayer();
+    if (buttonEl) buttonEl.classList.remove('active');
+    document.querySelectorAll('.scene-btn[data-role="overlay"].active')
+      .forEach(function (b) { b.classList.remove('active'); });
+    if (typeof window.clearCanvas === 'function') window.clearCanvas();
+    _refreshOverlayHint();
+    return;
+  }
   window.currentBaseSurface = scenarioKey;
   window.currentOverlay = null;
   _removeOverlayLayer();
