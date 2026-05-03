@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { ROOT_DIR } = require('./src/server/storage/fileStore');
 const {
   normalizeInterpreterOutput,
   normalizeNormalizerOutput,
@@ -29,10 +30,14 @@ const {
   buildViolation:  buildLayoutViolation,
   flattenGroups:   _flattenGroups
 } = require('./layout_composer');
+const {
+  RENDERABLE_COMPONENT_IDS,
+  isRenderableComponentId
+} = require('./src/shared/renderRegistry');
 const Generator = require('./generator');
 const DesignMemory = require('./design_memory');
 
-const REGISTRY_PATH = path.join(__dirname, 'figma-refs', 'component_registry.json');
+const REGISTRY_PATH = path.join(ROOT_DIR, 'figma-refs', 'component_registry.json');
 let REGISTRY = null;
 try { REGISTRY = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8')); }
 catch (e) { console.warn('[pipeline] component_registry.json not found or invalid:', e.message); }
@@ -165,7 +170,7 @@ const CONTEXT_INJECTION_PLACEHOLDERS = {
   'notification-card':      { label: 'Notification',       value: 'Tap to view' }
 };
 
-const EMBEDDINGS_PATH = path.join(__dirname, 'figma-refs', 'component_embeddings.json');
+const EMBEDDINGS_PATH = path.join(ROOT_DIR, 'figma-refs', 'component_embeddings.json');
 let COMPONENT_EMBEDDINGS = null;
 (function _loadComponentEmbeddings() {
   try {
@@ -220,47 +225,6 @@ function _cosine(q, qNorm, vec, vecNorm) {
 //  renderer is a hard failure on the server side, not a silent placeholder
 //  card on the device.
 // ---------------------------------------------------------------------------
-const RENDERABLE_COMPONENT_IDS = new Set([
-  // ─── chrome (PIPELINE_CHROME_ATOMIC_ROLE) ───
-  'container.status-bar-app',
-  'status-bar.default',
-  'container.header',
-  'container.nav-gestures-dark',
-  'container.nav-buttons-light',
-  'dialog.nav-gesture-bar',
-  // ─── body atomics (PIPELINE_BODY_ATOMIC_ROLE) ───
-  'input_summary_card',
-  'weather_glance_card',
-  'calendar_summary_card',
-  'message_summary_card',
-  'eta_card',
-  'reminder_card',
-  'media_control_bar',
-  'now-bar.media-player',
-  'now-bar.dual-line',
-  'now-bar.single-line',
-  'now-bar.charging',
-  'navigation_turn_card',
-  'action_chip_row',
-  'quick_toggle_row',
-  'notification-card',
-  'notification.ai-regular',
-  'lock-screen.clock',
-  'lock-screen.weather-date',
-  'lock-screen.shortcut-circle',
-  // ─── editor primitives with full templates (templates.js) ───
-  'btn-contained', 'btn-outlined', 'btn-flat', 'fab',
-  'switch', 'checkbox', 'radio', 'chip', 'input', 'search',
-  'appbar', 'bottomnav', 'pill-tab', 'tab-bar',
-  'card', 'list-item', 'dialog', 'snackbar', 'divider', 'badge',
-  'status-bar', 'now-bar', 'qs-toggle', 'qs-grid',
-  'media-card', 'widget-small', 'keyboard'
-]);
-
-function isRenderableComponentId(id) {
-  return RENDERABLE_COMPONENT_IDS.has(id);
-}
-
 // Retrieve top-K component IDs by cosine similarity to the query embedding.
 // Returns [] if embeddings aren't loaded (caller falls back to full vocab).
 //
@@ -298,7 +262,7 @@ function retrieveTopKComponentIds(queryEmbedding, k) {
 // ============================================================================
 
 function _safeRead(name) {
-  try { return fs.readFileSync(path.join(__dirname, name), 'utf8'); }
+  try { return fs.readFileSync(path.join(ROOT_DIR, name), 'utf8'); }
   catch (_) { return ''; }
 }
 

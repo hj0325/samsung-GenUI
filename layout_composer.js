@@ -13,8 +13,9 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { ROOT_DIR } = require('./src/server/storage/fileStore');
 
-const REGISTRY_PATH = path.join(__dirname, 'figma-refs', 'component_registry.json');
+const REGISTRY_PATH = path.join(ROOT_DIR, 'figma-refs', 'component_registry.json');
 let REGISTRY = null;
 try { REGISTRY = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8')); }
 catch (e) { console.warn('[layout_composer] component_registry.json not found:', e.message); }

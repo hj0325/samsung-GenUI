@@ -11,7 +11,61 @@
      Themes are managed at /customize. The active id is read from
      figma-refs/themes.json via /api/themes. -->
 <style id="theme-vars"></style>
+<style>
+  html.embed-canvas, html.embed-canvas body { height: 100%; overflow: hidden; }
+  html.embed-canvas .topbar,
+  html.embed-canvas .sidebar { display: none !important; }
+  html.embed-canvas .main { height: 100vh; display: flex; }
+  html.embed-canvas .main > div:last-child { flex: 1 1 auto; min-width: 100%; }
+  html.embed-canvas .canvas-wrap { height: 100vh; align-items: center; justify-content: center; }
+  html.embed-canvas .canvas-frame { margin: auto; }
+</style>
 <script>
+  (function _nextShellEmbedBoot() {
+    const params = new URLSearchParams(window.location.search);
+    const allowedTypes = new Set(['prompt', 'generate', 'clear', 'themeMode', 'themePreset', 'device']);
+    if (params.get('embed') === 'canvas') {
+      document.documentElement.classList.add('embed-canvas');
+    }
+    window.addEventListener('message', (event) => {
+      const data = event && event.data;
+      if (!data || data.source !== 'next-genui-shell') return;
+      if (event.origin && event.origin !== window.location.origin) return;
+      if (!allowedTypes.has(data.type)) return;
+      const payload = data.payload || {};
+      if (data.type === 'prompt') {
+        const input = document.getElementById('genPrompt');
+        if (input && typeof payload.prompt === 'string') {
+          input.value = payload.prompt;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      if (data.type === 'generate' && typeof window.pipelineGenerate === 'function') {
+        window.pipelineGenerate(payload.prompt);
+      }
+      if (data.type === 'clear' && typeof window.clearCanvas === 'function') {
+        window.clearCanvas();
+      }
+      if (data.type === 'themeMode' && typeof window.toggleTheme === 'function') {
+        const btn = document.getElementById('themeToggleBtn');
+        const currentLabel = btn ? btn.textContent : '';
+        const wantsDark = payload.mode === 'dark';
+        const isShowingLightAction = currentLabel === 'Light';
+        if ((wantsDark && !isShowingLightAction) || (!wantsDark && isShowingLightAction)) {
+          window.toggleTheme();
+        }
+      }
+      if (data.type === 'themePreset' && typeof window.applyThemeFromPicker === 'function' && payload.themeId) {
+        window.applyThemeFromPicker(payload.themeId);
+      }
+      if (data.type === 'device' && typeof window.selectDevice === 'function') {
+        const mode = payload.mode || 'mobile';
+        const el = document.querySelector(`.device-list-item[data-mode="${mode}"]`);
+        window.selectDevice(mode, el || document.querySelector('.device-list-item.active'));
+      }
+    });
+  })();
+
   // Theme system — boot apply + Generate-panel picker + cross-window
   // sync. The customize page (/customize) is the editor; this block
   // handles the active-theme apply + the small Generate-panel dropdown

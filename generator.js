@@ -275,9 +275,11 @@ var _globalRules = null;
     var fs, path;
     try {
       fs = require('fs'); path = require('path');
-      var dir = (typeof __dirname !== 'undefined') ? __dirname : '.';
-      _orchestrationRules = JSON.parse(fs.readFileSync(path.join(dir, 'figma-refs', 'orchestration_rules.json'), 'utf8'));
-      _globalRules        = JSON.parse(fs.readFileSync(path.join(dir, 'figma-refs', 'global_rules.json'), 'utf8'));
+      var base;
+      try { base = require('./src/server/storage/fileStore').ROOT_DIR; }
+      catch (_) { base = (typeof __dirname !== 'undefined') ? __dirname : '.'; }
+      _orchestrationRules = JSON.parse(fs.readFileSync(path.join(base, 'figma-refs', 'orchestration_rules.json'), 'utf8'));
+      _globalRules        = JSON.parse(fs.readFileSync(path.join(base, 'figma-refs', 'global_rules.json'), 'utf8'));
     } catch (_) { /* browser or missing */ }
   }
   // Browser: loaded lazily via fetch if needed
@@ -302,8 +304,10 @@ var _refinementRules = null;
   if (typeof require === 'function') {
     try {
       var fs2 = require('fs'), path2 = require('path');
-      var dir2 = (typeof __dirname !== 'undefined') ? __dirname : '.';
-      _refinementRules = JSON.parse(fs2.readFileSync(path2.join(dir2, 'figma-refs', 'refinement_rules.json'), 'utf8'));
+      var base2;
+      try { base2 = require('./src/server/storage/fileStore').ROOT_DIR; }
+      catch (_) { base2 = (typeof __dirname !== 'undefined') ? __dirname : '.'; }
+      _refinementRules = JSON.parse(fs2.readFileSync(path2.join(base2, 'figma-refs', 'refinement_rules.json'), 'utf8'));
     } catch (_) { /* browser or missing */ }
   }
 })();

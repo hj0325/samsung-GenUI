@@ -95,8 +95,9 @@ function _deriveScreenContexts(gm) {
   if (typeof module !== 'undefined' && module.exports) {
     var path = require('path');
     var fs   = require('fs');
+    var { ROOT_DIR } = require('./src/server/storage/fileStore');
     var load = function (rel) {
-      return JSON.parse(fs.readFileSync(path.join(__dirname, rel), 'utf8'));
+      return JSON.parse(fs.readFileSync(path.join(ROOT_DIR, rel), 'utf8'));
     };
     var raw = load(FILES.registry);
     var gm  = load(FILES.generatorMemory);

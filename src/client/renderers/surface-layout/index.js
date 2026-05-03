@@ -1,0 +1,1 @@
+export { getAtomicRole } from './atomics';

@@ -16,10 +16,13 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { ROOT_DIR } = require('./src/server/storage/fileStore');
+const historyStore = require('./src/server/storage/improvementHistory');
+const variationStore = require('./src/server/storage/variations');
+const learnedRuleStore = require('./src/server/storage/learnedRules');
 
-const SCENARIOS_PATH    = path.join(__dirname, 'figma-refs', 'test_scenarios.json');
-const LEARNED_RULES_PATH = path.join(__dirname, 'figma-refs', 'learned_rules.json');
-const HISTORY_DIR        = path.join(__dirname, 'data', 'improvement_history');
+const SCENARIOS_PATH    = path.join(ROOT_DIR, 'figma-refs', 'test_scenarios.json');
+const LEARNED_RULES_PATH = learnedRuleStore.LEARNED_RULES_PATH;
 
 let TEST_SUITE = null;
 try { TEST_SUITE = JSON.parse(fs.readFileSync(SCENARIOS_PATH, 'utf8')); }
@@ -494,12 +497,7 @@ function _aggregateViolations(runs) {
 // ---------------------------------------------------------------------------
 function saveCycleReport(report) {
   try {
-    if (!fs.existsSync(HISTORY_DIR)) fs.mkdirSync(HISTORY_DIR, { recursive: true });
-    const fname = (report && report.summary && report.summary.builtAt
-      ? report.summary.builtAt.replace(/[:.]/g, '-')
-      : 'run-' + Date.now()) + '.json';
-    fs.writeFileSync(path.join(HISTORY_DIR, fname), JSON.stringify(report, null, 2));
-    return fname;
+    return historyStore.saveReport(report);
   } catch (e) {
     console.warn('[improve] saveCycleReport failed:', e.message);
     return null;
@@ -508,8 +506,7 @@ function saveCycleReport(report) {
 
 function listCycleReports() {
   try {
-    if (!fs.existsSync(HISTORY_DIR)) return [];
-    return fs.readdirSync(HISTORY_DIR).filter(f => f.endsWith('.json')).sort().reverse();
+    return historyStore.listReports();
   } catch { return []; }
 }
 
@@ -520,25 +517,15 @@ function listCycleReports() {
 //  variations — a rule that helps only the original (but not its rephrasings)
 //  is overfitting. Cached on disk so we don't re-burn LLM tokens every cycle.
 // ---------------------------------------------------------------------------
-const VARIATIONS_DIR = path.join(__dirname, 'data', 'variations');
-
-function _variationsCachePath(scenarioId) {
-  return path.join(VARIATIONS_DIR, scenarioId + '.json');
-}
-
 function loadCachedVariations(scenarioId) {
   try {
-    const p = _variationsCachePath(scenarioId);
-    if (!fs.existsSync(p)) return null;
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    return variationStore.readVariations(scenarioId);
   } catch { return null; }
 }
 
 function saveCachedVariations(scenarioId, data) {
   try {
-    if (!fs.existsSync(VARIATIONS_DIR)) fs.mkdirSync(VARIATIONS_DIR, { recursive: true });
-    fs.writeFileSync(_variationsCachePath(scenarioId), JSON.stringify(data, null, 2));
-    return true;
+    return variationStore.saveVariations(scenarioId, data);
   } catch (e) {
     console.warn('[improve] saveCachedVariations failed:', e.message);
     return false;
@@ -817,10 +804,10 @@ function _validateProposedRule(r) {
 // ---------------------------------------------------------------------------
 function loadLearnedRules() {
   try {
-    if (!fs.existsSync(LEARNED_RULES_PATH)) return { rules: [], rejected: [], _version: 1 };
-    const data = JSON.parse(fs.readFileSync(LEARNED_RULES_PATH, 'utf8'));
+    const data = learnedRuleStore.readLearnedRules();
     if (!Array.isArray(data.rules))    data.rules = [];
     if (!Array.isArray(data.rejected)) data.rejected = [];
+    if (data._version == null) data._version = 1;
     return data;
   } catch (e) {
     console.warn('[improve] learned_rules load failed:', e.message);
@@ -830,7 +817,7 @@ function loadLearnedRules() {
 
 function saveLearnedRules(state) {
   try {
-    fs.writeFileSync(LEARNED_RULES_PATH, JSON.stringify(state, null, 2));
+    learnedRuleStore.writeLearnedRules(state);
     return true;
   } catch (e) {
     console.warn('[improve] learned_rules save failed:', e.message);
